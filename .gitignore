@@ -11,10 +11,13 @@
 /dumps/
 /exports/
 *.dump
+*dump*.json
 *.sql.gz
 *.csv
 *.jsonl
-!tests/fixtures/**
+# Recorded test fixtures and eval sets may be CSV/JSONL (only those types).
+!tests/fixtures/**/*.csv
+!tests/fixtures/**/*.jsonl
 !evals/**/*.jsonl
 
 # --- Review reports and screenshots (local only) ---

@@ -54,7 +54,7 @@ uv add <pkg>                # runtime dependency; `uv add --dev <pkg>` for dev-o
 
 Before every push: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`.
 
-Every new env var goes into `.env.example` with a fake value and the milestone that first reads it. `.gitignore` drops `*.csv` and `*.jsonl` everywhere except `tests/fixtures/` and `evals/` (so data dumps can't slip in); put committed fixtures and eval sets there.
+Every new env var goes into `.env.example` with a fake value and the milestone that first reads it. `.gitignore` drops `*.csv` and `*.jsonl` everywhere except CSV/JSONL under `tests/fixtures/` and JSONL under `evals/` (so data dumps can't slip in); put committed fixtures and eval sets there. Raw OLX or database dumps go only in `/data/` (ignored); never write them elsewhere in the tree.
 
 ## Git
 
