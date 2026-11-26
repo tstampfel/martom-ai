@@ -26,16 +26,28 @@ uv sync                     # create .venv and install dependencies
 cp .env.example .env        # local config; every value in the example is fake
 docker compose up -d --wait # Postgres 16 + pgvector and Redis, healthy
 uv run martom migrate       # apply database migrations (safe to re-run)
+uv run martom api           # the API on http://127.0.0.1:8000 (see API below)
 uv run pytest               # tests (database tests skip if Postgres can't be reached)
 uv run ruff check           # lint
 uv run ruff format --check  # formatting
 ```
 
-`martom migrate` and the database tests use `DATABASE_URL` / `TEST_DATABASE_URL` when they are set, and otherwise the local compose database on port 5432 (the fake values in `.env.example`). Every git worktree shares one compose stack (project name `martom`).
+`martom migrate` and the database tests use `DATABASE_URL` / `TEST_DATABASE_URL` when they are set, and otherwise the local compose database on port 5432 (the fake values in `.env.example`). The Redis tests likewise use `TEST_REDIS_URL` or the local compose Redis on port 6379. Every git worktree shares one compose stack (project name `martom`).
 
 If ports 5432 or 6379 are already in use (e.g. a local Postgres), start compose with the port inline, `POSTGRES_PORT=5433 docker compose up -d --wait`, and pass the matching URLs: `DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run martom migrate` and `TEST_DATABASE_URL=postgresql://martom:martom@localhost:5433/postgres uv run pytest`.
 
-The API and frontend arrive in later milestones (see the plan).
+### API
+
+```sh
+uv run martom api           # FastAPI on http://127.0.0.1:8000 (add --reload while developing)
+curl -i http://127.0.0.1:8000/health
+```
+
+`GET /health` checks Postgres and Redis and answers `200 {"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}`, or `503` with `"error"` for whichever is down (the reason goes to the log only). `martom api --host 0.0.0.0 --port 8000` is the form for a container. The same app also runs as `uv run uvicorn --factory martom.api.app:create_app`, but then logs are uvicorn's plain text instead of JSON.
+
+Configuration is read from environment variables only (no `.env` file; see [`.env.example`](.env.example)): `APP_ENV`, `LOG_LEVEL`, `CORS_ALLOWED_ORIGINS` (only `https://martom-savjetnik.pages.dev` and `http://localhost[:port]` are accepted), `DATABASE_URL`, `REDIS_URL`. Unset values default to the local compose stack. Logs are one JSON object per line on stderr, and every request gets an `X-Request-ID` (an incoming short, plain one is kept), which is in each log line written during that request.
+
+The chat endpoint and the customer page arrive in later milestones (see the plan).
 
 ## Licence
 
