@@ -4,7 +4,7 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version 26 (M5-2d).
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795701977-d1d0` (M5-2f).
 
 | Canvas | Repo |
 | --- | --- |
@@ -16,7 +16,7 @@ When you sync, copy layout, colours, copy and interactions exactly, and change o
 - Links between screens use the repo names (`2-clarify.html`, not `Web2Clarify.dc.html`).
 - Images use `../assets/...` instead of the canvas's `/_blob/...` URLs.
 - Keep the repo's head and script lines (the font link uses a plain `&`).
-- Photos that Toni hasn't approved stay striped placeholders with a note. The web start hero shows OLX 63996799's photo on the canvas; the repo keeps a placeholder until Toni approves it (#64).
+- Photos that Toni hasn't approved stay striped placeholders with a note. The web start hero shows OLX 63996799's photo on the canvas; the repo keeps a placeholder with the photo's geometry (extended 150 px left, under the red block's curve) until Toni approves it (#64).
 
 The `.html` files are the **source of each screen** from the design canvas. They use the canvas's own component runtime (`<x-dc>`, `{{ }}` holes, `<sc-for>`), so they won't render on their own in a browser: read them for layout, spacing, colours, copy and interactions, and build the real UI in React. Striped grey boxes are photo placeholders; real product photos come from the OLX listings.
 
@@ -26,20 +26,24 @@ The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina o
 
 | # | Web (`web/`, 1440 wide, fluid) | Mobile (`mobile/`, 390 × 844) | What it shows |
 | --- | --- | --- | --- |
-| 1 | `1-start.html` | `1-start.html` | Red curved hero, question box whose placeholder types an example, pauses, erases with backspace speed and types the next; white quick-start chips; "Kako savjetnik radi" card with a "primjer" badge whose three example steps appear one by one and restart (shown all at once with reduced motion); mobile header has a charcoal top border; hexagon badges (2 prodavaonice, 30 godina, 10.000+ artikala, OLX); web adds fence category tiles and "Kako radi" |
-| 2 | `2-clarify.html` | `2-clarify.html` | The advisor's 3 questions as tappable chips: koliko ima kutova (0 · 1 · 2 · 3 · 4+ · Ne znam, plus "Ide okolo (zatvoreno)") with one length field per side, stupovi (base plate preselected, concrete "po narudžbi, 10–15 dana", Ne znam), boja; web adds the dark "Vaš projekt" panel (Dužina, Kutovi, Strane, …) that fills in as answers arrive. Rules: `docs/domain/fence-rules.md` |
+| 1 | `1-start.html` | `1-start.html` | Red curved hero, question box whose placeholder types an example, pauses, erases with backspace speed and types the next; white quick-start chips; "Kako savjetnik radi" card with a "primjer" badge whose three example steps appear one by one and restart (shown all at once with reduced motion); mobile header has a charcoal top border, as on screens 2–5 (web start opens with the charcoal announcement bar instead of the 6 px strip); hexagon badges (2 prodavaonice, 30 godina, 10.000+ artikala, OLX); web adds fence category tiles and "Kako radi" |
+| 2 | `2-clarify.html` | `2-clarify.html` | The advisor's 3 questions as tappable chips: koliko ima kutova (0 · 1 · 2 · 3 · 4+ · Ne znam, plus "Ide okolo (zatvoreno)") with one length field per side, stupovi (base plate preselected, concrete "U zemlju (betoniram)" with the sub-line "po upitu · po narudžbi", Ne znam; web summary "U zemlju · po upitu"), boja; web adds the dark "Vaš projekt" panel (Dužina, Kutovi, Strane, …) that fills in as answers arrive. Rules: `docs/domain/fence-rules.md` |
 | 3 | `3-results.html` | `3-results.html` | Recommendation text, product cards with variant picker (panel = recommended, Garden Light = cheaper), materials list with working +/− quantity steppers, live total, "Dodaj sve u korpu" |
 | 4 | `4-cart-order.html` | `4-cart-order.html` | Own cart (korpa) and order form with the same fields as martomshop.ba; **one** red "Pošalji narudžbu" button that opens WhatsApp with the order pre-filled |
 | 5 | `5-sent.html` | `5-sent.html` | Confirmation, what happens next, and the exact WhatsApp message that was sent (use it as the message format for M5-6) |
 
 Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3: straight to product cards.
 
+### Concrete-in-soil posts on the order (Tomislav and Toni, 26 Nov 2026)
+
+Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "Stupovi za betoniranje – po upitu", to the order. There is **no BOM calculation** for concrete-in-soil posts (Toni: they are not in the BOM); Martom confirms the posts and their price. The mockups only show the choice; the code lands in #20 (clarify) and #27 (cart).
+
 ## Design tokens
 
 | Token | Value | Use |
 | --- | --- | --- |
 | Red (brand) | `#D71222` | Hero, primary buttons, hexagon badges, accents. The only red: it matches the solid red in the logo |
-| Charcoal | `#26292E` | Top announcement bar, secondary buttons, dark panels ("Vaš projekt", materials list on web), footer, quick-start chip text |
+| Charcoal | `#26292E` | Top announcement bar, top border (mobile, 5 px, every screen) and top strip (web screens 2–5, 6 px), secondary buttons, dark panels ("Vaš projekt", materials list on web), footer, quick-start chip text |
 | Ink | `#16181D` | Body text |
 | Muted text | `#4F5560` / `#3B4049` | Secondary text (both pass 4.5:1 on the page background) |
 | Page background | `#F2F2F0` | |

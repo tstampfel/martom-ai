@@ -26,7 +26,7 @@ a{color:inherit;text-decoration:none}
 </style>
 </helmet>
 <div style="background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; min-height: 1000px; display: flex; flex-direction: column">
-  <div style="height: 6px; background: #D71222"></div>
+  <div style="height: 6px; background: #26292E"></div>
   <header style="background: #FFFFFF; border-bottom: 1px solid #E2E2DE">
     <div style="max-width: 1280px; margin: 0 auto; padding: 14px 32px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap">
       <a href="1-start.html" aria-label="Početna"><img src="../assets/martom-logo.png" alt="Željezarija Martom" style="height: 40px; width: auto; display: block"></a>
@@ -77,10 +77,10 @@ a{color:inherit;text-decoration:none}
         <div style="display: flex; flex-direction: column; gap: 10px">
           <span style="font-size: 14px; font-weight: 700; color: #3B4049">2. Gdje idu stupovi?</span>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <button type="button" class="{{ pPlate }}" onClick="{{ pickPlate }}">Na beton, s pločicom</button><button type="button" class="{{ pConcrete }}" onClick="{{ pickConcrete }}">U zemlju (betoniram)<span class="sub">po narudžbi, 10–15 dana</span></button><button type="button" class="{{ pUnknown }}" onClick="{{ pickPostsUnknown }}">Ne znam</button>
+            <button type="button" class="{{ pPlate }}" onClick="{{ pickPlate }}">Na beton, s pločicom</button><button type="button" class="{{ pConcrete }}" onClick="{{ pickConcrete }}">U zemlju (betoniram)<span class="sub">po upitu · po narudžbi</span></button><button type="button" class="{{ pUnknown }}" onClick="{{ pickPostsUnknown }}">Ne znam</button>
           </div>
           <sc-if value="{{ isConcrete }}" hint-placeholder-val="{{ false }}">
-            <p class="note">Stupovi za betoniranje su po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami.</p>
+            <p class="note">Stupovi za betoniranje rade se po narudžbi (10–15 dana), cijenu javlja Martom. Beton ne prodajemo, nabavljate ga sami.</p>
           </sc-if>
         </div>
 
@@ -177,7 +177,7 @@ class Component extends DCLogic {
       pickConcrete: () => this.setState({ posts: 'concrete' }),
       pickPostsUnknown: () => this.setState({ posts: 'unknown' }),
       isConcrete: posts === 'concrete',
-      postsLabel: { plate: 'Na beton, s pločicom', concrete: 'U zemlju · po narudžbi, 10–15 dana', unknown: 'Ne znam' }[posts]
+      postsLabel: { plate: 'Na beton, s pločicom', concrete: 'U zemlju · po upitu', unknown: 'Ne znam' }[posts]
     };
   }
 }
