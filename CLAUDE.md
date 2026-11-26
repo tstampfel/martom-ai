@@ -2,7 +2,7 @@
 
 **martom-ai** is an agentic RAG advisor for Željezarija Martom, a hardware store in Čitluk (BiH). It is fence-first (guided advice and a materials list), and it also searches the whole store catalogue (~2,600 OLX listings).
 
-- Source of truth: `docs/PLAN.md`. Screens: `docs/mockups/`. Read both before your first task. Fence business rules (posts, clips, corners, gates, "po narudžbi" items): `docs/domain/fence-rules.md`, confirmed by Toni; read it before any BOM, clarify, cart, order or eval work. If anything here conflicts with the plan, the plan wins; say so to the manager (or to Tomislav, if you are the manager).
+- Source of truth: `docs/PLAN.md`. Screens: `docs/mockups/`, synced from the design canvas, which is the source of truth for design (change the canvas first; see `docs/mockups/README.md`). Read both before your first task. Fence business rules (posts, clips, corners, gates, "po narudžbi" items): `docs/domain/fence-rules.md`, confirmed by Toni; read it before any BOM, clarify, cart, order or eval work. If anything here conflicts with the plan, the plan wins; say so to the manager (or to Tomislav, if you are the manager).
 - Tomislav (the owner) is a senior React/TypeScript developer moving into applied AI engineering. He reviews and merges every PR and needs to understand every change. **Nobody but Tomislav merges.**
 
 ## How the work is run
