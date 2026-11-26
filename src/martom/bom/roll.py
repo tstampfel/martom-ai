@@ -1,8 +1,8 @@
 """Welded roll fence (varena ograda u roli) materials list.
 
 Every rule here comes from docs/domain/fence-rules.md, "Welded roll fence" (Toni, Martom
-owner, and Tomislav, 26 Nov 2026), including the suggested tension-wire add-on and the
-100 cm support T-posts for short foot-plate fences.
+owner, and Tomislav, 26 Nov 2026), including the suggested tension-wire add-on, the
+100 cm support T-posts for short foot-plate fences and the end-post braces.
 If this file and fence-rules.md disagree, fence-rules.md wins. The functions return
 quantities only: prices come from the synced OLX data (or, for products without a
 listing, from manual_products.toml) when the list is shown.
@@ -81,8 +81,12 @@ SPACING_NOTE = "razmak do 3 m ovisno o terenu – potvrdite s Martomom"
 # fence-rules.md, "Strainer and corner posts": a strainer every 25 m along a side.
 STRAINER_SPACING_CM = 2500
 
-# fence-rules.md, "Bracing": 2 support T-posts per strainer and per corner post.
+# fence-rules.md, "Bracing": 2 support T-posts per strainer and per corner post, and
+# 1 per free end post of an open fence (Toni, 26 Nov 2026 14:53). An open fence has two
+# end posts; a closed loop has none.
 BRACES_PER_STRAINER = 2
+BRACES_PER_END_POST = 1
+END_POSTS_OPEN_FENCE = 2
 # fence-rules.md, "Bracing" (Toni, 26 Nov 2026 14:29): foot-plate fences at 60, 80 and
 # 100 cm are braced with support T-posts 100 cm. That variant of T-post 59473597 isn't on
 # OLX yet: until the sync has it, the line shows count and size but no price.
@@ -140,9 +144,9 @@ def roll_fence_bom(
     - Posts: every 2 m, ceil(side / 2 m) + 1 per side; a corner post is shared, so
       posts = Σ(per side) - corners. Strainers (every 25 m inside a side, and every
       corner) replace line posts, so they don't change the count.
-    - Support T-posts: 2 per strainer and per corner post, as tall as the post they brace;
-      a 60, 80 or 100 cm foot-plate fence gets 100 cm support T-posts. The two free end
-      posts get none (pending Toni).
+    - Support T-posts: 2 per strainer and per corner post, and 1 per free end post (an
+      open fence has 2, a closed loop none), as tall as the post they brace; a 60, 80 or
+      100 cm foot-plate fence gets 100 cm support T-posts.
     - Tensioners: 3 per started 25 m, counted per side.
     - Foot-plate posts: 3 M8x70 anchors each.
     - Tension wire: only in `wire_addon`, never in `lines`.
@@ -170,7 +174,8 @@ def roll_fence_bom(
     posts = sum(math.ceil(side / POST_SPACING_CM) + 1 for side in sides_cm) - corners
     # Strainers inside each side; the side's two ends are corners or free ends.
     strainers = sum(math.ceil(side / STRAINER_SPACING_CM) - 1 for side in sides_cm)
-    braces = BRACES_PER_STRAINER * (corners + strainers)
+    end_posts = 0 if closed else END_POSTS_OPEN_FENCE
+    braces = BRACES_PER_STRAINER * (corners + strainers) + BRACES_PER_END_POST * end_posts
     tensioners = sum(
         TENSIONERS_PER_STRETCH * math.ceil(side / TENSIONER_STRETCH_CM) for side in sides_cm
     )
@@ -203,8 +208,8 @@ def roll_fence_bom(
                 size=f"{post_height_cm} cm",
             )
         )
-    if braces:
-        lines.append(_brace_line(post_height_cm, braces, synced_products or ()))
+    # Never zero: an open fence has 2 end posts, a closed loop at least 3 corners.
+    lines.append(_brace_line(post_height_cm, braces, synced_products or ()))
     lines.append(BomLine(item=Item.TENSIONER, name="Zatezač (španer)", quantity=tensioners))
     if post_model == RollPostModel.FOOT_PLATE:
         lines.append(

@@ -174,33 +174,70 @@ def test_roll_line_names_its_height() -> None:
 
 
 # --- strainers and braces ---------------------------------------------------------------
+# fence-rules.md, "Bracing": 2 support T-posts per strainer and per corner post, and 1 per
+# free end post of an open fence (Toni, 26 Nov 2026 14:53). A closed loop has no end posts.
 
 
-def test_straight_25m_fence_has_no_braces() -> None:
-    # No corner and no strainer; the free end posts get none until Toni answers.
-    assert Item.BRACE_T_POST not in quantities(bom([25]))
+def test_straight_25m_fence_gets_1_brace_per_end_post() -> None:
+    # No corner and no strainer: only the two free end posts, 1 support T-post each.
+    assert quantities(bom([25]))[Item.BRACE_T_POST] == 2
 
 
-def test_30m_straight_gets_2_support_t_posts_for_its_one_strainer() -> None:
-    assert quantities(bom([30]))[Item.BRACE_T_POST] == 2
+def test_30m_straight_gets_2_braces_for_its_strainer_and_1_per_end() -> None:
+    assert quantities(bom([30]))[Item.BRACE_T_POST] == 2 + 2
 
 
-def test_corner_post_gets_2_support_t_posts_and_the_ends_none() -> None:
-    assert quantities(bom([10, 10]))[Item.BRACE_T_POST] == 2
+def test_corner_post_gets_2_braces_and_each_end_post_1() -> None:
+    assert quantities(bom([10, 10]))[Item.BRACE_T_POST] == 2 + 2
 
 
-def test_strainers_and_corners_add_up_for_the_braces() -> None:
-    # 30 m side: 1 strainer; 10 m side: none; 1 corner -> 2 × (1 + 1).
-    assert quantities(bom([30, 10]))[Item.BRACE_T_POST] == 4
+def test_strainers_corners_and_ends_add_up_for_the_braces() -> None:
+    # 30 m side: 1 strainer; 10 m side: none; 1 corner; 2 ends -> 2 × (1 + 1) + 2.
+    assert quantities(bom([30, 10]))[Item.BRACE_T_POST] == 6
 
 
-def test_closed_loop_braces_every_corner() -> None:
+def test_closed_loop_braces_every_corner_and_has_no_end_posts() -> None:
     assert quantities(bom([10, 10, 10, 10], closed=True))[Item.BRACE_T_POST] == 8
 
 
-@pytest.mark.parametrize(("side_m", "braces"), [(25, 0), ("25.01", 2), (50, 2), ("50.01", 4)])
+@pytest.mark.parametrize("post_model", list(RollPostModel))
+@pytest.mark.parametrize("roll_height_cm", sorted(ROLL_RULES))
+@pytest.mark.parametrize(
+    ("sides_m", "corner_and_strainer_braces"),
+    [([10], 0), ([30], 2), ([10, 10], 2), ([30, 10, 10], 6)],
+)
+def test_an_open_fence_gets_exactly_2_end_post_braces(
+    post_model: RollPostModel,
+    roll_height_cm: int,
+    sides_m: list[int],
+    corner_and_strainer_braces: int,
+) -> None:
+    result = bom(sides_m, roll_height_cm=roll_height_cm, post_model=post_model)
+    assert line_for(result, Item.BRACE_T_POST).quantity == corner_and_strainer_braces + 2
+
+
+@pytest.mark.parametrize("post_model", list(RollPostModel))
+@pytest.mark.parametrize("roll_height_cm", sorted(ROLL_RULES))
+@pytest.mark.parametrize(
+    ("sides_m", "corner_and_strainer_braces"),
+    [([10, 10, 10], 6), ([10, 10, 10, 10], 8), ([30, 10, 10, 10], 10)],
+)
+def test_a_closed_fence_gets_no_end_post_braces(
+    post_model: RollPostModel,
+    roll_height_cm: int,
+    sides_m: list[int],
+    corner_and_strainer_braces: int,
+) -> None:
+    result = roll_fence_bom(
+        sides_m=sides_m, roll_height_cm=roll_height_cm, post_model=post_model, closed=True
+    )
+    assert line_for(result, Item.BRACE_T_POST).quantity == corner_and_strainer_braces
+
+
+@pytest.mark.parametrize(("side_m", "braces"), [(25, 2), ("25.01", 4), (50, 4), ("50.01", 6)])
 def test_a_strainer_stands_at_every_25m_inside_a_side(side_m: int | str, braces: int) -> None:
-    assert quantities(bom([side_m])).get(Item.BRACE_T_POST, 0) == braces
+    # 2 per strainer, plus the 2 end-post braces of this open, straight fence.
+    assert quantities(bom([side_m]))[Item.BRACE_T_POST] == braces
 
 
 def test_t_post_brace_is_the_t_post_height_priced_as_that_t_post() -> None:
@@ -211,9 +248,17 @@ def test_t_post_brace_is_the_t_post_height_priced_as_that_t_post() -> None:
     assert not brace.unit_price_on_request
 
 
-def test_foot_plate_fence_125cm_with_a_corner_gets_two_125cm_t_posts_as_braces() -> None:
-    brace = line_for(bom([10, 10], roll_height_cm=125, post_model=FOOT_PLATE), Item.BRACE_T_POST)
+def test_end_post_braces_of_a_straight_t_post_fence_are_the_t_post_height() -> None:
+    # Only end posts here: the brace still matches the post it braces (Toni 14:53).
+    brace = line_for(bom([10], roll_height_cm=125), Item.BRACE_T_POST)
     assert brace.quantity == 2
+    assert brace.size == "175 cm"
+    assert brace.price_from == PriceRef(item=Item.POST_T, size="175 cm")
+
+
+def test_foot_plate_fence_125cm_with_a_corner_gets_125cm_t_posts_as_braces() -> None:
+    brace = line_for(bom([10, 10], roll_height_cm=125, post_model=FOOT_PLATE), Item.BRACE_T_POST)
+    assert brace.quantity == 2 + 2  # the corner post, then 1 per end post
     assert brace.size == "125 cm"
     assert brace.price_from == PriceRef(item=Item.POST_T, size="125 cm")
 
@@ -239,10 +284,11 @@ def short_foot_plate_brace(
 def test_short_foot_plate_brace_is_100cm_on_request_until_the_variant_is_synced(
     roll_height_cm: int, synced_products: frozenset[PriceRef] | None
 ) -> None:
-    # Foot-plate fence 80 cm, 1 corner -> "potporni stup 100 cm – cijena na upit",
-    # 2 pieces, size 100 cm, no price (Toni 26 Nov 14:29; the variant isn't on OLX yet).
+    # Foot-plate fence 80 cm, 1 corner, open -> "potporni stup 100 cm – cijena na upit",
+    # 4 pieces (2 for the corner, 1 per end post), size 100 cm, no price (Toni 26 Nov
+    # 14:29 and 14:53; the variant isn't on OLX yet).
     brace = short_foot_plate_brace(roll_height_cm, synced_products)
-    assert brace.quantity == 2
+    assert brace.quantity == 4
     assert brace.size == "100 cm"
     # Same name as once synced, so a cart sees one product; the label carries the status.
     assert brace.name == "Potporni T-stup 100 cm"
@@ -254,7 +300,7 @@ def test_short_foot_plate_brace_is_100cm_on_request_until_the_variant_is_synced(
 @pytest.mark.parametrize("roll_height_cm", [60, 80, 100])
 def test_short_foot_plate_brace_takes_the_synced_100cm_t_post_price(roll_height_cm: int) -> None:
     brace = short_foot_plate_brace(roll_height_cm, SYNCED_WITH_100_CM)
-    assert brace.quantity == 2
+    assert brace.quantity == 4
     assert brace.size == "100 cm"
     assert brace.name == "Potporni T-stup 100 cm"
     assert brace.label is None
@@ -267,8 +313,21 @@ def test_short_foot_plate_brace_count_follows_corners_and_strainers() -> None:
     result = roll_fence_bom(
         sides_m=[30, 10, 10, 10], roll_height_cm=80, post_model=FOOT_PLATE, closed=True
     )
-    # 4 corners + 1 strainer (inside the 30 m side) -> 2 × 5 = 10.
+    # 4 corners + 1 strainer (inside the 30 m side) -> 2 × 5 = 10; closed, so no ends.
     assert line_for(result, Item.BRACE_T_POST).quantity == 10
+
+
+@pytest.mark.parametrize("roll_height_cm", [60, 80, 100])
+def test_short_foot_plate_end_posts_get_the_100cm_brace_on_request(roll_height_cm: int) -> None:
+    # A straight foot-plate fence: only the 2 end posts, braced like corners (Tomislav,
+    # 26 Nov 2026), so the 100 cm brace is "cijena na upit" until the sync has it.
+    result = roll_fence_bom(sides_m=[10], roll_height_cm=roll_height_cm, post_model=FOOT_PLATE)
+    brace = line_for(result, Item.BRACE_T_POST)
+    assert brace.quantity == 2
+    assert brace.size == "100 cm"
+    assert brace.label == "potporni stup 100 cm – cijena na upit"
+    assert brace.unit_price_on_request
+    assert brace.price_from is None
 
 
 def test_synced_products_dont_change_tall_fence_braces() -> None:
@@ -388,7 +447,7 @@ def test_full_t_post_list_for_30m_straight_125cm() -> None:
     assert quantities(result) == {
         Item.ROLL_WELDED: 2,
         Item.POST_T: 16,
-        Item.BRACE_T_POST: 2,
+        Item.BRACE_T_POST: 4,  # 1 strainer × 2 + 2 end posts × 1
         Item.TENSIONER: 6,
     }
     assert addon_quantities(result) == {Item.TENSION_WIRE: 1}  # 3 rows × 30 m = 90 m
@@ -399,7 +458,7 @@ def test_full_foot_plate_list_for_a_closed_loop() -> None:
     assert quantities(result) == {
         Item.ROLL_WELDED: 2,
         Item.POST_FOOT_PLATE: 20,
-        Item.BRACE_T_POST: 8,
+        Item.BRACE_T_POST: 8,  # 4 corners × 2, no end posts
         Item.TENSIONER: 12,
         Item.ANCHOR_M8X70: 60,
     }
