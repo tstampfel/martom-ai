@@ -71,9 +71,9 @@ export const copy = {
     badge: 'primjer',
     quote: '„25 m ograde za dvorište, visina oko 1,5 m”',
     steps: [
-      { state: 'done', text: 'Razumijem: 25 m · dvorište · 150 cm', short: 'Razumijem: 25 m · dvorište · 150 cm' },
-      { state: 'done', text: 'Pregledao 39 ograda i 12 vrsta stupova', short: 'Pregledao 39 ograda' },
-      { state: 'working', text: 'Računam panele, stupove i obujmice', short: 'Računam panele i stupove' },
+      { text: 'Razumijem: 25 m · dvorište · 150 cm', short: 'Razumijem: 25 m · dvorište · 150 cm' },
+      { text: 'Pregledao 39 ograda i 12 vrsta stupova', short: 'Pregledao 39 ograda' },
+      { text: 'Računam panele, stupove i obujmice', short: 'Računam panele i stupove' },
     ],
   },
   howItWorks: {
