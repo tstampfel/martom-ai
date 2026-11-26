@@ -1,0 +1,132 @@
+/* ---- Red curved hero ---- */
+
+.hero {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 32px var(--gutter) 0;
+}
+
+.hero__panel {
+  background: var(--color-red);
+  color: var(--color-on-brand);
+  border-radius: var(--radius-panel) 140px 140px var(--radius-panel);
+  padding: 56px 72px 56px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hero__eyebrow {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.hero__title {
+  margin: 0;
+  font-size: 56px;
+  line-height: 1.02;
+  letter-spacing: -1px;
+}
+
+.hero__lead {
+  margin: 0;
+  max-width: 520px;
+  font-size: 18px;
+  line-height: 1.5;
+  opacity: 0.95;
+}
+
+/* ---- Hexagon badges ---- */
+
+.about {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 40px var(--gutter) 64px;
+}
+
+.about__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.about__item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-muted-strong);
+}
+
+.about__text--short {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .about__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- Phones: layout from docs/mockups/mobile/1-start.html ---- */
+
+@media (max-width: 767px) {
+  .hero {
+    padding: 0;
+  }
+
+  .hero__panel {
+    border-radius: 0 0 56px 0;
+    padding: 28px 20px;
+    gap: 16px;
+  }
+
+  .hero__eyebrow {
+    font-size: 12px;
+  }
+
+  .hero__title {
+    font-size: 34px;
+    letter-spacing: 0;
+  }
+
+  .hero__break {
+    display: none;
+  }
+
+  .hero__lead {
+    font-size: 16px;
+  }
+
+  .about {
+    padding: 20px var(--gutter);
+  }
+
+  .about__list {
+    gap: 14px;
+  }
+
+  .about__item {
+    gap: 10px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  /* After .about__item so the hide wins the cascade. */
+  .about__item--wide-only,
+  .about__text--wide {
+    display: none;
+  }
+
+  .about__text--short {
+    display: inline;
+  }
+}
