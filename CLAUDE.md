@@ -42,7 +42,19 @@ AWS: ECS Fargate behind a load balancer (Redis runs as a sidecar container in th
 
 ## Commands
 
-Filled in by M0-1 (repo scaffold). Before every push: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`.
+Python 3.12 is pinned in `.python-version`; uv installs it. Code lives in `src/martom/` (src layout, package `martom`), tests in `tests/`. Ruff and pytest settings are in `pyproject.toml`.
+
+```sh
+uv sync                     # install / update dependencies into .venv
+uv run pytest               # tests
+uv run ruff check           # lint (add --fix to auto-fix)
+uv run ruff format          # format (CI uses --check)
+uv add <pkg>                # runtime dependency; `uv add --dev <pkg>` for dev-only
+```
+
+Before every push: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`.
+
+Every new env var goes into `.env.example` with a fake value and the milestone that first reads it. `.gitignore` drops `*.csv` and `*.jsonl` everywhere except CSV/JSONL under `tests/fixtures/` and JSONL under `evals/` (so data dumps can't slip in); put committed fixtures and eval sets there. Raw OLX or database dumps go only in `/data/` (ignored); never write them elsewhere in the tree.
 
 ## Git
 
