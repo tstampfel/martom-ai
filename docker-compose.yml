@@ -1,0 +1,37 @@
+# Local development services: Postgres 16 with pgvector, and Redis.
+# Start: `docker compose up -d`, then `uv run martom migrate`.
+# Credentials are local-only defaults and match DATABASE_URL in .env.example.
+# Host ports can be moved with POSTGRES_PORT / REDIS_PORT if 5432 or 6379 is taken
+# (then change the port in DATABASE_URL / REDIS_URL too).
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: martom
+      POSTGRES_PASSWORD: martom
+      POSTGRES_DB: martom
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -h forces TCP: during first-time init the image runs a socket-only server,
+      # which a socket check would wrongly report as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U martom -d martom"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

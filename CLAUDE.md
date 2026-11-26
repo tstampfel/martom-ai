@@ -50,9 +50,18 @@ uv run pytest               # tests
 uv run ruff check           # lint (add --fix to auto-fix)
 uv run ruff format          # format (CI uses --check)
 uv add <pkg>                # runtime dependency; `uv add --dev <pkg>` for dev-only
+docker compose up -d --wait # Postgres 16 + pgvector and Redis, waits until both are healthy
+
+# Run from the repo root. Pass the local, fake URLs (same as .env.example) inline:
+DATABASE_URL=postgresql://martom:martom@localhost:5432/martom uv run martom migrate
+TEST_DATABASE_URL=postgresql://martom:martom@localhost:5432/postgres uv run pytest
 ```
 
-Before every push: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`.
+**Never source, read or print `.env`** (no `. ./.env`, `source .env`, `set -a`, `--env-file .env`): it will hold real API keys and the private `ORDER_PHONE`. Agents pass the fake values above inline. If port 5432 is taken (Tomislav's Mac runs a Homebrew Postgres there), start compose with `POSTGRES_PORT=5433 docker compose up -d --wait` and use port 5433 in both URLs.
+
+Before every push: `uv run ruff check`, `uv run ruff format --check`, and `uv run pytest` with `TEST_DATABASE_URL` set as above (the database must be up). Without `TEST_DATABASE_URL` the database tests are skipped, so set it before you claim they pass.
+
+Migrations are plain SQL in `migrations/NNN_name.sql`, applied in number order by `martom migrate`, which records each file and its checksum in `schema_migrations` and skips files already applied. Each file runs in one transaction, so it must not contain its own `BEGIN`/`COMMIT` or `CREATE INDEX CONCURRENTLY`. Never edit a migration that has been merged; add a new one. Write every statement so it re-runs safely (`IF NOT EXISTS`, existence checks). Each table arrives in the issue that first needs it, and the manager assigns the migration number. The `martom` text search config (migration 001) is unaccent followed by the Serbian Snowball stemmer; the reasons are in that file.
 
 Every new env var goes into `.env.example` with a fake value and the milestone that first reads it. `.gitignore` drops `*.csv` and `*.jsonl` everywhere except CSV/JSONL under `tests/fixtures/` and JSONL under `evals/` (so data dumps can't slip in); put committed fixtures and eval sets there. Raw OLX or database dumps go only in `/data/` (ignored); never write them elsewhere in the tree.
 
