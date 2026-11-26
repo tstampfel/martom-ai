@@ -273,10 +273,6 @@
   color: var(--color-step-working);
 }
 
-.agent-card__text--short {
-  display: none;
-}
-
 /* The phone copy of the card, below the badges. */
 .agent-card-narrow {
   display: none;
@@ -488,13 +484,8 @@
     color: var(--color-on-brand);
   }
 
-  .agent-card__quote,
-  .agent-card__text--wide {
+  .agent-card__quote {
     display: none;
-  }
-
-  .agent-card__text--short {
-    display: inline;
   }
 
   .agent-card__step {

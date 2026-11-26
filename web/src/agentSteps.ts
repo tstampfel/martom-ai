@@ -1,4 +1,4 @@
-// The start screen's "Savjetnik radi" card is a fixed example ("primjer"),
+// The start screen's "Kako savjetnik radi" card is a fixed example ("primjer"),
 // but its steps appear one at a time so it feels alive: each new step is
 // "working" until the next one arrives, then shows ✓. When all of them are
 // showing, the card pauses, clears and starts again. This file holds the

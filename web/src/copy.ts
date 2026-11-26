@@ -38,7 +38,7 @@ export const copy = {
     eyebrowShort: 'AI savjetnik',
     title: ['Recite šta ograđujete.', 'Mi složimo cijeli popis.'],
     titleShort: 'Recite šta ograđujete. Mi složimo popis.',
-    lead: 'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.',
+    lead: 'Panele, stupove, kopče i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.',
   },
   start: {
     inputLabel: 'Vaše pitanje',
@@ -64,16 +64,17 @@ export const copy = {
     ],
   },
   // A static illustration of what the advisor does; the real steps stream in
-  // from the API in the chat (M5-3). The mockups label it "uživo" (live); a
-  // static card says "primjer" (example) so it doesn't claim to be live.
+  // from the API in the chat (M5-3). It says "primjer" (example) so it doesn't
+  // claim to be live. Title and steps are the canvas wording
+  // (docs/mockups/{web,mobile}/1-start.html); phones show the same text.
   agentCard: {
-    title: 'Savjetnik radi',
+    title: 'Kako savjetnik radi',
     badge: 'primjer',
     quote: '„25 m ograde za dvorište, visina oko 1,5 m”',
     steps: [
-      { text: 'Razumijem: 25 m · dvorište · 150 cm', short: 'Razumijem: 25 m · dvorište · 150 cm' },
-      { text: 'Pregledao 39 ograda i 12 vrsta stupova', short: 'Pregledao 39 ograda' },
-      { text: 'Računam panele, stupove i obujmice', short: 'Računam panele i stupove' },
+      { text: 'Razumijem: 25 m · dvorište · 150 cm' },
+      { text: 'Pronašao panele, stupove i pribor' },
+      { text: 'Popis: 10 panela · 11 stupova · 44 kopče' },
     ],
   },
   howItWorks: {

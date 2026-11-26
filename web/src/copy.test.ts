@@ -33,4 +33,24 @@ describe('copy', () => {
     expect(copy.hero.lead).toContain('iz cijelog Martomovog OLX kataloga')
     expect(copy.hero.lead).not.toMatch(/\d/)
   })
+
+  // The start page says "kopče", as the design canvas does (#76). BOM line
+  // names ("Obujmica PVC …") come from the products and are not start copy.
+  it('says "kopče", not "obujmice", on the start page', () => {
+    const startCopy = JSON.stringify([copy.hero, copy.start, copy.agentCard, copy.howItWorks])
+    expect(startCopy).not.toMatch(/obujmic/i)
+    expect(copy.hero.lead).toContain('Panele, stupove, kopče i žicu')
+  })
+
+  // Canvas wording from docs/mockups/{web,mobile}/1-start.html; the phone
+  // mockup shows the full step text, the same as wide screens.
+  it('uses the canvas title and steps on the agent card', () => {
+    expect(copy.agentCard.title).toBe('Kako savjetnik radi')
+    const canvasSteps = [
+      'Razumijem: 25 m · dvorište · 150 cm',
+      'Pronašao panele, stupove i pribor',
+      'Popis: 10 panela · 11 stupova · 44 kopče',
+    ]
+    expect(copy.agentCard.steps.map((step) => step.text)).toEqual(canvasSteps)
+  })
 })
