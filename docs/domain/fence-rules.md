@@ -61,7 +61,7 @@ Panels come from OLX listing 63996799.
 
 ## Every BOM (all fence types)
 
-- Every BOM shows the note **"Ponuda je informativnog karaktera – pribor možete izbaciti ako ga već imate."**
+- Every BOM shows one note line: **"Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."** (Tomislav merged Toni's sentence with the existing delivery note, 26 Nov 2026).
 - Accessories are separate line items the customer can remove: tensioners, tension wire, wire holders, support T-posts (braces), PVC clips and anchors. Removing one never changes the other lines.
 
 ## Welded roll fence (varena ograda u roli)
@@ -116,7 +116,7 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
 - **Each strainer and each corner post gets 2 support T-posts** (OLX 59473597), **the same height as the post they brace** (Toni). This applies to T-post fences and to foot-plate fences (example: foot-plate post 125 cm → 2 × T-post 125 cm).
 - Support T-posts = **2 × (corners + Σ strainers per side)**.
 - **End posts** (the two free ends of an open fence): whether they get braces is **pending from Toni**. The BOM adds none for them until then.
-- **Foot-plate fences at 60, 80 and 100 cm:** T-posts exist only from 120 cm, so a brace of "the same height" doesn't exist. **Pending Toni**: until he answers, the brace line for those heights shows no size and no price ("cijena na upit").
+- **Foot-plate fences at 60, 80 and 100 cm:** T-posts exist only from 120 cm, so a brace of "the same height" doesn't exist. **Pending Toni**: until he answers, the brace line for those heights reads **"potporni stupovi – na upit"**, with the count (2 per strainer or corner post) but no size and no price. Never guess a height.
 - Braces are accessories: separate, removable lines.
 
 ### Accessories
@@ -129,8 +129,8 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
 | Anchor M8×70 | no OLX listing; `manual_products` | 0,80 KM (Toni, 26 Nov 2026) | 3 per foot-plate post |
 
 - **Tensioners are counted per side** (Toni): each side gets 3 per started 25 m. At a corner, each of the two sides has its own tensioner, which is already in that side's count. Example: 10 m + 10 m with 1 corner → 3 + 3 = **6**.
-- **Tension wire is optional ("po želji").** The advisor offers it; it is in the BOM only when the customer wants it. The customer doesn't choose the rows; they follow the fence height (Toni): **≤ 100 cm → 2 rows, > 100 cm → 3 rows**.
-- **Wire holders** are used only on foot-plate posts, and only when tension wire is in the BOM. T-posts need no holder: the wire is tied through the post's holes, and the tying wire isn't calculated.
+- **Tension wire is optional ("po želji")** and **left out of the BOM by default** (Tomislav, 26 Nov 2026: many customers have their own). The BOM returns it as a **suggested add-on** with the quantity already calculated: rows by fence height (Toni: **≤ 100 cm → 2 rows, > 100 cm → 3 rows**), coils, and for foot-plate fences the wire holders. The UI shows it under the BOM with a one-tap **"Dodaj nosivu žicu"** button that adds the wire (and holders) as normal, removable lines.
+- **Wire holders** are used only on foot-plate posts, and only when tension wire is added; they are part of the wire add-on. T-posts need no holder: the wire is tied through the post's holes, and the tying wire isn't calculated.
 - **Allowlist:** the tensioner **18129143** and the wire holder **48475613** are outside the fence categories, so they are on the explicit sync allowlist with 81645615 (issue #45), until the sync sees them in "Ograde".
 
 ### Products without an OLX listing (`manual_products`)
@@ -173,21 +173,22 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Roll fence, 25 m | **3 tensioners**, **1 roll** |
 | Roll fence, 30 m straight | **6 tensioners** (two started 25 m stretches), **2 rolls** |
 | Roll fence, 10 m + 10 m with 1 corner | **6 tensioners** (3 per side) |
-| Roll fence, customer doesn't want tension wire | **no** wire line, no wire holders |
-| Roll fence 125 cm, 25 m, with tension wire | 3 rows → **1 coil** 2,70 mm (18,00 KM reference) |
-| Roll fence 150 cm, 40 m, with tension wire | 3 rows → **2 coils** 2,70 mm |
-| Roll fence 80 cm, 25 m, with tension wire | 2 rows → **1 coil** |
+| Any welded roll BOM | **no** wire line and no wire holders in the BOM; a suggested "Dodaj nosivu žicu" add-on with rows, coils (and holders on foot-plate posts) already calculated |
+| Roll fence 125 cm, 25 m, wire add-on | 3 rows → **1 coil** 2,70 mm (18,00 KM reference) |
+| Roll fence 150 cm, 40 m, wire add-on | 3 rows → **2 coils** 2,70 mm |
+| Roll fence 80 cm, 25 m, wire add-on | 2 rows → **1 coil** |
 | Roll fence, 80 cm roll, T-posts | **120 cm** T-posts |
 | Roll fence, 100 cm roll, T-posts | **150 cm** T-posts (derived from Toni's ≥ roll + 30 cm rule) |
 | Foot-plate fence 100 cm | **100 cm** foot-plate posts |
 | Foot-plate fence, 10 posts | **30 × M8×70** at 0,80 KM (from `manual_products`) |
-| Foot-plate fence, 10 posts, with tension wire, 125 cm | **30 wire holders** (3 rows × 10 posts; quantity rule pending Toni, mark the test as such) |
+| Foot-plate fence, 10 posts, wire add-on, 125 cm | **30 wire holders** (3 rows × 10 posts; quantity rule pending Toni, mark the test as such) |
 | T-post fence with tension wire | **no** wire holders |
 | `manual_products` entry with last_confirmed older than 90 days | a `review_issue` for Toni |
 | Customer asks for a chain-link / pletivo fence | **no BOM** with welded-roll rules; the advisor says the rules are pending and offers to contact Martom |
 | Customer asks about a gate | no gate line; the advisor says "Za kapije se javite direktno Martomu: 036 651 427" |
 | Customer asks about installation | mentioned only for an existing concrete wall, price on request, never a quoted price |
-| Any BOM | shows "Ponuda je informativnog karaktera – pribor možete izbaciti ako ga već imate."; every accessory line can be removed |
+| Any BOM | shows "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."; every accessory line can be removed |
+| Foot-plate fence 80 cm, 1 corner | brace line "potporni stupovi – na upit", 2 pieces, no size, no price |
 | Panel fence, no width given | **250 cm** panels |
 | Panel fence, 25 m straight, 153 cm | End posts get **4** clips each, like line posts (44 clips for 11 posts) |
 
@@ -214,5 +215,5 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 - **Chain link (pletivo, baklava):** all rules and posts.
 - **Welded roll fence, still pending** (the BOM leaves these out or shows "cijena na upit"; they don't block M4-2):
   - whether the two free end posts get support T-posts;
-  - braces for foot-plate fences at 60, 80 and 100 cm (no T-post that short);
+  - braces for foot-plate fences at 60, 80 and 100 cm (no T-post that short; asked 26 Nov, shown as "potporni stupovi – na upit");
   - wire holders: confirm 1 per wire row per foot-plate post.
