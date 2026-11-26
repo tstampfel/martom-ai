@@ -214,7 +214,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 | ID | Issue | Done when |
 | --- | --- | --- |
 | M4-1 | BOM calculator: panel system (panels, base-plate posts, PVC clips and anchors by height, corners, gate and "po narudžbi" lines) | Unit tests for 10 m, 25 m, corners, partial panels; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
-| M4-2 | BOM calculator: roll mesh, pletivo, chain link (posts every 2.5 m, tension wire, tensioners, corner braces) | Unit tests per system |
+| M4-2 | BOM calculator: roll mesh, pletivo, chain link (posts every 2 m, shared corner posts, tension wire, tensioners, ties) | Unit tests per system |
 | M4-3 | LangGraph graph: guardrail (in scope = anything Martom sells), clarify, retrieve, grade, rewrite (max 2), generate + tools, grounding check; Postgres checkpointer | Graph tests with a fake LLM; every node traced in LangSmith |
 | M4-4 | `POST /api/chat` SSE with typed events: token, chips, product_cards, bom, error | Event contract documented; first token < 2 s locally |
 | M4-5 | Agent evals in CI: 20 scripted conversations, LLM judge for Bosnian quality and grounding | PR fails on regression |
@@ -280,11 +280,13 @@ Expect roughly **$45–80 per month** at launch traffic (a few hundred conversat
 
 ## Open questions
 
-Roll-fence posts block M4-2 and the customer questions block M3-1. The rest can wait until their milestone.
+The rest of the roll-fence rules block M4-2 and the customer questions block M3-1. The rest can wait until their milestone.
 
 - [x] **Toni: panel fence rules** — answered 26 Nov 2026, written up in [`docs/domain/fence-rules.md`](domain/fence-rules.md): base-plate post per panel height, PVC clips and anchors per post, corners (one post, double clips), concrete-in-soil posts only "po narudžbi" with no price. Unblocks M4-1.
 - [ ] **Toni: gate sizes and prices** — gates are answered as a rule (separate product, "Kapija – cijena na upit", never a calculated price), but the data is pending. Not blocking.
-- [ ] **Toni: roll-fence posts** — which post listings go with roll mesh, pletivo and chain link, and how they pair. Blocks M4-2.
+- [x] **Toni: roll-fence posts and spacing** — answered 26 Nov 2026 in `fence-rules.md`: T-post (OLX 59473597) for soil or concrete, foot-plate post 40 × 40 for a wall or base, posts every 2 m, corner posts shared.
+- [ ] **Toni: rest of the roll-fence rules** — fence height → post height, accessories (tension wire, tensioners, ties) and quantities, anchors per foot-plate post, and whether pletivo and chain link follow the same rules. Blocks M4-2.
+- [ ] **Toni: move the foot-plate post listing to "Ograde"** — it sits in "Oprema/pribor za stolariju"; until then the sync uses an explicit listing allowlist (#45). Not blocking.
 - [ ] **Toni: the 905,10 KM reference example** — which panel width and line items make up the 25 m / 153 cm total in `fence-rules.md`. Needed before the M4-1 fixture is final.
 - [ ] **Toni: 50 real customer questions** with the products he would sell for each (35 fence, 15 other). Blocks M3-1.
 - [ ] **Toni: fix the listing errors** from the 26 Nov audit (panel 153 × 2500 cm, "Korišteno" items, wrong materials). Not blocking, but the advisor is only as good as the listings.
