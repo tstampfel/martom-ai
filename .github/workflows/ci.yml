@@ -1,0 +1,146 @@
+# CI for every pull request and every push to main.
+# Rules (CLAUDE.md): standard `ubuntu-latest` runners only, never `pull_request_target`,
+# no secrets and no calls to paid or external APIs here.
+# Third-party actions are pinned to a full commit SHA (the tag is in the comment), so a
+# moved tag can't change what runs.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the run still going for the previous push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: Python (lint, migrations, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      # Same image and fake credentials as docker-compose.yml.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: martom
+          POSTGRES_PASSWORD: martom
+          POSTGRES_DB: martom
+        ports:
+          - 5432:5432
+        # Steps start only once this health check passes. -h forces TCP (see docker-compose.yml).
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U martom -d martom"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://martom:martom@localhost:5432/martom
+      TEST_DATABASE_URL: postgresql://martom:martom@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          enable-cache: true
+
+      # --locked fails if uv.lock is out of date with pyproject.toml instead of rewriting it.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github
+
+      - name: Ruff format
+        run: uv run ruff format --check
+
+      - name: Migrate (first run applies everything)
+        run: uv run martom migrate
+
+      # A second run must apply nothing; this proves migrations re-run safely.
+      - name: Migrate again (must be a no-op)
+        run: |
+          output="$(uv run martom migrate)"
+          echo "$output"
+          if [ "$output" != "nothing to apply" ]; then
+            echo "::error::second 'martom migrate' run applied migrations again"
+            exit 1
+          fi
+
+      # CI=true is set on GitHub runners, so the database tests fail instead of skipping
+      # if Postgres can't be reached (see tests/conftest.py).
+      - name: Tests
+        run: uv run pytest
+
+  changes:
+    name: Detect web/ changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Compares against the PR base, or the previous main commit on push. When there is
+      # nothing to compare with (new branch, force push), the frontend job runs anyway.
+      - name: Did web/ or this workflow change?
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "No base commit to compare with; running the frontend job."
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" HEAD -- web .github/workflows/ci.yml; then
+            echo "web/ unchanged; the frontend job will be skipped."
+            echo "web=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Skipped (not missing) when web/ didn't change: GitHub counts a skipped job as passed,
+  # so making it a required check can't leave a PR waiting forever.
+  web:
+    name: Web (lint, typecheck, tests, build)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
