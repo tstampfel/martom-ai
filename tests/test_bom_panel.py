@@ -449,3 +449,30 @@ def test_invalid_input_raises_value_error(kwargs: dict, message: str) -> None:
     arguments = {"sides_m": [Decimal(10)], "panel_height_cm": 153, **kwargs}
     with pytest.raises(ValueError, match=message):
         panel_fence_bom(**arguments)
+
+
+# --- no braces on panel fences ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("post_type", list(PostType))
+@pytest.mark.parametrize("panel_height_cm", sorted(PANEL_RULES))
+@pytest.mark.parametrize(
+    ("sides_m", "closed"),
+    [
+        ([Decimal(25)], False),  # straight: two free end posts
+        ([Decimal(10), Decimal(10)], False),  # one corner plus two end posts
+        ([Decimal(30), Decimal(10), Decimal(10)], False),  # a side past 25 m
+        ([Decimal(10), Decimal(10), Decimal(10), Decimal(10)], True),  # closed loop
+    ],
+)
+def test_panel_fence_never_gets_braces_or_support_posts(
+    post_type: PostType, panel_height_cm: int, sides_m: list[Decimal], closed: bool
+) -> None:
+    # fence-rules.md, "Panel fence, any layout": no braces / support posts, end posts
+    # included (Toni, 26 Nov 2026 14:29).
+    lines = panel_fence_bom(
+        sides_m=sides_m, panel_height_cm=panel_height_cm, closed=closed, post_type=post_type
+    )
+    assert Item.BRACE_T_POST not in quantities(lines)
+    assert Item.POST_T not in quantities(lines)
+    assert not any("potporn" in line.name.lower() for line in lines)

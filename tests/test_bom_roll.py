@@ -218,21 +218,75 @@ def test_foot_plate_fence_125cm_with_a_corner_gets_two_125cm_t_posts_as_braces()
     assert brace.price_from == PriceRef(item=Item.POST_T, size="125 cm")
 
 
-@pytest.mark.parametrize("roll_height_cm", [60, 80, 100])
-def test_short_foot_plate_fence_brace_is_on_request_with_no_size_and_no_price_pending_toni(
-    roll_height_cm: int,
-) -> None:
-    # Foot-plate fence 80 cm, 1 corner -> "potporni stupovi – na upit", 2 pieces. No T-post
-    # is shorter than 120 cm, so "the same height" doesn't exist: never guess one.
-    brace = line_for(
-        bom([10, 10], roll_height_cm=roll_height_cm, post_model=FOOT_PLATE), Item.BRACE_T_POST
+# The products the sync has with a price, as the caller passes them: PriceRefs only.
+T_POST_100_CM = PriceRef(item=Item.POST_T, size="100 cm")
+SYNCED_WITHOUT_100_CM = frozenset({PriceRef(item=Item.POST_T, size="120 cm")})
+SYNCED_WITH_100_CM = SYNCED_WITHOUT_100_CM | {T_POST_100_CM}
+
+
+def short_foot_plate_brace(
+    roll_height_cm: int, synced_products: frozenset[PriceRef] | None = None
+) -> BomLine:
+    kwargs = {} if synced_products is None else {"synced_products": synced_products}
+    result = roll_fence_bom(
+        sides_m=[10, 10], roll_height_cm=roll_height_cm, post_model=FOOT_PLATE, **kwargs
     )
+    return line_for(result, Item.BRACE_T_POST)
+
+
+@pytest.mark.parametrize("roll_height_cm", [60, 80, 100])
+@pytest.mark.parametrize("synced_products", [None, frozenset(), SYNCED_WITHOUT_100_CM])
+def test_short_foot_plate_brace_is_100cm_on_request_until_the_variant_is_synced(
+    roll_height_cm: int, synced_products: frozenset[PriceRef] | None
+) -> None:
+    # Foot-plate fence 80 cm, 1 corner -> "potporni stup 100 cm – cijena na upit",
+    # 2 pieces, size 100 cm, no price (Toni 26 Nov 14:29; the variant isn't on OLX yet).
+    brace = short_foot_plate_brace(roll_height_cm, synced_products)
     assert brace.quantity == 2
-    assert brace.label == "potporni stupovi – na upit"
-    assert brace.size is None
-    assert "cm" not in brace.name
+    assert brace.size == "100 cm"
+    # Same name as once synced, so a cart sees one product; the label carries the status.
+    assert brace.name == "Potporni T-stup 100 cm"
+    assert brace.label == "potporni stup 100 cm – cijena na upit"
     assert brace.unit_price_on_request
     assert brace.price_from is None
+
+
+@pytest.mark.parametrize("roll_height_cm", [60, 80, 100])
+def test_short_foot_plate_brace_takes_the_synced_100cm_t_post_price(roll_height_cm: int) -> None:
+    brace = short_foot_plate_brace(roll_height_cm, SYNCED_WITH_100_CM)
+    assert brace.quantity == 2
+    assert brace.size == "100 cm"
+    assert brace.name == "Potporni T-stup 100 cm"
+    assert brace.label is None
+    assert not brace.unit_price_on_request
+    # The price is looked up from the 100 cm variant of T-post 59473597, never stored here.
+    assert brace.price_from == T_POST_100_CM
+
+
+def test_short_foot_plate_brace_count_follows_corners_and_strainers() -> None:
+    result = roll_fence_bom(
+        sides_m=[30, 10, 10, 10], roll_height_cm=80, post_model=FOOT_PLATE, closed=True
+    )
+    # 4 corners + 1 strainer (inside the 30 m side) -> 2 × 5 = 10.
+    assert line_for(result, Item.BRACE_T_POST).quantity == 10
+
+
+def test_synced_products_dont_change_tall_fence_braces() -> None:
+    result = roll_fence_bom(
+        sides_m=[10, 10],
+        roll_height_cm=125,
+        post_model=FOOT_PLATE,
+        synced_products=SYNCED_WITH_100_CM,
+    )
+    brace = line_for(result, Item.BRACE_T_POST)
+    assert brace.price_from == PriceRef(item=Item.POST_T, size="125 cm")
+
+
+def test_t_post_fence_never_gets_a_100cm_brace() -> None:
+    result = roll_fence_bom(
+        sides_m=[10, 10], roll_height_cm=80, post_model=T_POST, synced_products=SYNCED_WITH_100_CM
+    )
+    assert line_for(result, Item.BRACE_T_POST).size == "120 cm"
 
 
 # --- tensioners -------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 Every rule here comes from docs/domain/fence-rules.md, "Welded roll fence" (Toni, Martom
 owner, and Tomislav, 26 Nov 2026), including the suggested tension-wire add-on and the
-"na upit" braces for short foot-plate fences.
+100 cm support T-posts for short foot-plate fences.
 If this file and fence-rules.md disagree, fence-rules.md wins. The functions return
 quantities only: prices come from the synced OLX data (or, for products without a
 listing, from manual_products.toml) when the list is shown.
@@ -15,7 +15,7 @@ asking for it raises RulesPendingError instead of applying the welded-roll rules
 # ruff: noqa: RUF001, RUF003
 
 import math
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -83,9 +83,11 @@ STRAINER_SPACING_CM = 2500
 
 # fence-rules.md, "Bracing": 2 support T-posts per strainer and per corner post.
 BRACES_PER_STRAINER = 2
-# fence-rules.md, "Bracing": a foot-plate fence shorter than the shortest T-post gets a
-# brace line with the count only: no size, no price, never a guessed height.
-BRACE_ON_REQUEST_LABEL = "potporni stupovi – na upit"
+# fence-rules.md, "Bracing" (Toni, 26 Nov 2026 14:29): foot-plate fences at 60, 80 and
+# 100 cm are braced with support T-posts 100 cm. That variant of T-post 59473597 isn't on
+# OLX yet: until the sync has it, the line shows count and size but no price.
+SHORT_BRACE_HEIGHT_CM = 100
+SHORT_BRACE_ON_REQUEST_LABEL = "potporni stup 100 cm – cijena na upit"
 
 # fence-rules.md, "Accessories": tensioners per side, 3 per started 25 m.
 TENSIONERS_PER_STRETCH = 3
@@ -126,6 +128,7 @@ def roll_fence_bom(
     closed: bool = False,
     requested_spacing_m: Decimal | int | float | str | None = None,
     mesh: RollMesh | str = RollMesh.WELDED,
+    synced_products: Collection[PriceRef] | None = None,
 ) -> RollFenceBom:
     """Return the materials list for one welded roll fence.
 
@@ -137,11 +140,19 @@ def roll_fence_bom(
     - Posts: every 2 m, ceil(side / 2 m) + 1 per side; a corner post is shared, so
       posts = Σ(per side) - corners. Strainers (every 25 m inside a side, and every
       corner) replace line posts, so they don't change the count.
-    - Support T-posts: 2 per strainer and per corner post, as tall as the post they brace.
-      The two free end posts get none (pending Toni).
+    - Support T-posts: 2 per strainer and per corner post, as tall as the post they brace;
+      a 60, 80 or 100 cm foot-plate fence gets 100 cm support T-posts. The two free end
+      posts get none (pending Toni).
     - Tensioners: 3 per started 25 m, counted per side.
     - Foot-plate posts: 3 M8x70 anchors each.
     - Tension wire: only in `wire_addon`, never in `lines`.
+
+    `synced_products` holds the products the sync has with a real price, as the same
+    PriceRef a line's `price_from` points at (sizes in the "<n> cm" form). The caller
+    includes a product only when its synced variant is active and priced. Only the 100 cm
+    brace is checked against it; the other T-post heights are listed variants
+    (fence-rules.md). Without the 100 cm T-post in it, that brace line is "cijena na upit".
+    The BOM never receives or copies a price.
 
     Raises RulesPendingError for chain link. Raises FenceTooLargeError (a ValueError) for
     a side over 300 m or a total over 1000 m, and ValueError for any other bad input.
@@ -193,7 +204,7 @@ def roll_fence_bom(
             )
         )
     if braces:
-        lines.append(_brace_line(post_height_cm, braces))
+        lines.append(_brace_line(post_height_cm, braces, synced_products or ()))
     lines.append(BomLine(item=Item.TENSIONER, name="Zatezač (španer)", quantity=tensioners))
     if post_model == RollPostModel.FOOT_PLATE:
         lines.append(
@@ -212,25 +223,34 @@ def roll_fence_bom(
     )
 
 
-def _brace_line(braced_post_height_cm: int, braces: int) -> BomLine:
-    if braced_post_height_cm not in T_POST_HEIGHTS_CM:
-        # A 60/80/100 cm foot-plate post: no T-post is that short. Count only.
+def _brace_line(
+    braced_post_height_cm: int, braces: int, synced_products: Collection[PriceRef]
+) -> BomLine:
+    if braced_post_height_cm in T_POST_HEIGHTS_CM:
+        # Braces are T-posts (OLX 59473597) as tall as the post they brace.
+        brace_height_cm = braced_post_height_cm
+    else:
+        # A 60/80/100 cm foot-plate post: no T-post is that short, so Toni's 100 cm.
+        brace_height_cm = SHORT_BRACE_HEIGHT_CM
+    size = f"{brace_height_cm} cm"
+    price_ref = PriceRef(item=Item.POST_T, size=size)
+    if brace_height_cm == SHORT_BRACE_HEIGHT_CM and price_ref not in synced_products:
+        # The 100 cm variant isn't synced yet: count and size, no price.
         return BomLine(
             item=Item.BRACE_T_POST,
-            name="Potporni stupovi",
+            name=f"Potporni T-stup {size}",
             quantity=braces,
+            size=size,
             unit_price_on_request=True,
-            label=BRACE_ON_REQUEST_LABEL,
+            label=SHORT_BRACE_ON_REQUEST_LABEL,
         )
-    # Braces are T-posts (OLX 59473597) as tall as the post they brace, priced as that
-    # T-post, but a separate line so the customer can remove them.
-    size = f"{braced_post_height_cm} cm"
+    # Priced as that T-post, but a separate line so the customer can remove it.
     return BomLine(
         item=Item.BRACE_T_POST,
         name=f"Potporni T-stup {size}",
         quantity=braces,
         size=size,
-        price_from=PriceRef(item=Item.POST_T, size=size),
+        price_from=price_ref,
     )
 
 
