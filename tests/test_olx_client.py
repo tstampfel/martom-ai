@@ -6,6 +6,7 @@ monotonic clock forward instead of waiting.
 """
 
 import asyncio
+import logging
 import math
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -14,7 +15,13 @@ from itertools import pairwise
 import httpx
 import pytest
 
-from martom.olx.client import OlxApiError, OlxClient, RateLimiter, parse_retry_after
+from martom.olx.client import (
+    OlxApiError,
+    OlxClient,
+    OlxRateLimitAbortError,
+    RateLimiter,
+    parse_retry_after,
+)
 
 # The anyio pytest plugin (an explicit dev dependency) runs `async def` tests on asyncio.
 pytestmark = pytest.mark.anyio
@@ -354,41 +361,144 @@ async def test_retry_after_longer_than_the_cap_raises_instead_of_waiting() -> No
     assert len(server.starts) == 1
 
 
-@pytest.mark.parametrize(
-    "retry_after",
-    [
-        "3600",
-        "99999999999",  # about 3,170 years
-        "9" * 400,  # float() turns this into inf
-        "Fri, 31 Dec 9999 23:59:59 GMT",  # an HTTP date far in the future
-    ],
-)
-async def test_giving_up_on_a_long_retry_after_pauses_later_requests_up_to_the_cap(
-    retry_after: str, caplog: pytest.LogCaptureFixture
+async def test_giving_up_honours_a_retry_after_up_to_the_ceiling_in_full(
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     clock = FakeClock()
-    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": retry_after}), ok()])
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "3600"}), ok()])
 
+    # The call gives up (3600 s > the 300 s it will wait), but the limiter still waits
+    # the full hour OLX asked for before anyone sends the next request.
     async with make_client(clock, server, max_retry_after_seconds=300.0) as client:
         with pytest.raises(OlxApiError):
             await client.get_listing(1)
         await client.get_listing(2)  # e.g. the sync moving on to the next category
 
-    # Later requests wait the full cap, but are never blocked for longer than it.
-    assert gaps(server.starts) == [300.0]
-    assert "giving up; limiter paused 300.0 s" in caplog.text
+    assert gaps(server.starts) == [3600.0]
+    assert "giving up; limiter paused 3600.0 s" in caplog.text
+    assert "ceiling" not in caplog.text
 
 
-async def test_giving_up_on_the_last_attempt_also_caps_the_pause() -> None:
+async def test_retry_after_120_is_honoured_and_retried() -> None:
     clock = FakeClock()
-    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "9" * 400}), ok()])
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "120"}), ok({"id": 1})])
 
-    async with make_client(clock, server, max_attempts=1, max_retry_after_seconds=300.0) as client:
-        with pytest.raises(OlxApiError):
+    async with make_client(clock, server) as client:
+        body = await client.get_listing(1)
+
+    assert body == {"id": 1}
+    assert gaps(server.starts) == [120.0]
+
+
+@pytest.mark.parametrize(
+    "retry_after",
+    [
+        "86400",  # one day
+        "3601",  # just above the 3600 s ceiling
+        "99999999999",  # about 3,170 years
+        "9" * 400,  # float() turns this into inf
+        "Fri, 31 Dec 9999 23:59:59 GMT",  # an HTTP date far in the future
+        "inf",  # not a valid Retry-After at all
+        "soon",  # garbage
+        "-5",  # negative is not allowed by the HTTP spec
+        "Sat, 01 Jan 10000 00:00:00 GMT",  # beyond what datetime can hold
+    ],
+)
+async def test_absurd_or_garbage_retry_after_aborts(
+    retry_after: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": retry_after}), ok()])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxRateLimitAbortError) as caught:
             await client.get_listing(1)
-        await client.get_listing(2)
 
-    assert gaps(server.starts) == [300.0]
+    assert caught.value.status_code == 429
+    assert len(server.starts) == 1
+    assert clock.sleeps == []  # it raised at once, it did not sleep
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
+    assert "aborting" in errors[0].getMessage()
+
+
+async def test_after_an_abort_later_calls_refuse_without_contacting_olx() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "86400"}), ok()])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxRateLimitAbortError):
+            await client.get_listing(1)
+        with pytest.raises(OlxRateLimitAbortError):
+            await client.get_shop_listings()
+
+    assert len(server.starts) == 1
+
+
+async def test_an_abort_also_stops_other_clients_sharing_the_limiter() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "inf"}), ok()])
+    limiter = RateLimiter(1.3, clock=clock.monotonic, sleep=clock.sleep)
+
+    async with (
+        make_client(clock, server, rate_limiter=limiter) as first,
+        make_client(clock, server, rate_limiter=limiter) as second,
+    ):
+        with pytest.raises(OlxRateLimitAbortError):
+            await first.get_listing(1)
+        with pytest.raises(OlxRateLimitAbortError):
+            await second.get_listing(2)
+
+    assert len(server.starts) == 1
+
+
+async def test_abort_while_a_caller_is_waiting_stops_that_caller() -> None:
+    clock = FakeClock()
+    limiter = RateLimiter(1.3, clock=clock.monotonic, sleep=clock.sleep)
+    await limiter.wait()
+
+    waiter = asyncio.create_task(limiter.wait())
+    await asyncio.sleep(0)  # the waiter is now sleeping towards its slot
+    limiter.abort("test")
+
+    with pytest.raises(OlxRateLimitAbortError):
+        await waiter
+
+
+async def test_abort_also_applies_to_5xx_retry_after() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(503, headers={"Retry-After": "86400"}), ok()])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxRateLimitAbortError) as caught:
+            await client.get_listing(1)
+
+    assert caught.value.status_code == 503
+
+
+async def test_rate_limit_abort_is_an_olx_api_error() -> None:
+    assert issubclass(OlxRateLimitAbortError, OlxApiError)
+
+
+async def test_limiter_ceiling_is_configurable() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "700"}), ok()])
+
+    async with make_client(clock, server, max_limiter_pause_seconds=600.0) as client:
+        with pytest.raises(OlxRateLimitAbortError):
+            await client.get_listing(1)
+
+
+async def test_over_cap_error_keeps_the_original_error_as_its_cause() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "3600"})])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxApiError) as caught:
+            await client.get_listing(1)
+
+    assert isinstance(caught.value.__cause__, OlxApiError)
+    assert caught.value.__cause__.status_code == 429
 
 
 async def test_giving_up_on_the_last_attempt_logs_the_pause(
@@ -531,18 +641,30 @@ async def test_connection_error_is_retried() -> None:
         (" 12 ", 12.0),
         ("Thu, 26 Nov 2026 12:00:20 GMT", 20.0),
         ("Thu, 26 Nov 2026 11:59:00 GMT", 0.0),  # a date in the past means "now"
-        ("-5", None),
-        ("soon", None),
-        ("²", None),  # str.isdigit() is True for superscripts, but float() rejects them
-        ("9" * 400, math.inf),  # absurd, but the client caps how long it pauses
+        ("9" * 400, math.inf),  # valid syntax, absurd value: the client aborts on it
         (
             "Fri, 31 Dec 9999 23:59:59 GMT",
             (datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC) - FIXED_NOW).total_seconds(),
         ),
-        ("Sat, 01 Jan 10000 00:00:00 GMT", None),  # past datetime's range: invalid
-        ("", None),
-        (None, None),
+        (None, None),  # no header: the client falls back to exponential backoff
     ],
 )
 def test_parse_retry_after(header: str | None, expected: float | None) -> None:
     assert parse_retry_after(header, now=FIXED_NOW) == expected
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "-5",
+        "soon",
+        "inf",
+        "²",  # str.isdigit() is True for superscripts, but float() rejects them
+        "Sat, 01 Jan 10000 00:00:00 GMT",  # past datetime's range
+        "",
+        "   ",
+    ],
+)
+def test_parse_retry_after_rejects_garbage(header: str) -> None:
+    with pytest.raises(ValueError, match="Retry-After"):
+        parse_retry_after(header, now=FIXED_NOW)
