@@ -1,9 +1,11 @@
 // All customer-facing Bosnian text lives here, so wording can be reviewed
 // and changed in one place. Text comes from docs/mockups/.
 
+import { config } from './config'
+
 const shop = {
   name: 'Željezarija Martom',
-  phone: '036 651 427',
+  phone: config.shopPhone,
   email: 'zeljezarija@martom-bekaert.com',
   address: 'Krstine 106, Međugorje',
   hours: 'Pon–pet 07–16 · sub 07–14',
@@ -36,7 +38,61 @@ export const copy = {
     eyebrowShort: 'AI savjetnik',
     title: ['Recite šta ograđujete.', 'Mi složimo cijeli popis.'],
     titleShort: 'Recite šta ograđujete. Mi složimo popis.',
-    lead:'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.',
+    lead: 'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.',
+  },
+  start: {
+    inputLabel: 'Vaše pitanje',
+    submit: 'Pitaj',
+    // The placeholder types these one after another (docs/PLAN.md, Customer experience).
+    // With prefers-reduced-motion the first one is shown without animation.
+    examples: [
+      'Treba mi 25 m ograde za dvorište, visina 1,5 m',
+      'Ograda za kokoši, 20 metara',
+      'Šta sve treba za panelnu ogradu?',
+      'Brusilica 125 mm za metal',
+    ],
+    chipsLabel: 'Brzi početak',
+    // `message` is the customer's first chat message. `short` is the phone
+    // label; `wideOnly` chips are hidden on phones (docs/mockups/mobile/1-start.html).
+    chips: [
+      { label: 'Dvorište', message: 'Dvorište' },
+      { label: 'Kokoši i životinje', short: 'Kokoši', message: 'Kokoši i životinje' },
+      { label: 'Njiva i vinograd', message: 'Njiva i vinograd' },
+      { label: 'Balkon', message: 'Balkon' },
+      { label: 'Gabioni', wideOnly: true, message: 'Gabioni' },
+      { label: 'Alat i ostalo', message: 'Alat i ostalo' },
+    ],
+  },
+  // A static illustration of what the advisor does; the real steps stream in
+  // from the API in the chat (M5-3). The mockups label it "uživo" (live); a
+  // static card says "primjer" (example) so it doesn't claim to be live.
+  agentCard: {
+    title: 'Savjetnik radi',
+    badge: 'primjer',
+    quote: '„25 m ograde za dvorište, visina oko 1,5 m”',
+    steps: [
+      { state: 'done', text: 'Razumijem: 25 m · dvorište · 150 cm', short: 'Razumijem: 25 m · dvorište · 150 cm' },
+      { state: 'done', text: 'Pregledao 39 ograda i 12 vrsta stupova', short: 'Pregledao 39 ograda' },
+      { state: 'working', text: 'Računam panele, stupove i obujmice', short: 'Računam panele i stupove' },
+    ],
+  },
+  howItWorks: {
+    label: 'Kako radi',
+    steps: [
+      { title: 'Opišite šta trebate', text: 'Dužina, visina i za šta je ograda. Savjetnik pita samo ono što fali.' },
+      { title: 'Dobijete popis materijala', text: 'Paneli, stupovi i pribor s količinama i okvirnom cijenom.' },
+      {
+        title: 'Pošaljete jednim klikom',
+        text: 'Narudžba ide Martomu preko WhatsAppa; potvrda stanja, cijene i dostave obično isti dan.',
+      },
+    ],
+  },
+  // Placeholder chat until M5-3 builds the real one.
+  chat: {
+    label: 'Razgovor sa savjetnikom',
+    you: 'Vi',
+    pending: 'Savjetnik će uskoro odgovarati ovdje.',
+    back: 'Novo pitanje',
   },
   about: {
     label: 'O Martomu',

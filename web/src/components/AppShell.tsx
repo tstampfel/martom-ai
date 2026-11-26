@@ -7,11 +7,10 @@ import './AppShell.css'
 
 const phoneHref = telHref(copy.shop.phone)
 
-// Until our own category pages exist, the category links open Martom's OLX shop.
-const OLX_SHOP_URL = 'https://martom.olx.ba'
-
 type AppShellProps = {
   children: ReactNode
+  /** Starts a chat about a category picked in the header. */
+  onStartChat: (text: string) => void
   cartCount?: number
 }
 
@@ -21,7 +20,7 @@ type AppShellProps = {
  * and the shop hours and phone number move to the footer, as in
  * docs/mockups/mobile/.
  */
-export function AppShell({ children, cartCount = 0 }: AppShellProps) {
+export function AppShell({ children, onStartChat, cartCount = 0 }: AppShellProps) {
   return (
     <div className="shell">
       <div className="top-strip" data-testid="top-strip">
@@ -42,10 +41,11 @@ export function AppShell({ children, cartCount = 0 }: AppShellProps) {
             <img className="site-header__logo" src={logo} alt={copy.header.logoAlt} width={992} height={304} />
           </a>
           <nav className="site-header__nav" aria-label={copy.header.navLabel}>
+            {/* Each category starts a chat about it, like the quick-start chips. */}
             {copy.header.nav.map((item) => (
-              <a key={item} href={OLX_SHOP_URL}>
+              <button key={item} type="button" className="site-header__category" onClick={() => onStartChat(item)}>
                 {item}
-              </a>
+              </button>
             ))}
           </nav>
           <div className="site-header__actions">

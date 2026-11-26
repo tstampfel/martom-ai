@@ -66,7 +66,18 @@
   font-weight: 600;
 }
 
-.site-header__nav a:hover {
+.site-header__category {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  /* Keeps a 44 px tap height without changing the row's look. */
+  min-height: var(--touch-target);
+}
+
+.site-header__category:hover {
   color: var(--color-red);
 }
 
@@ -88,10 +99,6 @@
 .icon-button--outline {
   border: 1px solid var(--color-border-strong);
   color: var(--color-ink);
-}
-
-.site-header__call {
-  display: none;
 }
 
 .cart-button {
@@ -171,10 +178,6 @@
 
   .site-header__nav {
     display: none;
-  }
-
-  .site-header__call {
-    display: flex;
   }
 
   .cart-button {
