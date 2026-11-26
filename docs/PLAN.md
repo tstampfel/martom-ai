@@ -158,9 +158,9 @@ Mobile-first, Bosnian UI, Martom's visual identity: the real "ŽELJEZARIJA MARTO
 **Flow**
 
 1. **Start:** logo, one large input whose placeholder types an example letter by letter, erases it, then types the next ("Treba mi 25 m ograde za dvorište, visina 1,5 m", "Ograda za kokoši, 20 metara", "Šta sve treba za panelnu ogradu?", "Brusilica 125 mm za metal"), quick-start chips (Dvorište · Kokoši i životinje · Njiva i vinograd · Balkon · Gabioni · Alat i ostalo), and an always-visible phone button for people who would rather talk to Toni.
-2. **Clarify:** the advisor asks only what's missing, as tappable chips (colour, number of corners when the layout is unclear, gate yes/no, length or height if not given; base-plate posts are the default, posts for concrete only "po narudžbi"). On web, a "Vaš projekt" panel fills in as answers arrive.
+2. **Clarify:** the advisor asks only what's missing, as tappable chips (colour, number of corners and the length of each side when the layout has corners, length or height if not given; no gate question (gates are out of scope: "Za kapije se javite direktno Martomu"); base-plate posts are the default, posts for concrete only "po narudžbi"). On web, a "Vaš projekt" panel fills in as answers arrive.
 3. **Recommend:** 1–3 product cards (photo, name, why it fits, variant picker for height/colour, price per unit, link to the OLX listing).
-4. **Materials list:** a BOM card with every line (panels, base-plate posts, PVC clips, anchors; "po narudžbi" lines show their lead time, e.g. "po narudžbi, 10–15 dana"; lines without a confirmed price and gate lines show "cijena na upit"; stock products show "dostupno"), quantities the customer can adjust, an estimated total in KM, and the note "Cijene informativne, dostava se potvrđuje". One tap adds everything to our own cart (korpa), which also takes single products found by search.
+4. **Materials list:** a BOM card with every line (panels, base-plate posts, PVC clips, anchors; "po narudžbi" lines show their lead time, e.g. "po narudžbi, 10–15 dana"; lines without a confirmed price show "cijena na upit"; accessories are removable lines; every BOM shows "Ponuda je informativnog karaktera – pribor možete izbaciti ako ga već imate."; stock products show "dostupno"), quantities the customer can adjust, an estimated total in KM, and the note "Cijene informativne, dostava se potvrđuje". One tap adds everything to our own cart (korpa), which also takes single products found by search.
 5. **Order request:** form with the same fields as martomshop.ba (ime i prezime, telefon, dostava/lično preuzimanje, adresa, napomena, consent). One button, "Pošalji narudžbu", opens WhatsApp with the order pre-filled to the owner's number; the customer only presses send.
 6. **Confirmation:** "Hvala! Zahtjev je kod Martoma" with what happens next and the message that was sent.
 
@@ -213,8 +213,9 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 
 | ID | Issue | Done when |
 | --- | --- | --- |
-| M4-1 | BOM calculator: panel system (panels, base-plate posts, PVC clips and anchors by height, corners, gate and "po narudžbi" lines) | Unit tests for 10 m, 25 m, corners, partial panels; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
-| M4-2 | BOM calculator: roll mesh, pletivo, chain link (posts every 2 m, shared corner posts, tension wire, tensioners, ties) | Unit tests per system |
+| M4-1 | BOM calculator: panel system (panels, base-plate posts, PVC clips and anchors by height, corners and "po narudžbi" lines; no gate line) | Unit tests for 10 m, 25 m, corners, partial panels; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
+| M4-2 | BOM calculator: welded roll fence (posts every 2 m, shared corner posts, strainers and braces, tensioners, optional tension wire, foot-plate anchors and wire holders) | Unit tests; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
+| M4-2b | BOM calculator: chain link / pletivo (rules pending Toni) | Unit tests; Toni's rules |
 | M4-3 | LangGraph graph: guardrail (in scope = anything Martom sells), clarify, retrieve, grade, rewrite (max 2), generate + tools, grounding check; Postgres checkpointer | Graph tests with a fake LLM; every node traced in LangSmith |
 | M4-4 | `POST /api/chat` SSE with typed events: token, chips, product_cards, bom, error | Event contract documented; first token < 2 s locally |
 | M4-5 | Agent evals in CI: 20 scripted conversations, LLM judge for Bosnian quality and grounding | PR fails on regression |
@@ -226,7 +227,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 | M5-1 | React + TS (Vite) app, design tokens from the mockups, Bosnian copy | Matches mockups on 360 px and 1280 px |
 | M5-2 | Start screen: logo, typing/erasing placeholder, quick chips, call button | Placeholder types, pauses, erases and cycles; chips start a chat |
 | M5-3 | Chat: streaming, clarify chips, product cards with variant picker | Works with the M4-4 SSE contract |
-| M5-4 | BOM card: editable quantities, live total, "cijene informativne" note | Quantity edits recalc via API, never in the browser alone |
+| M5-4 | BOM card: editable quantities, removable accessory lines, live total, "Ponuda je informativnog karaktera – pribor možete izbaciti ako ga već imate." note | Quantity edits recalc via API, never in the browser alone |
 | M5-5 | Our own cart (korpa, kept in the browser) + order form + confirmation; `order_request` table; resume of the LangGraph interrupt | Order stored with BOM snapshot |
 | M5-6 | "Pošalji narudžbu" opens WhatsApp (wa.me link) with a pre-filled message; owner number from env | A test order from a phone arrives on Tomislav's WhatsApp, readable and complete |
 | M5-7 | Abuse protection: Cloudflare Turnstile, rate limits per IP/session, token cap per conversation | Load test can't exceed the cost cap |
@@ -283,9 +284,10 @@ Expect roughly **$45–80 per month** at launch traffic (a few hundred conversat
 The rest of the roll-fence rules block M4-2 and the customer questions block M3-1. The rest can wait until their milestone.
 
 - [x] **Toni: panel fence rules** — answered 26 Nov 2026, written up in [`docs/domain/fence-rules.md`](domain/fence-rules.md): base-plate post per panel height, PVC clips and anchors per post, corners (one post, double clips), concrete-in-soil posts only "po narudžbi" with no price. Unblocks M4-1.
-- [ ] **Toni: gate sizes and prices** — gates are answered as a rule (separate product, "Kapija – cijena na upit", never a calculated price), but the data is pending. Not blocking.
+- [x] **Toni: gates** — 26 Nov 2026: out of scope for now. No BOM line; the advisor says "Za kapije se javite direktno Martomu: 036 651 427".
 - [x] **Toni: roll-fence posts and spacing** — answered 26 Nov 2026 in `fence-rules.md`: T-post (OLX 59473597) for soil or concrete, foot-plate post 40 × 40 for a wall or base, posts every 2 m, corner posts shared.
-- [ ] **Toni: rest of the roll-fence rules** — mostly answered 26 Nov 2026 (rolls are 25 m; T-post ≥ roll + 30 cm; strainer posts every 25 m and at corners; 3 M8×70 anchors per foot-plate post; optional tension wire, 2 or 3 rows, 2,70 mm, ceil(rows × length / 100) coils). Still open: strainer extra or replacing, strainer listing and brace, support T-posts, tensioners at corners, the M8×70 listing, and whether pletivo and chain link follow the same rules. See "Still open" in `fence-rules.md`. Blocks M4-2.
+- [x] **Toni: welded roll-fence rules** — answered 26 Nov 2026 (13:10–13:32), see `fence-rules.md`. Small items still pending (end-post braces, braces for 60–100 cm foot-plate fences, wire holders per row) don't block M4-2.
+- [ ] **Toni: chain link / pletivo rules** — different rules and posts, pending. Blocks M4-2b.
 - [x] **Toni: move the foot-plate post listing (81645615) to "Ograde"** — answered 26 Nov 2026: Toni can't change categories (he'll call OLX). 81645615 and the tensioner 18129143 stay on the explicit sync allowlist (#45).
 - [x] **Toni: the 905,10 KM reference example** — 250 cm panels; the line-by-line breakdown is in `fence-rules.md`, checked against OLX on 26 Nov 2026.
 - [ ] **Toni: 50 real customer questions** with the products he would sell for each (35 fence, 15 other). Blocks M3-1.
