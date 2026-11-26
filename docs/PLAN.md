@@ -294,4 +294,4 @@ Roll-fence posts block M4-2 and the customer questions block M3-1. The rest can 
 
 ## How the work is run
 
-The agent team is defined in `docs/agents/` (`manager.md`, `employee.md`, `reviewer.md`) and started with the kickoff prompt (`CLAUDE_CODE_KICKOFF.md`). Tomislav runs only the manager; it starts ready issues on its own, one employee per issue in a separate git worktree (max 3 at once), has a reviewer check each branch before the PR opens (local PASS/FAIL report, at most 2 rounds), and reports when a PR is open with green CI. Only Tomislav merges.
+The agent team is defined in `docs/agents/` (`manager.md`, `employee.md`, `reviewer.md`) and started with the kickoff prompt (`CLAUDE_CODE_KICKOFF.md`). Tomislav runs only the manager; it starts ready issues on its own, one employee per issue in a separate git worktree (max 3 at once), has a reviewer check each branch before the PR opens (local PASS/FAIL report, at most 3 rounds), and reports when a PR is open with green CI. Only Tomislav merges.

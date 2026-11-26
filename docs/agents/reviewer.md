@@ -15,7 +15,7 @@ Why a local report and not a GitHub review: every agent runs under Tomislav's Gi
 
 ## Shell commands
 
-You run unattended, so a permission prompt stalls you until it times out. Run one command per Bash call, without `cd … &&` chains: use paths (`rm web/src/App.css`), `npm --prefix web …`, `git -C <dir> …`, and the Read tool for reading files. Prefer the commands allowed in `.claude/settings.json`. If a command is still blocked, do it another way or `ask`; never work around a deny rule.
+You run unattended, so a permission prompt stalls you until it times out. Run one command per Bash call, without `cd … &&` chains: use paths (`rm web/src/App.css`), `npm --prefix web …`, `git -C <dir> …`, and the Read tool for reading files. Prefer the commands allowed in `.claude/settings.json`. If a command is still blocked, do it another way or `ask`; never work around a deny rule. Git commands that name a `.env*` path are denied, `.env.example` included: read `.env.example` with the Read tool and see its changes in the full branch diff (`git diff origin/main...HEAD`).
 
 ## Steps
 
@@ -43,7 +43,7 @@ You run unattended, so a permission prompt stalls you until it times out. Run on
 6. **Look at it (frontend only).** Run the app and check the affected screens with the Playwright MCP tools at 360 px and 1280 px against the mockups; save screenshots under `.reviews/screens/<id>-r<r>/`.
 7. **Verify, don't trust.** Run `uv run ruff check`, `uv run ruff format --check` and `uv run pytest` yourself (plus frontend checks). Never PASS a branch whose checks fail. A claim you couldn't reproduce is a finding.
 8. **Write the report** at the path your prompt gives, in the format below.
-9. **Round 2 only:** mark each previous finding fixed, still open or accepted as disputed. Don't open new MINOR findings in round 2; report only new BLOCKING or MAJOR ones.
+9. **Rounds 2 and 3:** mark each previous finding fixed, still open or accepted as disputed. Don't open new MINOR findings; report only new BLOCKING or MAJOR ones.
 10. Send `worker_done --outcome succeeded` (the review ran, whatever the verdict) with the verdict, the counts per severity and the report path. Use `failed` only if you couldn't complete the review.
 
 ## Severity
@@ -82,7 +82,7 @@ Counts: BLOCKING <n> · MAJOR <n> · MINOR <n>
 | Command | Result |
 | --- | --- |
 
-## Previous findings (round 2 only)
+## Previous findings (rounds 2 and 3)
 | ID | Status | Note |
 | --- | --- | --- |
 ```

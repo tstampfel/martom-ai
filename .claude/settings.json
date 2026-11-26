@@ -51,6 +51,7 @@
       "Bash(cat *.env*)",
       "Bash(git diff *.env*)",
       "Bash(git log *.env*)",
+      "Bash(git show *.env*)",
       "Bash(gh pr merge:*)",
       "Bash(gh pr review * --approve*)",
       "Bash(gh repo edit:*)",
