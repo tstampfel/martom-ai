@@ -285,9 +285,9 @@ The rest of the roll-fence rules block M4-2 and the customer questions block M3-
 - [x] **Toni: panel fence rules** — answered 26 Nov 2026, written up in [`docs/domain/fence-rules.md`](domain/fence-rules.md): base-plate post per panel height, PVC clips and anchors per post, corners (one post, double clips), concrete-in-soil posts only "po narudžbi" with no price. Unblocks M4-1.
 - [ ] **Toni: gate sizes and prices** — gates are answered as a rule (separate product, "Kapija – cijena na upit", never a calculated price), but the data is pending. Not blocking.
 - [x] **Toni: roll-fence posts and spacing** — answered 26 Nov 2026 in `fence-rules.md`: T-post (OLX 59473597) for soil or concrete, foot-plate post 40 × 40 for a wall or base, posts every 2 m, corner posts shared.
-- [ ] **Toni: rest of the roll-fence rules** — fence height → post height, accessories (tension wire, tensioners, ties) and quantities, anchors per foot-plate post, and whether pletivo and chain link follow the same rules. Blocks M4-2.
-- [ ] **Toni: move the foot-plate post listing to "Ograde"** — it sits in "Oprema/pribor za stolariju"; until then the sync uses an explicit listing allowlist (#45). Not blocking.
-- [ ] **Toni: the 905,10 KM reference example** — which panel width and line items make up the 25 m / 153 cm total in `fence-rules.md`. Needed before the M4-1 fixture is final.
+- [ ] **Toni: rest of the roll-fence rules** — fence height → post height, tension wire quantity rule, anchor type for the foot-plate post, and whether pletivo and chain link follow the same rules (tensioners answered: 3 per started 25 m). Blocks M4-2.
+- [ ] **Toni: move the foot-plate post listing (81645615) to "Ograde"** — it sits in "Oprema/pribor za stolariju" (category 876); until then the sync uses an explicit listing allowlist (#45). Not blocking.
+- [x] **Toni: the 905,10 KM reference example** — 250 cm panels; the line-by-line breakdown is in `fence-rules.md`, checked against OLX on 26 Nov 2026.
 - [ ] **Toni: 50 real customer questions** with the products he would sell for each (35 fence, 15 other). Blocks M3-1.
 - [ ] **Toni: fix the listing errors** from the 26 Nov audit (panel 153 × 2500 cm, "Korišteno" items, wrong materials). Not blocking, but the advisor is only as good as the listings.
 - [x] **Order number** — decided: orders go to Tomislav's own number while testing, set only as the `ORDER_PHONE` env var / GitHub secret, never in the repo. Switch to Toni's number at launch (M6-4).
