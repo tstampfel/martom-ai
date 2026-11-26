@@ -105,7 +105,10 @@ jobs:
 
       # Compares against the PR base, or the previous main commit on push. When there is
       # nothing to compare with (new branch, force push), the frontend job runs anyway.
-      - name: Did web/ or this workflow change?
+      # The chat event contract counts as frontend input too: web/src/api/events.test.ts
+      # checks events.ts and the fixtures against docs/api/chat-events.schema.json, which
+      # is generated from src/martom/api/chat_events.py.
+      - name: Did web/, the chat event contract or this workflow change?
         id: filter
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -113,15 +116,16 @@ jobs:
           if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             echo "No base commit to compare with; running the frontend job."
             echo "web=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BASE_SHA" HEAD -- web .github/workflows/ci.yml; then
-            echo "web/ unchanged; the frontend job will be skipped."
+          elif git diff --quiet "$BASE_SHA" HEAD -- web docs/api src/martom/api/chat_events.py .github/workflows/ci.yml; then
+            echo "web/ and the chat event contract unchanged; the frontend job will be skipped."
             echo "web=false" >> "$GITHUB_OUTPUT"
           else
             echo "web=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # Skipped (not missing) when web/ didn't change: GitHub counts a skipped job as passed,
-  # so making it a required check can't leave a PR waiting forever.
+  # Skipped (not missing) when neither web/ nor the chat event contract changed: GitHub
+  # counts a skipped job as passed, so making it a required check can't leave a PR waiting
+  # forever.
   web:
     name: Web (lint, typecheck, tests, build)
     needs: changes

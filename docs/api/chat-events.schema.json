@@ -1,0 +1,653 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ChatEvent",
+  "description": "One event of the POST /api/chat SSE stream. Generated from src/martom/api/chat_events.py; do not edit by hand.",
+  "$defs": {
+    "BomEvent": {
+      "additionalProperties": false,
+      "description": "The materials list (popis materijala) with an approximate total.",
+      "properties": {
+        "type": {
+          "const": "bom",
+          "default": "bom",
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "description": "e.g. '25 m · panel 153 cm · antracit'.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/BomLineOut"
+          },
+          "minItems": 1,
+          "title": "Lines",
+          "type": "array"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sum of the priced lines; null when every line is 'na upit' (never a fake '0.00').",
+          "title": "Total"
+        },
+        "unpriced_count": {
+          "description": "How many lines are 'na upit'.",
+          "minimum": 0,
+          "title": "Unpriced Count",
+          "type": "integer"
+        },
+        "extra_lines": {
+          "description": "No-price order lines outside the BOM, e.g. concrete posts 'po upitu'.",
+          "items": {
+            "$ref": "#/$defs/ExtraLine"
+          },
+          "title": "Extra Lines",
+          "type": "array"
+        },
+        "notes": {
+          "description": "Extra notes in Bosnian.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "summary",
+        "lines",
+        "total",
+        "unpriced_count",
+        "extra_lines",
+        "notes"
+      ],
+      "title": "BomEvent",
+      "type": "object"
+    },
+    "BomLineOut": {
+      "additionalProperties": false,
+      "description": "One line of the materials list, as the BOM calculator made it, with its price.",
+      "properties": {
+        "item": {
+          "description": "BOM item key, e.g. 'panel'; use it as a key only.",
+          "title": "Item",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size"
+        },
+        "quantity": {
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "unit_price": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unit Price"
+        },
+        "line_total": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Line Total"
+        },
+        "price_on_request": {
+          "description": "true: show 'cijena na upit', no price.",
+          "title": "Price On Request",
+          "type": "boolean"
+        },
+        "made_to_order": {
+          "description": "'po narudžbi': Toni confirms it.",
+          "title": "Made To Order",
+          "type": "boolean"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'po narudžbi, 10–15 dana'.",
+          "title": "Label"
+        }
+      },
+      "required": [
+        "item",
+        "name",
+        "size",
+        "quantity",
+        "unit_price",
+        "line_total",
+        "price_on_request",
+        "made_to_order",
+        "label"
+      ],
+      "title": "BomLineOut",
+      "type": "object"
+    },
+    "ChipOption": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "description": "Sent back in the next message; not shown.",
+          "title": "Value",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "badge": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'po narudžbi, 10–15 dana'.",
+          "title": "Badge"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shown under the question when picked.",
+          "title": "Note"
+        }
+      },
+      "required": [
+        "value",
+        "label",
+        "badge",
+        "note"
+      ],
+      "title": "ChipOption",
+      "type": "object"
+    },
+    "ChipQuestion": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "e.g. 'corners', 'posts', 'color'.",
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "single",
+            "side_lengths"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/ChipOption"
+          },
+          "title": "Options",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "kind",
+        "options"
+      ],
+      "title": "ChipQuestion",
+      "type": "object"
+    },
+    "ChipsEvent": {
+      "additionalProperties": false,
+      "description": "The clarify questions the advisor still needs answered.",
+      "properties": {
+        "type": {
+          "const": "chips",
+          "default": "chips",
+          "title": "Type",
+          "type": "string"
+        },
+        "intro": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'Još tri stvari:'.",
+          "title": "Intro"
+        },
+        "questions": {
+          "items": {
+            "$ref": "#/$defs/ChipQuestion"
+          },
+          "minItems": 1,
+          "title": "Questions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "intro",
+        "questions"
+      ],
+      "title": "ChipsEvent",
+      "type": "object"
+    },
+    "DoneEvent": {
+      "additionalProperties": false,
+      "description": "The last event of every reply, also after an error.",
+      "properties": {
+        "type": {
+          "const": "done",
+          "default": "done",
+          "title": "Type",
+          "type": "string"
+        },
+        "thread_id": {
+          "description": "Send it with the next message to continue.",
+          "title": "Thread Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "thread_id"
+      ],
+      "title": "DoneEvent",
+      "type": "object"
+    },
+    "ErrorEvent": {
+      "additionalProperties": false,
+      "description": "The reply failed. The frontend shows its own Bosnian text for each kind.",
+      "properties": {
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "rate_limited",
+            "invalid_request",
+            "internal"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "retry_after_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only for rate_limited: when to try again.",
+          "title": "Retry After Seconds"
+        }
+      },
+      "required": [
+        "type",
+        "kind",
+        "retry_after_seconds"
+      ],
+      "title": "ErrorEvent",
+      "type": "object"
+    },
+    "ExtraLine": {
+      "additionalProperties": false,
+      "description": "A no-price order line that is not part of the BOM calculation.\n\nE.g. \"Stupovi za betoniranje – po upitu\" when the customer sets the posts in\nconcrete (Tomislav, 26 Nov 2026; built in #20 and #27). It has no quantity and no\nprice field at all, and it never counts in `total` or `unpriced_count`.",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "name",
+        "note"
+      ],
+      "title": "ExtraLine",
+      "type": "object"
+    },
+    "ProductCard": {
+      "additionalProperties": false,
+      "properties": {
+        "listing_id": {
+          "minimum": 1,
+          "title": "Listing Id",
+          "type": "integer"
+        },
+        "url": {
+          "description": "https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id.",
+          "pattern": "^https://martom\\.olx\\.ba/artikal/[a-z0-9-]+$",
+          "title": "Url",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "subtitle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subtitle"
+        },
+        "why": {
+          "description": "Why it fits this customer, in Bosnian.",
+          "title": "Why",
+          "type": "string"
+        },
+        "badge": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'Preporuka', 'Jeftinije'.",
+          "title": "Badge"
+        },
+        "photo_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Photo Url"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Price of the shown variant; null: 'na upit'.",
+          "title": "Price"
+        },
+        "price_unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'panel', 'm', 'kom'.",
+          "title": "Price Unit"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "listing_id",
+        "url",
+        "title",
+        "subtitle",
+        "why",
+        "badge",
+        "photo_url",
+        "price",
+        "price_unit",
+        "variants"
+      ],
+      "title": "ProductCard",
+      "type": "object"
+    },
+    "ProductCardsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "product_cards",
+          "default": "product_cards",
+          "title": "Type",
+          "type": "string"
+        },
+        "cards": {
+          "items": {
+            "$ref": "#/$defs/ProductCard"
+          },
+          "minItems": 1,
+          "title": "Cards",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "cards"
+      ],
+      "title": "ProductCardsEvent",
+      "type": "object"
+    },
+    "StepEvent": {
+      "additionalProperties": false,
+      "description": "A \"Savjetnik radi\" step. Sent again with the same id when its status changes.",
+      "properties": {
+        "type": {
+          "const": "step",
+          "default": "step",
+          "title": "Type",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable per step within one reply, e.g. 'parse', 'search'.",
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "description": "Bosnian, e.g. 'Pregledao 39 ograda'.",
+          "title": "Text",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "working",
+            "done",
+            "needs_input"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "text",
+        "status"
+      ],
+      "title": "StepEvent",
+      "type": "object"
+    },
+    "TokenEvent": {
+      "additionalProperties": false,
+      "description": "A piece of the advisor's answer text; append it to the current message.",
+      "properties": {
+        "type": {
+          "const": "token",
+          "default": "token",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "title": "TokenEvent",
+      "type": "object"
+    },
+    "Variant": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "description": "As written in the listing, e.g. '153 × 250'.",
+          "title": "Label",
+          "type": "string"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null: 'cijena na upit'.",
+          "title": "Price"
+        }
+      },
+      "required": [
+        "label",
+        "price"
+      ],
+      "title": "Variant",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "bom": "#/$defs/BomEvent",
+      "chips": "#/$defs/ChipsEvent",
+      "done": "#/$defs/DoneEvent",
+      "error": "#/$defs/ErrorEvent",
+      "product_cards": "#/$defs/ProductCardsEvent",
+      "step": "#/$defs/StepEvent",
+      "token": "#/$defs/TokenEvent"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/TokenEvent"
+    },
+    {
+      "$ref": "#/$defs/StepEvent"
+    },
+    {
+      "$ref": "#/$defs/ChipsEvent"
+    },
+    {
+      "$ref": "#/$defs/ProductCardsEvent"
+    },
+    {
+      "$ref": "#/$defs/BomEvent"
+    },
+    {
+      "$ref": "#/$defs/ErrorEvent"
+    },
+    {
+      "$ref": "#/$defs/DoneEvent"
+    }
+  ]
+}
