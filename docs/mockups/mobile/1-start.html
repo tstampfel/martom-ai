@@ -13,15 +13,14 @@
 <style>
 body{margin:0}
 a{color:inherit;text-decoration:none}
-.chip{min-height:44px;box-sizing:border-box;padding:0 16px;border-radius:22px;border:0;background:#FFFFFF;color:#26292E;font-size:14px;font-weight:500;display:flex;align-items:center}
+.chip{min-height:44px;box-sizing:border-box;padding:0 16px;border-radius:22px;border:1px solid #FFFFFF;background:#FFFFFF;color:#26292E;font-size:14px;font-weight:600;display:flex;align-items:center}
+.step{transition:opacity .45s ease}
 .hex{width:40px;height:46px;flex:none;background:#D71222;color:#FFFFFF;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:15px}
-.live{animation:live-pulse 2.4s ease-in-out infinite}
-@keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.25}}
-@media (prefers-reduced-motion: reduce){.live{animation:none}}
+@media (prefers-reduced-motion: reduce){.step{transition:none}}
 </style>
 </helmet>
 <div style="width: 390px; height: 844px; box-sizing: border-box; background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; display: flex; flex-direction: column; overflow: hidden">
-  <header style="background: #FFFFFF; border-top: 5px solid #D71222; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between">
+  <header style="background: #FFFFFF; border-top: 5px solid #26292E; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between">
     <img src="../assets/martom-logo.png" alt="Željezarija Martom" style="height: 34px; width: auto; display: block">
     <div style="display: flex; gap: 8px">
       <a href="#" aria-label="Pozovi Martom" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #D5D6D1; display: flex; align-items: center; justify-content: center">
@@ -51,10 +50,10 @@ a{color:inherit;text-decoration:none}
   </section>
 
   <section style="margin: 0 16px; background: #26292E; color: #FFFFFF; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
-    <div style="display: flex; justify-content: space-between; font-size: 13px"><strong>Savjetnik radi</strong><span style="color: #7EE2A0"><span class="live" aria-hidden="true">●</span> uživo</span></div>
-    <span style="font-size: 12px; color: #C9CDD4"><span style="color: #34C46A; font-weight: 700">✓</span> Razumijem: 25 m · dvorište · 150 cm</span>
-    <span style="font-size: 12px; color: #C9CDD4"><span style="color: #34C46A; font-weight: 700">✓</span> Pregledao 39 ograda</span>
-    <span style="font-size: 12px; color: #C9CDD4"><span style="color: #F5A623; font-weight: 700">…</span> Računam panele i stupove</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px"><strong>Kako savjetnik radi</strong><span style="font-size: 10px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: #C9CDD4; border: 1px solid #5A5F68; border-radius: 9px; padding: 1px 7px">primjer</span></div>
+    <span class="step" style="font-size: 12px; color: #C9CDD4; opacity: {{ o1 }}"><span style="color: #34C46A; font-weight: 700">✓</span> Razumijem: 25 m · dvorište · 150 cm</span>
+    <span class="step" style="font-size: 12px; color: #C9CDD4; opacity: {{ o2 }}"><span style="color: #34C46A; font-weight: 700">✓</span> Pronašao panele, stupove i pribor</span>
+    <span class="step" style="font-size: 12px; color: #C9CDD4; opacity: {{ o3 }}"><span style="color: #34C46A; font-weight: 700">✓</span> Popis: 10 panela · 11 stupova · 44 kopče</span>
   </section>
 
   <footer style="margin-top: auto; padding: 14px 16px 18px; font-size: 12px; color: #4F5560; display: flex; justify-content: space-between">
@@ -64,9 +63,13 @@ a{color:inherit;text-decoration:none}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { i: 0, n: 0 }; this.deleting = false; }
-  componentDidMount() { this.tick(); }
-  componentWillUnmount() { clearTimeout(this.t); }
+  constructor(props) { super(props); this.state = { i: 0, n: 0, s: 3 }; this.deleting = false; }
+  componentDidMount() {
+    this.tick();
+    const still = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!still) { this.setState({ s: 0 }); this.st = setInterval(() => this.setState({ s: (this.state.s + 1) % 6 }), 1100); }
+  }
+  componentWillUnmount() { clearTimeout(this.t); clearInterval(this.st); }
   examples() { return ['Treba mi 25 m ograde za dvorište, visina 1,5 m', 'Ograda za kokoši, 20 metara', 'Šta sve treba za panelnu ogradu?', 'Brusilica 125 mm za metal']; }
   tick() {
     const full = this.examples()[this.state.i];
@@ -77,7 +80,10 @@ class Component extends DCLogic {
     else { this.deleting = false; this.setState({ i: (this.state.i + 1) % this.examples().length }); delay = 350; }
     this.t = setTimeout(() => this.tick(), delay);
   }
-  renderVals() { return { placeholder: this.examples()[this.state.i].slice(0, this.state.n) + '|' }; }
+  renderVals() {
+    const s = this.state.s, on = (k) => (s >= k && s < 5) ? 1 : 0;
+    return { placeholder: this.examples()[this.state.i].slice(0, this.state.n) + '|', o1: on(1), o2: on(2), o3: on(3) };
+  }
 }
 </script>
 </body>
