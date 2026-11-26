@@ -53,7 +53,7 @@ Panels come from OLX listing 63996799.
 
 - **Martom does not sell concrete and does no construction work.** The advisor never suggests buying concrete from Martom and never adds concrete to the BOM. It may say the customer needs their own concrete for concrete-in-soil posts.
 - **Installation:** Martom installs fences **only on an existing concrete wall**. The price is **always on request** (it depends on the location). The advisor may mention it but never quotes a price, and it is never a BOM or cart line.
-- **Availability:** always show **"dostupno"** for stock products (Toni's decision). Never write "dostupnost potvrđujemo" or similar. "Po narudžbi" lines show their lead time instead.
+- **Availability:** always show **"dostupno"** for stock products (Toni's decision). Never write "dostupnost potvrđujemo" or similar. No BOM line is "po narudžbi"; concrete-in-soil posts are answered by the advisor as "po upitu" (see "Concrete-in-soil posts").
 
 ### Gates (kapija): out of scope
 

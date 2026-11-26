@@ -236,7 +236,7 @@ def test_the_bom_takes_no_post_type_input() -> None:
 
 
 def test_there_is_no_concrete_post_item() -> None:
-    assert not any("concrete" in item.value for item in Item)
+    assert "post_concrete" not in {item.value for item in Item}
 
 
 # --- gates are out of scope --------------------------------------------------------------

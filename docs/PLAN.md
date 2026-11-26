@@ -158,9 +158,9 @@ Mobile-first, Bosnian UI, Martom's visual identity: the real "ŽELJEZARIJA MARTO
 **Flow**
 
 1. **Start:** logo, one large input whose placeholder types an example letter by letter, erases it, then types the next ("Treba mi 25 m ograde za dvorište, visina 1,5 m", "Ograda za kokoši, 20 metara", "Šta sve treba za panelnu ogradu?", "Brusilica 125 mm za metal"), quick-start chips (Dvorište · Kokoši i životinje · Njiva i vinograd · Balkon · Gabioni · Alat i ostalo), and an always-visible phone button for people who would rather talk to Toni.
-2. **Clarify:** the advisor asks only what's missing, as tappable chips (colour, number of corners and the length of each side when the layout has corners, length or height if not given; no gate question (gates are out of scope: "Za kapije se javite direktno Martomu"); base-plate posts are the default, posts for concrete only "po narudžbi"). On web, a "Vaš projekt" panel fills in as answers arrive.
+2. **Clarify:** the advisor asks only what's missing, as tappable chips (colour, number of corners and the length of each side when the layout has corners, length or height if not given; no gate question (gates are out of scope: "Za kapije se javite direktno Martomu"); base-plate posts are the only posts in the BOM; posts for concrete are answered "po upitu (rade se po narudžbi, 10–15 dana)" with a no-price note in the order, never a BOM line). On web, a "Vaš projekt" panel fills in as answers arrive.
 3. **Recommend:** 1–3 product cards (photo, name, why it fits, variant picker for height/colour, price per unit, link to the OLX listing).
-4. **Materials list:** a BOM card with every line (panels, base-plate posts, PVC clips, anchors; "po narudžbi" lines show their lead time, e.g. "po narudžbi, 10–15 dana"; lines without a confirmed price show "cijena na upit"; accessories are removable lines; tension wire is a suggested add-on with a "Dodaj nosivu žicu" button; stock products show "dostupno"), quantities the customer can adjust, an estimated total in KM, and one note line "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje.". One tap adds everything to our own cart (korpa), which also takes single products found by search.
+4. **Materials list:** a BOM card with every line (panels, base-plate posts, PVC clips, anchors; lines without a confirmed price show "cijena na upit"; accessories are removable lines; tension wire is a suggested add-on with a "Dodaj nosivu žicu" button; stock products show "dostupno"), quantities the customer can adjust, an estimated total in KM, and one note line "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje.". One tap adds everything to our own cart (korpa), which also takes single products found by search.
 5. **Order request:** form with the same fields as martomshop.ba (ime i prezime, telefon, dostava/lično preuzimanje, adresa, napomena, consent). One button, "Pošalji narudžbu", opens WhatsApp with the order pre-filled to the owner's number; the customer only presses send.
 6. **Confirmation:** "Hvala! Zahtjev je kod Martoma" with what happens next and the message that was sent.
 
@@ -213,7 +213,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 
 | ID | Issue | Done when |
 | --- | --- | --- |
-| M4-1 | BOM calculator: panel system (panels, base-plate posts, PVC clips and anchors by height, corners and "po narudžbi" lines; no gate line) | Unit tests for 10 m, 25 m, corners, partial panels; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
+| M4-1 | BOM calculator: panel system (panels, base-plate posts, PVC clips and anchors by height, corners; no concrete-post or gate line, see M4-2d) | Unit tests for 10 m, 25 m, corners, partial panels; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
 | M4-2 | BOM calculator: welded roll fence (posts every 2 m, shared corner posts, strainers and braces, tensioners, optional tension wire, foot-plate anchors and wire holders) | Unit tests; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
 | M4-2b | BOM calculator: chain link / pletivo (rules pending Toni) | Unit tests; Toni's rules |
 | M4-3 | LangGraph graph: guardrail (in scope = anything Martom sells), clarify, retrieve, grade, rewrite (max 2), generate + tools, grounding check; Postgres checkpointer | Graph tests with a fake LLM; every node traced in LangSmith |
@@ -283,10 +283,10 @@ Expect roughly **$45–80 per month** at launch traffic (a few hundred conversat
 
 The rest of the roll-fence rules block M4-2 and the customer questions block M3-1. The rest can wait until their milestone.
 
-- [x] **Toni: panel fence rules** — answered 26 Nov 2026, written up in [`docs/domain/fence-rules.md`](domain/fence-rules.md): base-plate post per panel height, PVC clips and anchors per post, corners (one post, double clips), concrete-in-soil posts only "po narudžbi" with no price. Unblocks M4-1.
+- [x] **Toni: panel fence rules** — answered 26 Nov 2026, written up in [`docs/domain/fence-rules.md`](domain/fence-rules.md): base-plate post per panel height, PVC clips and anchors per post, corners (one post, double clips), concrete-in-soil posts only "po narudžbi" with no price (since 26 Nov 14:52: not in the BOM at all, "po upitu" in the advisor). Unblocks M4-1.
 - [x] **Toni: gates** — 26 Nov 2026: out of scope for now. No BOM line; the advisor says "Za kapije se javite direktno Martomu: 036 651 427".
 - [x] **Toni: roll-fence posts and spacing** — answered 26 Nov 2026 in `fence-rules.md`: T-post (OLX 59473597) for soil or concrete, foot-plate post 40 × 40 for a wall or base, posts every 2 m, corner posts shared.
-- [x] **Toni: welded roll-fence rules** — answered 26 Nov 2026 (13:10–13:32), see `fence-rules.md`. Small items still pending (end-post braces, braces for 60–100 cm foot-plate fences, wire holders per row) don't block M4-2.
+- [x] **Toni: welded roll-fence rules** — answered 26 Nov 2026 (13:10–13:32), see `fence-rules.md`. End-post braces (1 per end post, 14:53) and braces for 60–100 cm foot-plate fences (100 cm, 14:29) are answered; wire holders per row is still pending and doesn't block M4-2.
 - [ ] **Toni: chain link / pletivo rules** — different rules and posts, pending. Blocks M4-2b.
 - [x] **Toni: move the foot-plate post listing (81645615) to "Ograde"** — answered 26 Nov 2026: Toni can't change categories (he'll call OLX). 81645615 and the tensioner 18129143 stay on the explicit sync allowlist (#45).
 - [x] **Toni: the 905,10 KM reference example** — 250 cm panels; the line-by-line breakdown is in `fence-rules.md`, checked against OLX on 26 Nov 2026.
