@@ -6,12 +6,12 @@ The `.html` files are the **source of each screen** from the design canvas. They
 
 ## Screens
 
-The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina oko 1,5 m"* → panel fence 153 cm, antracit, posts in the ground, no gate.
+The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina oko 1,5 m"* → panel fence 153 cm, antracit, 2 corners (sides 10 + 5 + 10 m), base-plate posts (the default), no gate.
 
 | # | Web (`web/`, 1440 wide, fluid) | Mobile (`mobile/`, 390 × 844) | What it shows |
 | --- | --- | --- | --- |
 | 1 | `1-start.html` | `1-start.html` | Red curved hero, question box whose placeholder types an example, pauses, erases with backspace speed and types the next; quick-start chips; "Savjetnik radi" live agent card; hexagon badges (2 prodavaonice, 30 godina, 10.000+ artikala, OLX); web adds fence category tiles and "Kako radi" |
-| 2 | `2-clarify.html` | `2-clarify.html` | The advisor's 3 questions as tappable chips (boja, stupovi, kapija); web adds the dark "Vaš projekt" panel that fills in as answers arrive |
+| 2 | `2-clarify.html` | `2-clarify.html` | The advisor's 4 questions as tappable chips: broj kutova (0 · 1 · 2 · 3 · 4+ · Ne znam, plus "Ide okolo (zatvoreno)") with one length field per side, stupovi (base plate preselected, concrete "po narudžbi, 10–15 dana", Ne znam), boja, kapija; web adds the dark "Vaš projekt" panel (Dužina, Kutovi, Strane, …) that fills in as answers arrive. Rules: `docs/domain/fence-rules.md` |
 | 3 | `3-results.html` | `3-results.html` | Recommendation text, product cards with variant picker (panel = recommended, Garden Light = cheaper), materials list with working +/− quantity steppers, live total, "Dodaj sve u korpu" |
 | 4 | `4-cart-order.html` | `4-cart-order.html` | Own cart (korpa) and order form with the same fields as martomshop.ba; **one** red "Pošalji narudžbu" button that opens WhatsApp with the order pre-filled |
 | 5 | `5-sent.html` | `5-sent.html` | Confirmation, what happens next, and the exact WhatsApp message that was sent (use it as the message format for M5-6) |
