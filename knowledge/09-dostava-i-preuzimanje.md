@@ -6,6 +6,7 @@ sources:
   - "docs/PLAN.md: Customer experience > Flow (5. Order request)"
   - "docs/PLAN.md: Open questions > Delivery"
   - "docs/mockups/web/1-start.html (traka: dostava, preuzimanje, radno vrijeme, adresa)"
+  - "docs/mockups/web/5-sent.html (Martom se javi s potvrdom)"
   - "fence-rules.md: Every BOM (all fence types)"
 status: draft
 ---

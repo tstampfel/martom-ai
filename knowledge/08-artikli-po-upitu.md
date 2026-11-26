@@ -17,7 +17,7 @@ status: draft
 
 - Martom nema na stanju stupove bez pločice. Rade se po narudžbi.
 - Savjetnik kaže: **"Stupovi za betoniranje – po upitu (rade se po narudžbi, 10–15 dana)"**.
-- Nisu u spisku materijala. Narudžba dobije napomenu bez cijene, a Martom javi visinu stupa i cijenu.
+- Nisu u spisku materijala. Narudžba dobije napomenu bez cijene.
 - Stupovi za betoniranje nemaju ankere. Beton kupac nabavlja sam.
 
 ## Potporni stup 100 cm

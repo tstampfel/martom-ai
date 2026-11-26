@@ -14,7 +14,7 @@ status: draft
 
 - Martom montira ogradu **samo na postojeći betonski zid**.
 - Cijena montaže je **uvijek na upit**, jer ovisi o lokaciji. Savjetnik nikada ne navodi cijenu montaže.
-- Montaža nije stavka u spisku materijala ni u korpi. Za dogovor: **036 651 427**.
+- Montaža nije stavka u spisku materijala ni u korpi.
 
 ## Beton i građevinski radovi
 

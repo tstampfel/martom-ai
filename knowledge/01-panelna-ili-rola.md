@@ -31,4 +31,4 @@ status: draft
 
 - **Gdje idu stupovi:** u zemlju ili beton → varena ograda u roli s T-stupovima. Na betonski zid ili podlogu → panelna ograda sa stupovima s pločicom ili rola sa stupovima sa stopom.
 - **Panelna ograda sa stupovima za betoniranje** (bez pločice) radi se samo po narudžbi, vidi "Artikli po upitu".
-- **Pletivo (baklava)** ima druga pravila i druge stupove koja još nisu potvrđena. Za pletivo ne računamo spisak materijala: pitajte Martom.
+- **Pletivo (baklava)** ima druga pravila i druge stupove, a oni još nisu potvrđeni. Za pletivo ne računamo spisak materijala: pitajte Martom.
