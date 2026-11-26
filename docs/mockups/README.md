@@ -39,6 +39,11 @@ Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3
 
 Touch targets are at least 44 px. Pills and buttons are fully rounded.
 
+### Colour rule: where red goes (Tomislav, 26 Nov 2026)
+
+- Red (`--color-red`, `#D71222`) is only for the hero, buttons and accents on light backgrounds, and the logo.
+- Never red text on charcoal: `#D71222` on `#26292E` is only 2.8:1. Labels on charcoal (the "Vaš projekt" and "Popis materijala" eyebrows) use text on dark, `#C9CDD4`, with no decorative red mark.
+
 ## Assets
 
 - `assets/martom-logo.png` — logo on a transparent background, for light backgrounds.
