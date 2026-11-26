@@ -1,10 +1,55 @@
-.DS_Store
+# --- Secrets and local config (public repo: never commit these) ---
 .env
 .env.*
 !.env.example
-
-# Local review reports and screenshots (never committed)
-.reviews/
-
-# Personal Claude Code settings
+*.pem
+*.key
 .claude/settings.local.json
+
+# --- Data dumps, exports and customer data ---
+/data/
+/dumps/
+/exports/
+*.dump
+*.sql.gz
+*.csv
+*.jsonl
+!tests/fixtures/**
+!evals/**/*.jsonl
+
+# --- Review reports and screenshots (local only) ---
+.reviews/
+/reports/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Node / frontend (M5) ---
+node_modules/
+.vite/
+.wrangler/
+
+# --- Terraform (M6) ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# --- Editors and OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
