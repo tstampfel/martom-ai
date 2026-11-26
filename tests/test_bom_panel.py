@@ -17,8 +17,6 @@ from martom.bom.panel import (
     FenceLimit,
     FenceTooLargeError,
     Item,
-    PostType,
-    PriceRef,
     panel_fence_bom,
 )
 
@@ -47,7 +45,6 @@ def test_reference_case_25m_153cm_totals_905_10_km_with_recorded_olx_prices() ->
         panel_height_cm=given["panel_height_cm"],
         panel_width_cm=given["panel_width_cm"],
         closed=given["closed"],
-        post_type=PostType(given["post_type"]),
     )
 
     expected = {Item(key): qty for key, qty in fixture["expected_quantities"].items()}
@@ -216,99 +213,30 @@ def test_sides_can_be_any_sequence_of_numbers() -> None:
     assert from_tuple == from_list
 
 
-# --- concrete-in-soil posts: "po narudžbi, 10–15 dana" ---------------------------------
-# Rules: fence-rules.md, "Concrete-in-soil posts (stupovi za betoniranje)" (Toni, 26 Nov 2026).
+# --- posts: always base-plate posts ----------------------------------------------------
+# Toni, 26 Nov 2026 14:52: concrete-in-soil panel posts are dropped from the BOM (nobody
+# orders them); the advisor answers them as "po upitu". fence-rules.md keeps his size
+# mapping as reference only.
 
 
-def test_103cm_concrete_posts_are_125cm_priced_as_the_105cm_base_plate_post() -> None:
-    fixture = json.loads((FIXTURES / "panel_10m_103_concrete.json").read_text(encoding="utf-8"))
-    given = fixture["input"]
-
-    lines = panel_fence_bom(
-        sides_m=[Decimal(side) for side in given["sides_m"]],
-        panel_height_cm=given["panel_height_cm"],
-        post_type=PostType(given["post_type"]),
-    )
-
-    post = line_for(lines, Item.POST_CONCRETE)
-    assert post.quantity == fixture["expected_posts"]
-    assert post.size == "125 cm"
-    assert post.label == "po narudžbi, 10–15 dana"
-    assert post.made_to_order is True
-    assert post.unit_price_on_request is False
-    # The line has no price of its own: it points at the base-plate post 105 cm listing.
-    assert post.price_from == PriceRef(item=Item.POST_BASE_PLATE, size="105 cm")
-
-    prices = {
-        PriceRef(item=Item(row["item"]), size=row["size"]): Decimal(row["price_km"])
-        for row in fixture["unit_prices_km"]
-    }
-    assert prices[post.price_from] == Decimal(fixture["expected_post_unit_price_km"])
-    assert prices[post.price_from] * post.quantity == Decimal(fixture["expected_posts_total_km"])
-
-    assert Item.ANCHOR_M8X80 not in quantities(lines)
-
-
-@pytest.mark.parametrize("height", [83, 123, 153, 203])
-def test_concrete_posts_for_unconfirmed_heights_have_no_size_and_no_price(height: int) -> None:
-    lines = panel_fence_bom(
-        sides_m=[Decimal(25)], panel_height_cm=height, post_type=PostType.CONCRETE_IN_SOIL
-    )
-
-    post = line_for(lines, Item.POST_CONCRETE)
-    assert post.quantity == 11
-    assert post.size is None
-    assert post.price_from is None
-    assert post.unit_price_on_request is True
-    assert post.label == "po narudžbi, 10–15 dana"
-    assert post.made_to_order is True
-
-
-def test_concrete_posts_are_the_only_made_to_order_line() -> None:
-    lines = panel_fence_bom(
-        sides_m=[Decimal(25)], panel_height_cm=153, post_type=PostType.CONCRETE_IN_SOIL
-    )
-
-    assert [line.item for line in lines if line.made_to_order] == [Item.POST_CONCRETE]
-    assert Item.POST_BASE_PLATE not in quantities(lines)
-
-
-@pytest.mark.parametrize("height", [83, 103, 123, 153, 203])
-def test_concrete_posts_keep_clips_but_need_no_anchors_and_no_concrete(height: int) -> None:
-    base_plate = quantities(panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=height))
-    lines = panel_fence_bom(
-        sides_m=[Decimal(25)], panel_height_cm=height, post_type=PostType.CONCRETE_IN_SOIL
-    )
-
-    # Martom sells no concrete, so the list is panels, posts and clips only.
-    assert [line.item for line in lines] == [Item.PANEL, Item.POST_CONCRETE, Item.PVC_CLIP]
-    assert line_for(lines, Item.PVC_CLIP).quantity == base_plate[Item.PVC_CLIP]
-
-
-@pytest.mark.parametrize(
-    ("height", "concrete_post_cm"), [(83, None), (103, 125), (123, None), (153, None), (203, None)]
-)
-def test_rules_table_has_a_concrete_post_size_only_where_toni_confirmed_it(
-    height: int, concrete_post_cm: int | None
-) -> None:
-    assert PANEL_RULES[height].concrete_post_height_cm == concrete_post_cm
-
-
-def test_base_plate_posts_are_the_default() -> None:
+def test_posts_are_always_base_plate_posts_with_anchors() -> None:
     lines = panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153)
-    assert Item.POST_BASE_PLATE in quantities(lines)
-    assert Item.POST_CONCRETE not in quantities(lines)
+    assert [line.item for line in lines] == [
+        Item.PANEL,
+        Item.POST_BASE_PLATE,
+        Item.PVC_CLIP,
+        Item.ANCHOR_M8X80,
+    ]
     assert all(line.label is None and line.price_from is None for line in lines)
 
 
-def test_post_type_given_as_a_plain_string_is_accepted() -> None:
-    # The agent's tool call (M4-3) passes JSON strings, not enum members.
-    from_string = panel_fence_bom(sides_m=[25], panel_height_cm=153, post_type="base_plate")
-    from_enum = panel_fence_bom(sides_m=[25], panel_height_cm=153, post_type=PostType.BASE_PLATE)
-    assert from_string == from_enum
+def test_the_bom_takes_no_post_type_input() -> None:
+    with pytest.raises(TypeError, match="post_type"):
+        panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153, post_type="concrete_in_soil")  # type: ignore[call-arg]
 
-    concrete = panel_fence_bom(sides_m=[25], panel_height_cm=153, post_type="concrete_in_soil")
-    assert Item.POST_CONCRETE in quantities(concrete)
+
+def test_there_is_no_concrete_post_item() -> None:
+    assert not any("concrete" in item.value for item in Item)
 
 
 # --- gates are out of scope --------------------------------------------------------------
@@ -442,7 +370,6 @@ def test_exactly_1000m_in_total_gets_a_bom() -> None:
         ({"panel_height_cm": "153"}, "height"),
         ({"panel_width_cm": 300}, "width"),
         ({"panel_width_cm": 250.0}, "width"),
-        ({"post_type": "nonsense"}, "post type"),
     ],
 )
 def test_invalid_input_raises_value_error(kwargs: dict, message: str) -> None:
@@ -454,7 +381,6 @@ def test_invalid_input_raises_value_error(kwargs: dict, message: str) -> None:
 # --- no braces on panel fences ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("post_type", list(PostType))
 @pytest.mark.parametrize("panel_height_cm", sorted(PANEL_RULES))
 @pytest.mark.parametrize(
     ("sides_m", "closed"),
@@ -466,13 +392,11 @@ def test_invalid_input_raises_value_error(kwargs: dict, message: str) -> None:
     ],
 )
 def test_panel_fence_never_gets_braces_or_support_posts(
-    post_type: PostType, panel_height_cm: int, sides_m: list[Decimal], closed: bool
+    panel_height_cm: int, sides_m: list[Decimal], closed: bool
 ) -> None:
     # fence-rules.md, "Panel fence, any layout": no braces / support posts, end posts
     # included (Toni, 26 Nov 2026 14:29).
-    lines = panel_fence_bom(
-        sides_m=sides_m, panel_height_cm=panel_height_cm, closed=closed, post_type=post_type
-    )
+    lines = panel_fence_bom(sides_m=sides_m, panel_height_cm=panel_height_cm, closed=closed)
     assert Item.BRACE_T_POST not in quantities(lines)
     assert Item.POST_T not in quantities(lines)
     assert not any("potporn" in line.name.lower() for line in lines)

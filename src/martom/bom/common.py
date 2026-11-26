@@ -47,7 +47,6 @@ class Item(StrEnum):
     # Panel fence
     PANEL = "panel"
     POST_BASE_PLATE = "post_base_plate"
-    POST_CONCRETE = "post_concrete"
     PVC_CLIP = "pvc_clip"
     ANCHOR_M8X80 = "anchor_m8x80"
     # Welded roll fence
@@ -82,7 +81,7 @@ class BomLine:
     # Extra status shown with the line, e.g. "po narudžbi, 10–15 dana".
     label: str | None = None
     # Look the price up from this product instead of the line's own item and size.
-    # E.g. a 125 cm concrete post costs the same as the 105 cm base-plate post.
+    # E.g. a support T-post 120 cm is priced as the T-post 120 cm (roll fence braces).
     price_from: PriceRef | None = None
 
 
