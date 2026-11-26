@@ -45,7 +45,9 @@ class Migration:
 def discover_migrations(directory: Path) -> list[Migration]:
     """Read every `*.sql` file in `directory`, validated and sorted by number."""
     if not directory.is_dir():
-        raise MigrationError(f"migrations directory not found: {directory}")
+        raise MigrationError(
+            f"migrations directory not found: {directory} (run from the repo root or pass --dir)"
+        )
 
     migrations: list[Migration] = []
     seen: dict[int, str] = {}
@@ -97,11 +99,18 @@ def apply_migrations(conn: psycopg.Connection, migrations: list[Migration]) -> l
             newly_applied.append(migration.name)
         return newly_applied
     finally:
-        conn.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK_KEY,))
+        # On a dead connection the unlock would raise and hide the real error;
+        # the server releases the lock when the session ends anyway.
+        if not conn.broken:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK_KEY,))
 
 
 def run_migrations(database_url: str, directory: Path) -> list[str]:
     """Connect to `database_url` and apply pending migrations from `directory`."""
     migrations = discover_migrations(directory)
-    with psycopg.connect(database_url, autocommit=True) as conn:
-        return apply_migrations(conn, migrations)
+    try:
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            return apply_migrations(conn, migrations)
+    except psycopg.Error as exc:
+        # Connection, lock or schema_migrations bookkeeping errors.
+        raise MigrationError(f"database error: {exc}") from exc

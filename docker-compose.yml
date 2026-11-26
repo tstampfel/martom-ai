@@ -15,7 +15,9 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U martom -d martom"]
+      # -h forces TCP: during first-time init the image runs a socket-only server,
+      # which a socket check would wrongly report as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U martom -d martom"]
       interval: 5s
       timeout: 3s
       retries: 10

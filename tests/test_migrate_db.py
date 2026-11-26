@@ -112,6 +112,27 @@ def test_repo_migrations_create_extensions_and_text_search_config(database_url: 
     assert row == (True,)
 
 
+@pytest.mark.parametrize(
+    ("listing_text", "query"),
+    [
+        ("Mreža-50x50 pletena", "mreza-50x50"),  # numhword / hword_numpart tokens
+        ("Žica2,5 pocinčana", "zica2,5"),  # numword token
+    ],
+)
+def test_martom_config_unaccents_words_with_digits(
+    database_url: str, listing_text: str, query: str
+) -> None:
+    run_migrations(database_url, REPO_MIGRATIONS)
+
+    with psycopg.connect(database_url) as conn:
+        row = conn.execute(
+            "SELECT to_tsvector('martom', %s) @@ plainto_tsquery('martom', %s)",
+            (listing_text, query),
+        ).fetchone()
+
+    assert row == (True,)
+
+
 def test_repo_migrations_sql_rerun_safely(database_url: str) -> None:
     """Every repo migration can run twice, e.g. if schema_migrations was lost."""
     with psycopg.connect(database_url, autocommit=True) as conn:

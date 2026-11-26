@@ -77,3 +77,19 @@ def test_cli_migrate_without_database_url_fails_clearly(
 
     assert main(["migrate"]) == 2
     assert "DATABASE_URL is not set" in capsys.readouterr().err
+
+
+def test_cli_migrate_with_unreachable_database_fails_clearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write(tmp_path, "001_first.sql")
+    # Port 1 refuses connections immediately; no database server is needed.
+    monkeypatch.setenv("DATABASE_URL", "postgresql://martom:martom@127.0.0.1:1/martom")
+
+    assert main(["migrate", "--dir", str(tmp_path)]) == 1
+    assert "migration failed" in capsys.readouterr().err
+
+
+def test_missing_directory_error_explains_how_to_fix(tmp_path: Path) -> None:
+    with pytest.raises(MigrationError, match="--dir"):
+        discover_migrations(tmp_path / "nope")

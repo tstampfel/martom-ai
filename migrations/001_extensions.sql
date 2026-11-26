@@ -17,8 +17,9 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;   -- trigram similarity for typos and mo
 -- hybrid search (M3). The plain `simple` dictionary would join no inflected forms at all.
 -- The M3 retrieval eval can revisit this choice; changing it means a new migration.
 --
--- unaccent runs first and is a filtering dictionary, so the stemmer always sees text
--- without diacritics and "pocincana" (typed on a phone) matches "pocinčana".
+-- unaccent runs first and is a filtering dictionary, so every token (also those with
+-- digits, mapped below) loses its diacritics and "pocincana" (typed on a phone) matches
+-- "pocinčana".
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_ts_config WHERE cfgname = 'martom') THEN
@@ -27,6 +28,11 @@ BEGIN
             ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
                               word, hword, hword_part
             WITH unaccent, serbian_stem;
+        -- Tokens with digits ("Mreža-50x50", "Žica2,5") are model codes and sizes:
+        -- unaccent them but don't stem them.
+        ALTER TEXT SEARCH CONFIGURATION martom
+            ALTER MAPPING FOR numword, numhword, hword_numpart
+            WITH unaccent, simple;
     END IF;
 END
 $$;

@@ -2,7 +2,8 @@
 
 Database tests need a running Postgres (`docker compose up -d db`) and TEST_DATABASE_URL.
 Each test gets its own throwaway database, created on that server and dropped afterwards,
-so tests never touch the development database. Without TEST_DATABASE_URL they are skipped.
+so tests never touch the development database. Without TEST_DATABASE_URL they are skipped
+(locally) or fail (in CI, where CI is set).
 """
 
 import os
@@ -19,6 +20,8 @@ from psycopg.conninfo import make_conninfo
 def database_url() -> Iterator[str]:
     server_url = os.environ.get("TEST_DATABASE_URL")
     if not server_url:
+        if os.environ.get("CI"):
+            pytest.fail("TEST_DATABASE_URL must be set in CI, or database tests would be skipped")
         pytest.skip("TEST_DATABASE_URL not set (start Postgres with `docker compose up -d db`)")
 
     name = f"martom_test_{uuid.uuid4().hex[:12]}"

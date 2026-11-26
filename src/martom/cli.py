@@ -18,7 +18,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--dir",
         type=Path,
         default=Path("migrations"),
-        help="folder with NNN_name.sql files (default: ./migrations)",
+        help="folder with NNN_name.sql files (default: ./migrations, so run from the repo root)",
     )
 
     args = parser.parse_args(argv)
