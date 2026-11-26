@@ -80,32 +80,31 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 | (b) Post with foot plate (stup sa stopom) | OLX 81645615, [listing](https://martom.olx.ba/artikal/stup-stupovi-koci-za-stopom-40x40mm-60-80-100-125-i-150cm-81645615) (category 876) | 40 × 40 mm | 60 / 80 / 100 / 125 / 150 cm | anchored onto a concrete wall or base |
 
 - Prices per height always come from the OLX sync ("from 10,00 KM" for the T-post is a reference only).
-- **T-post (a) height:** 40 cm of the post goes into the ground. Confirmed by Toni: an 80 cm roll takes a **120 cm** T-post.
-- **Derived rule, pending Toni's confirmation:** the T-post is the smallest available height ≥ roll height + 40 cm.
+- **T-post (a) height:** 30–50 cm of the post goes into the ground, with no fixed depth. **Toni's rule:** the T-post is the smallest available height ≥ roll height + 30 cm. Toni confirmed the 80 cm → 120 cm pairing; the other rows are derived from his rule.
 
   | Roll height | T-post | Status |
   | --- | --- | --- |
-  | 60 cm | 120 cm | derived, pending Toni |
+  | 60 cm | 120 cm | derived from Toni's rule |
   | 80 cm | 120 cm | **confirmed** |
-  | 100 cm | 150 cm | derived, pending Toni |
-  | 125 cm | 175 cm | derived, pending Toni |
-  | 150 cm | 200 cm | derived, pending Toni |
+  | 100 cm | 150 cm | derived from Toni's rule |
+  | 125 cm | 175 cm | derived from Toni's rule |
+  | 150 cm | 200 cm | derived from Toni's rule |
 - **Foot-plate post (b), reference prices** (26 Nov 2026): 60 cm → 10,50 · 80 cm → 11,90 · 100 cm → 14,00 · 125 cm → 16,50 · 150 cm → 21,00 KM. Colours: green and anthracite.
 - **Anchors for (b):** **3 anchors M8×70 per post** (Toni confirmed). These are not the panel fence's M8×80 anchors; keep them as separate products. No OLX listing for M8×70 has been found yet, so the anchor line carries the quantity with "cijena na upit" and no price until it exists.
 - **Support T-posts (potporni T-stupovi):** foot-plate post fences are braced with support T-posts. How many and which height is pending from Toni, so the BOM adds no support-post line yet.
 - The clarify step for a roll fence asks where the posts go: **into soil or concrete → (a)**, **on a concrete wall or base → (b)**.
-- Listing (b) sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni can't change categories himself (he'll call OLX), so listing **81645615** stays on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45). Keep it there even if OLX moves it later; the sync dedupes it.
+- Listing (b) sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni will try to move it (and the tensioner 18129143) to "Ograde". Until the sync actually sees a listing in "Ograde", listing **81645615** stays on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45). The sync dedupes, so a moved listing is never stored twice.
 
 ### Accessories
 
 | Item | Listing | Details | Quantity |
 | --- | --- | --- | --- |
-| Tensioner (španer) | OLX 18129143, category "Biznis i Industrija > Poljoprivreda > Ostalo" | green or galvanized; reference price 1,65 KM | **3 × ceil(length / 25)**: 3 for every started 25 m |
-| Tension wire (žica nosiva) | OLX 46677177, category "Ograde" | PVC-coated, green or anthracite, 100 m coils, 3,10 / 2,7 / 2,2 mm | **optional**: quantity rule pending |
+| Tensioner (španer) | OLX 18129143, category "Biznis i Industrija > Poljoprivreda > Ostalo" | green, galvanized or anthracite; reference price 1,65 KM (the anthracite price comes from the sync) | **3 × ceil(length / 25)**: 3 for every started 25 m |
+| Tension wire (žica nosiva) | OLX 46677177, category "Ograde" | PVC-coated, green or anthracite, 100 m coils; Toni's thickness for roll fences is **2,70 mm**; reference price 18,00 KM per 100 m coil | **optional**: coils = **ceil(rows × length / 100)**, rows 2 or 3 |
 
 - **Tensioners** are always in the BOM.
-- **Tension wire is optional ("po želji").** The advisor offers it but never adds it by default. Until Toni gives the quantity rule (how many rows, which thickness), the BOM doesn't calculate a wire quantity.
-- **Allowlist:** the tensioner listing **18129143** is outside the fence categories, so it stays on the explicit sync allowlist next to 81645615 (issue #45). The tension wire is in "Ograde" and needs no allowlist entry.
+- **Tension wire is optional ("po želji").** The advisor asks whether the customer wants it and, if so, **2 or 3 rows**. There is **no default**: without the customer's answer, the BOM has no wire line. With an answer, coils = ceil(rows × length / 100), 2,70 mm.
+- **Allowlist:** the tensioner listing **18129143** is outside the fence categories, so it stays on the explicit sync allowlist next to 81645615 (issue #45) until the sync sees it in "Ograde". The tension wire is in "Ograde" and needs no allowlist entry.
 
 ### Post spacing and count
 
@@ -118,7 +117,7 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 
 - A strainer post stands at **every corner** and **every 25 m** (Toni). Whether the two ends of a run count as strainer posts is pending; it doesn't change the count.
 - Strainer posts have the **same height and the same price** as line posts. Whether they are the same OLX listing, and whether they need a brace, is pending from Toni.
-- **Derived count, pending Toni's confirmation:** a run longer than 25 m is split into 25 m sections plus the remainder. Each section counts ceil(section / 2) + 1 posts, and adjacent sections share their strainer post. Example: 30 m = 25 m + 5 m → 14 + 4 − 1 = **17 posts** (one more than ceil(30 / 2) + 1 = 16, because the strainer at 25 m doesn't fall on the 2 m grid). Runs up to 25 m are unchanged.
+- **Derived count, pending Toni (extra strainer post or replacing a line post):** a run longer than 25 m is split into 25 m sections plus the remainder. Each section counts ceil(section / 2) + 1 posts, and adjacent sections share their strainer post. Example: 30 m = 25 m + 5 m → 14 + 4 − 1 = **17 posts** (one more than ceil(30 / 2) + 1 = 16, because the strainer at 25 m doesn't fall on the 2 m grid). Runs up to 25 m are unchanged.
 
 ## Eurofence (for reference)
 
@@ -149,11 +148,13 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Roll fence, customer asks for 3 m spacing | BOM still at 2 m, plus the "razmak do 3 m" note in the answer and in the order message |
 | Roll fence, 25 m | **3 tensioners** |
 | Roll fence, 30 m | **6 tensioners** (two started 25 m stretches) |
-| Roll fence, any length | Tension wire offered as "po želji", **not** in the BOM by default |
+| Roll fence, any length, customer hasn't chosen wire rows | Tension wire offered as "po želji" (2 or 3 rows), **not** in the BOM |
+| Roll fence, 25 m, 3 rows of tension wire | **1 coil** 2,70 mm (18,00 KM reference) |
+| Roll fence, 40 m, 3 rows of tension wire | **2 coils** 2,70 mm |
 | Roll fence, 25 m | **1 roll** |
 | Roll fence, 30 m | **2 rolls** |
 | Roll fence, 80 cm roll, T-posts | **120 cm** T-posts |
-| Roll fence, 100 cm roll, T-posts | 150 cm T-posts (derived rule, pending Toni; mark the test as such) |
+| Roll fence, 100 cm roll, T-posts | **150 cm** T-posts (derived from Toni's ≥ roll + 30 cm rule) |
 | Roll fence, 30 m straight | 17 posts (derived strainer rule, pending Toni; mark the test as such) |
 | Roll fence on foot-plate posts, 10 posts | **30 anchors M8×70**, no price ("cijena na upit") |
 | Panel fence, no width given | **250 cm** panels |
@@ -177,16 +178,15 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 
 ## Still open (don't invent values)
 
-- **Gate sizes and prices.** Toni sends them separately; until then gates are "cijena na upit".
+- **Gates:** sizes, prices and gate posts. Toni sends them separately; until then gates are "cijena na upit".
 - **Concrete-in-soil panel posts** for 83, 123, 153 and 203 cm panels: post size and price.
 - **Installation on an existing concrete wall:** how the advisor presents it.
 - **Roll fence, still missing** (blocks M4-2):
-  - confirmation of the derived T-post heights for 60, 100, 125 and 150 cm rolls;
-  - confirmation of the derived strainer-post count for runs over 25 m;
-  - with corners, whether the tensioner rule uses the total length or each side;
-  - tension wire quantity rule (rows, thickness), and whether ties are needed;
-  - the OLX listing for the M8×70 anchors;
-  - strainer posts: same listing as line posts or not, and whether they need a brace;
+  - strainer posts: an extra post at each 25 m mark, or replacing a line post (the derived count assumes extra);
+  - strainer/corner posts: same listing as line posts or not, and whether they need a brace;
   - support T-posts for foot-plate fences: how many and which height;
-  - which foot-plate post (b) height goes with each roll height;
-  - whether pletivo and chain link use the same posts and 2 m spacing.
+  - with corners, whether the tensioner rule uses the total length or each side;
+  - the OLX listing for the M8×70 anchors;
+  - which foot-plate post (b) height goes with each roll height (not yet asked);
+  - whether ties are needed for the tension wire (not yet asked);
+  - whether pletivo and chain link use the same posts and 2 m spacing (not yet asked).
