@@ -16,6 +16,12 @@ a{color:inherit;text-decoration:none}
 .opt{min-height:44px;padding:0 18px;border-radius:22px;border:1px solid #C8C9C4;background:#FFFFFF;font-family:Inter,sans-serif;font-size:15px;font-weight:500;color:#16181D;cursor:pointer}
 .opt:hover{border-color:#26292E}
 .on{border:2px solid #26292E;background:#26292E;color:#FFFFFF;font-weight:600}
+.num{min-width:52px;padding:0 14px}
+.sub{display:block;font-size:12px;font-weight:500;opacity:.8;margin-top:1px}
+.two{padding-top:6px;padding-bottom:6px;text-align:left;line-height:1.25}
+.side{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#4F5560}
+.side input{width:84px;height:44px;box-sizing:border-box;border:1px solid #C8C9C4;border-radius:10px;padding:0 12px;font-family:Inter,sans-serif;font-size:16px;color:#16181D}
+.note{margin:0;font-size:13px;line-height:1.5;color:#3B4049}
 .step{display:flex;gap:10px;align-items:center;font-size:13px;color:#3B4049}
 </style>
 </helmet>
@@ -42,22 +48,46 @@ a{color:inherit;text-decoration:none}
 
       <div style="background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 22px; max-width: 760px">
         <p style="margin: 0; font-family: Outfit, sans-serif; font-size: 24px; font-weight: 700; line-height: 1.25">Odlično — za 25 m dvorišta imamo dobra rješenja. Još tri stvari:</p>
+
+        <!-- Corners: asked when the layout is unclear ("za dvorište", "oko dvorišta"). Each corner is one shared post with double clips (fence-rules.md). -->
         <div style="display: flex; flex-direction: column; gap: 10px">
-          <span style="font-size: 14px; font-weight: 700; color: #3B4049">1. Koja boja?</span>
+          <span style="font-size: 14px; font-weight: 700; color: #3B4049">1. Koliko ima kutova?</span>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <button type="button" class="opt on">Antracit (RAL 7016)</button><button type="button" class="opt">Zelena (RAL 6005)</button><button type="button" class="opt">Svejedno</button>
+            <button type="button" class="{{ k0 }}" onClick="{{ pick0 }}">0</button><button type="button" class="{{ k1 }}" onClick="{{ pick1 }}">1</button><button type="button" class="{{ k2 }}" onClick="{{ pick2 }}">2</button><button type="button" class="{{ k3 }}" onClick="{{ pick3 }}">3</button><button type="button" class="{{ k4 }}" onClick="{{ pick4 }}">4+</button><button type="button" class="{{ kUnknown }}" onClick="{{ pickUnknown }}">Ne znam</button>
+            <button type="button" class="{{ kClosed }}" onClick="{{ toggleClosed }}" aria-pressed="{{ closedPressed }}">Ide okolo (zatvoreno)</button>
           </div>
+          <!-- Per-side lengths: the panel BOM takes one length per side plus a closed-loop flag (Tomislav, #18). Open fence: corners + 1 sides; closed: as many sides as corners. -->
+          <sc-if value="{{ hasSides }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: #F2F2F0; border-radius: 14px">
+              <span style="font-size: 13px; font-weight: 600; color: #3B4049">Dužina svake strane (m)</span>
+              <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap">
+                <sc-for list="{{ sides }}" as="s" hint-placeholder-count="3">
+                  <label class="side">{{ s.label }}<input inputmode="decimal" value="{{ s.value }}" onInput="{{ s.onInput }}"></label>
+                </sc-for>
+                <sc-if value="{{ canAddSide }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" class="opt" onClick="{{ addSide }}">+ strana</button>
+                </sc-if>
+                <span style="height: 44px; display: flex; align-items: center; font-size: 15px; font-weight: 700">= {{ total }} m</span>
+              </div>
+            </div>
+          </sc-if>
         </div>
+
+        <!-- Posts: base-plate posts are stock and the default; concrete-in-soil posts are made to order (fence-rules.md). -->
         <div style="display: flex; flex-direction: column; gap: 10px">
           <span style="font-size: 14px; font-weight: 700; color: #3B4049">2. Gdje idu stupovi?</span>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <button type="button" class="opt on">U zemlju (betoniram)</button><button type="button" class="opt">Na beton, s pločicom</button><button type="button" class="opt">Ne znam</button>
+            <button type="button" class="{{ pPlate }}" onClick="{{ pickPlate }}">Na beton, s pločicom</button><button type="button" class="{{ pConcrete }}" onClick="{{ pickConcrete }}">U zemlju (betoniram)<span class="sub">po narudžbi, 10–15 dana</span></button><button type="button" class="{{ pUnknown }}" onClick="{{ pickPostsUnknown }}">Ne znam</button>
           </div>
+          <sc-if value="{{ isConcrete }}" hint-placeholder-val="{{ false }}">
+            <p class="note">Stupovi za betoniranje su po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami.</p>
+          </sc-if>
         </div>
+
         <div style="display: flex; flex-direction: column; gap: 10px">
-          <span style="font-size: 14px; font-weight: 700; color: #3B4049">3. Treba li kapija?</span>
+          <span style="font-size: 14px; font-weight: 700; color: #3B4049">3. Koja boja?</span>
           <div style="display: flex; gap: 8px; flex-wrap: wrap">
-            <button type="button" class="opt">Pješačka</button><button type="button" class="opt">Kolna</button><button type="button" class="opt on">Ne treba</button>
+            <button type="button" class="opt on">Antracit (RAL 7016)</button><button type="button" class="opt">Zelena (RAL 6005)</button><button type="button" class="opt">Svejedno</button>
           </div>
         </div>
         <a href="3-results.html" style="align-self: flex-start; height: 52px; padding: 0 28px; border-radius: 26px; background: #E30613; color: #FFFFFF; font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 10px">Prikaži prijedlog
@@ -75,11 +105,14 @@ a{color:inherit;text-decoration:none}
       <span style="font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #FF6B73">Vaš projekt</span>
       <span style="font-family: Outfit, sans-serif; font-size: 26px; font-weight: 800; line-height: 1.1">Ograda za dvorište</span>
       <div style="display: flex; flex-direction: column">
-        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Dužina</span><strong>25 m</strong></div>
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Dužina</span><strong>{{ total }} m</strong></div>
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Kutovi</span><strong>{{ cornersLabel }}</strong></div>
+        <sc-if value="{{ hasSides }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Strane</span><strong style="text-align: right">{{ sidesLabel }}</strong></div>
+        </sc-if>
         <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Visina</span><strong>oko 150 cm</strong></div>
         <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Boja</span><strong>Antracit</strong></div>
-        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Stupovi</span><strong>U zemlju</strong></div>
-        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Kapija</span><strong>Ne</strong></div>
+        <div style="display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Stupovi</span><strong style="text-align: right">{{ postsLabel }}</strong></div>
       </div>
       <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #B8BCC4">Promijenite bilo šta u razgovoru — popis materijala se ponovo izračuna.</p>
     </aside>
@@ -88,7 +121,65 @@ a{color:inherit;text-decoration:none}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  constructor(props) {
+    super(props);
+    // Shown state = the customer's example answer (25 m on three sides of a yard), not a default:
+    // the advisor never guesses corners or side lengths, it asks. Only the base-plate posts are a real default.
+    this.state = { corners: 2, closed: false, sides: ['10', '5', '10'], posts: 'plate' };
+  }
+  sideCount(corners, closed) {
+    if (corners === 0 || corners === '?') return 0;
+    return closed ? corners : corners + 1;
+  }
+  resize(sides, n) {
+    const out = sides.slice(0, n);
+    while (out.length < n) out.push('');
+    return out;
+  }
+  pickCorners(corners) {
+    const closed = typeof corners === 'number' && corners >= 3 ? this.state.closed : false;
+    this.setState({ corners, closed, sides: this.resize(this.state.sides, this.sideCount(corners, closed)) });
+  }
+  toggleClosed() {
+    const closed = !this.state.closed;
+    // A closed fence needs at least 3 corners; "around the yard" usually means 4.
+    const c = this.state.corners;
+    const corners = closed && (c === '?' || c < 3) ? 4 : c;
+    this.setState({ closed, corners, sides: this.resize(this.state.sides, this.sideCount(corners, closed)) });
+  }
+  renderVals() {
+    const { corners, closed, sides, posts } = this.state;
+    const cls = (on) => (on ? 'opt num on' : 'opt num');
+    const nums = sides.map((v) => parseFloat(String(v).replace(',', '.'))).filter((v) => !isNaN(v));
+    const total = sides.length ? nums.reduce((a, b) => a + b, 0) : 25;
+    const fmt = (v) => String(v).replace('.', ',');
+    const postCls = (key) => (posts === key ? 'opt on' : 'opt') + (key === 'concrete' ? ' two' : '');
+    return {
+      k0: cls(corners === 0), k1: cls(corners === 1), k2: cls(corners === 2), k3: cls(corners === 3),
+      k4: cls(typeof corners === 'number' && corners >= 4), kUnknown: cls(corners === '?').replace(' num', ''),
+      kClosed: closed ? 'opt on' : 'opt', closedPressed: closed ? 'true' : 'false',
+      pick0: () => this.pickCorners(0), pick1: () => this.pickCorners(1), pick2: () => this.pickCorners(2),
+      pick3: () => this.pickCorners(3), pick4: () => this.pickCorners(4), pickUnknown: () => this.pickCorners('?'),
+      toggleClosed: () => this.toggleClosed(),
+      hasSides: sides.length > 0,
+      canAddSide: typeof corners === 'number' && corners >= 4,
+      addSide: () => this.setState({ corners: corners + 1, sides: [...sides, ''] }),
+      sides: sides.map((value, i) => ({
+        label: `Strana ${i + 1}`,
+        value,
+        onInput: (e) => { const next = sides.slice(); next[i] = e.target.value; this.setState({ sides: next }); }
+      })),
+      total: fmt(total),
+      cornersLabel: corners === '?' ? 'Ne znam' : `${corners}${closed ? ' · zatvoreno' : ''}`,
+      sidesLabel: sides.map((v) => v || '?').join(' + ') + ' m',
+      pPlate: postCls('plate'), pConcrete: postCls('concrete'), pUnknown: postCls('unknown'),
+      pickPlate: () => this.setState({ posts: 'plate' }),
+      pickConcrete: () => this.setState({ posts: 'concrete' }),
+      pickPostsUnknown: () => this.setState({ posts: 'unknown' }),
+      isConcrete: posts === 'concrete',
+      postsLabel: { plate: 'Na beton, s pločicom', concrete: 'U zemlju · po narudžbi, 10–15 dana', unknown: 'Ne znam' }[posts]
+    };
+  }
 }
 </script>
 </body>
