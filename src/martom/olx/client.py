@@ -99,7 +99,7 @@ def parse_retry_after(value: str | None, *, now: datetime) -> float | None:
     if value is None:
         return None
     value = value.strip()
-    if value.isdigit():
+    if value.isascii() and value.isdigit():  # isdigit() alone accepts "²", which float() rejects
         return float(value)
     try:
         retry_at = parsedate_to_datetime(value)
@@ -121,6 +121,10 @@ class OlxClient:
     Share one client (or one `RateLimiter`) for the whole sync: the 1.3 s rule is
     enforced per limiter, so two clients with their own limiters would together go
     twice as fast.
+
+    When you pass `rate_limiter`, it takes precedence: `min_request_interval_seconds`,
+    `clock` and `sleep` are then ignored for pacing, because the shared limiter already
+    has its own.
     """
 
     def __init__(
@@ -186,13 +190,18 @@ class OlxClient:
             retry_after: float | None = None
             try:
                 response = await self._http.get(path, params=params)
-            except httpx.TransportError as exc:  # timeouts and connection errors
+            except httpx.RequestError as exc:  # timeouts, connection and decoding errors
                 failure = OlxApiError(f"GET {path} failed: {exc!r}")
                 failure.__cause__ = exc
             else:
                 status = response.status_code
                 if response.is_success:
-                    return response.json()
+                    try:
+                        return response.json()
+                    except ValueError as exc:  # json.JSONDecodeError subclasses ValueError
+                        raise OlxApiError(
+                            f"GET {path} returned a body that is not JSON", status_code=status
+                        ) from exc
                 failure = OlxApiError(f"GET {path} returned HTTP {status}", status_code=status)
                 if status != 429 and status < 500:
                     raise failure  # other 4xx: retrying won't help
@@ -200,19 +209,24 @@ class OlxClient:
                     response.headers.get("Retry-After"), now=self._now()
                 )
 
+            delay = retry_after if retry_after is not None else self._backoff_delay(attempt)
+            # Pause the shared limiter BEFORE either give-up below, so whoever sends the
+            # next request through this limiter (another coroutine, or the sync moving on
+            # after catching OlxApiError) still waits as long as OLX asked.
+            self._limiter.pause(delay)
+
             if attempt == self._max_attempts:
                 raise failure
             if retry_after is not None and retry_after > self._max_retry_after:
                 raise OlxApiError(
                     f"{failure} with Retry-After {retry_after:.0f} s, longer than the "
-                    f"{self._max_retry_after:.0f} s we are willing to wait",
+                    f"{self._max_retry_after:.0f} s this call is willing to wait "
+                    "(the shared limiter still waits the full time)",
                     status_code=failure.status_code,
                 ) from failure
-            delay = retry_after if retry_after is not None else self._backoff_delay(attempt)
             logger.warning(
                 "%s; retry %d/%d in %.1f s", failure, attempt, self._max_attempts - 1, delay
             )
-            self._limiter.pause(delay)
 
         raise AssertionError("unreachable: the loop always returns or raises")
 

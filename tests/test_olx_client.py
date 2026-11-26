@@ -15,7 +15,7 @@ import pytest
 
 from martom.olx.client import OlxApiError, OlxClient, RateLimiter, parse_retry_after
 
-# The anyio pytest plugin (installed with httpx) runs `async def` tests on asyncio.
+# The anyio pytest plugin (an explicit dev dependency) runs `async def` tests on asyncio.
 pytestmark = pytest.mark.anyio
 
 FIXED_NOW = datetime(2026, 11, 26, 12, 0, 0, tzinfo=UTC)
@@ -353,6 +353,70 @@ async def test_retry_after_longer_than_the_cap_raises_instead_of_waiting() -> No
     assert len(server.starts) == 1
 
 
+async def test_giving_up_on_a_long_retry_after_still_pauses_later_requests() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "3600"}), ok()])
+
+    async with make_client(clock, server, max_retry_after_seconds=300.0) as client:
+        with pytest.raises(OlxApiError):
+            await client.get_listing(1)
+        await client.get_listing(2)  # e.g. the sync moving on to the next category
+
+    assert gaps(server.starts) == [3600.0]
+
+
+async def test_giving_up_on_the_last_attempt_still_honours_retry_after() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "60"}), ok()])
+
+    async with make_client(clock, server, max_attempts=1) as client:
+        with pytest.raises(OlxApiError):
+            await client.get_listing(1)
+        await client.get_listing(2)
+
+    assert gaps(server.starts) == [60.0]
+
+
+async def test_giving_up_after_5xx_still_backs_off_before_the_next_request() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(500), httpx.Response(500), ok()])
+
+    async with make_client(clock, server, max_attempts=2, backoff_base_seconds=2.0) as client:
+        with pytest.raises(OlxApiError):
+            await client.get_listing(1)
+        await client.get_listing(2)
+
+    assert gaps(server.starts) == [2.0, 4.0]
+
+
+# --- Bodies that are not JSON ----------------------------------------------------------
+
+
+async def test_non_json_body_raises_olx_api_error() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(200, text="<html>Održavanje</html>")])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxApiError) as caught:
+            await client.get_listing(1)
+
+    assert caught.value.status_code == 200
+    assert isinstance(caught.value.__cause__, ValueError)
+
+
+async def test_decoding_error_is_retried_and_wrapped() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.DecodingError("truncated gzip")])
+
+    async with make_client(clock, server, max_attempts=2) as client:
+        with pytest.raises(OlxApiError) as caught:
+            await client.get_listing(1)
+
+    assert caught.value.status_code is None
+    assert isinstance(caught.value.__cause__, httpx.DecodingError)
+    assert len(server.starts) == 2
+
+
 # --- Other 4xx -------------------------------------------------------------------------
 
 
@@ -430,6 +494,7 @@ async def test_connection_error_is_retried() -> None:
         ("Thu, 26 Nov 2026 11:59:00 GMT", 0.0),  # a date in the past means "now"
         ("-5", None),
         ("soon", None),
+        ("²", None),  # str.isdigit() is True for superscripts, but float() rejects them
         ("", None),
         (None, None),
     ],
