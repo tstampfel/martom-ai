@@ -15,7 +15,7 @@ type AppShellProps = {
 }
 
 /**
- * The frame around every screen: red top strip, header with logo and cart,
+ * The frame around every screen: charcoal top strip, header with logo and cart,
  * and footer. On phones (below 768 px) the strip collapses to a red border
  * and the shop hours and phone number move to the footer, as in
  * docs/mockups/mobile/.

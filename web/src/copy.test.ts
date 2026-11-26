@@ -26,4 +26,11 @@ describe('copy', () => {
     expect(copy.header.cart(0)).toBe('Korpa · 0')
     expect(copy.header.cart(3)).toBe('Korpa · 3')
   })
+
+  // "2.600+" was the duplicated OLX row count; until the database can count
+  // the unique listings, the hero names the catalogue without a number.
+  it('names the OLX catalogue in the hero lead without an article count', () => {
+    expect(copy.hero.lead).toContain('iz cijelog Martomovog OLX kataloga')
+    expect(copy.hero.lead).not.toMatch(/\d/)
+  })
 })

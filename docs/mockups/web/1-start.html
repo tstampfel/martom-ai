@@ -14,9 +14,9 @@
 body{margin:0}
 a{color:inherit;text-decoration:none}
 .ph{background:repeating-linear-gradient(135deg,#DEDED9 0 14px,#E8E8E4 14px 28px);color:#4F5560;display:flex;align-items:flex-end;padding:14px;box-sizing:border-box;font-size:13px;font-family:Inter,sans-serif}
-.chip{min-height:44px;box-sizing:border-box;padding:0 18px;border-radius:22px;border:1px solid rgba(255,255,255,.55);color:#FFFFFF;font-size:15px;font-weight:500;display:flex;align-items:center;font-family:Inter,sans-serif}
-.chip:hover{background:rgba(255,255,255,.14)}
-.hex{width:64px;height:72px;flex:none;background:#E30613;color:#FFFFFF;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:24px}
+.chip{min-height:44px;box-sizing:border-box;padding:0 18px;border-radius:22px;border:0;background:#FFFFFF;color:#26292E;font-size:15px;font-weight:500;display:flex;align-items:center;font-family:Inter,sans-serif}
+.chip:hover{background:#E2E2DE}
+.hex{width:64px;height:72px;flex:none;background:#D71222;color:#FFFFFF;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:24px}
 .tile{background:#FFFFFF;border:1px solid #E2E2DE;border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
 .tile:hover{border-color:#26292E}
 .live{animation:live-pulse 2.4s ease-in-out infinite}
@@ -25,7 +25,7 @@ a{color:inherit;text-decoration:none}
 </style>
 </helmet>
 <div style="background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; min-height: 1700px">
-  <div style="background: #E30613; color: #FFFFFF; font-size: 13px">
+  <div style="background: #26292E; color: #FFFFFF; font-size: 13px">
     <div style="max-width: 1280px; margin: 0 auto; padding: 8px 32px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
       <span>Dostava širom BiH · Lično preuzimanje u Međugorju</span>
       <span>Pon–pet 07–16 · sub 07–14 · <a href="#" style="font-weight: 700">036 651 427</a></span>
@@ -47,10 +47,10 @@ a{color:inherit;text-decoration:none}
 
   <section style="max-width: 1280px; margin: 0 auto; padding: 32px 32px 0">
     <div style="display: flex; flex-wrap: wrap; border-radius: 24px; overflow: hidden; background: #26292E">
-      <div style="flex: 999 1 560px; min-width: 0; background: #E30613; border-radius: 0 140px 140px 0; padding: 56px 72px 56px 56px; box-sizing: border-box; color: #FFFFFF; display: flex; flex-direction: column; gap: 24px">
+      <div style="flex: 999 1 560px; min-width: 0; background: #D71222; border-radius: 0 140px 140px 0; padding: 56px 72px 56px 56px; box-sizing: border-box; color: #FFFFFF; display: flex; flex-direction: column; gap: 24px">
         <span style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: .9">AI savjetnik za ograde i alat</span>
         <h1 style="margin: 0; font-family: Outfit, sans-serif; font-weight: 800; font-size: 56px; line-height: 1.02; letter-spacing: -1px">Recite šta ograđujete.<br>Mi složimo cijeli popis.</h1>
-        <p style="margin: 0; font-size: 18px; line-height: 1.5; max-width: 520px; opacity: .95">Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.</p>
+        <p style="margin: 0; font-size: 18px; line-height: 1.5; max-width: 520px; opacity: .95">Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.</p>
         <form style="display: flex; flex-direction: column; gap: 10px; max-width: 600px" onSubmit="{{ noop }}">
           <label for="hq" style="font-size: 13px; font-weight: 600">Vaše pitanje</label>
           <div style="display: flex; gap: 8px; background: #FFFFFF; border-radius: 32px; padding: 8px 8px 8px 22px; align-items: center">
@@ -91,7 +91,7 @@ a{color:inherit;text-decoration:none}
   <section aria-label="Kategorije" style="max-width: 1280px; margin: 0 auto; padding: 56px 32px 0; display: flex; flex-direction: column; gap: 20px">
     <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px">
       <h2 style="margin: 0; font-family: Outfit, sans-serif; font-weight: 800; font-size: 32px">Ograde za svaku namjenu</h2>
-      <a href="#" style="font-weight: 600; font-size: 15px; border-bottom: 2px solid #E30613">Sve ograde</a>
+      <a href="#" style="font-weight: 600; font-size: 15px; border-bottom: 2px solid #D71222">Sve ograde</a>
     </div>
     <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
       <a href="2-clarify.html" class="tile"><div class="ph" style="height: 170px">[foto: 3D panel]</div><div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px"><strong style="font-size: 17px">Panelne ograde</strong><span style="font-size: 13px; color: #4F5560">Nylofor 3D · od 27 KM / panel</span></div></a>
@@ -103,9 +103,9 @@ a{color:inherit;text-decoration:none}
 
   <section aria-label="Kako radi" style="max-width: 1280px; margin: 0 auto; padding: 56px 32px 64px">
     <div style="background: #FFFFFF; border-radius: 24px; padding: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px">
-      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #E30613">01</span><strong style="font-size: 18px">Opišite šta trebate</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Dužina, visina i za šta je ograda. Savjetnik pita samo ono što fali.</span></div>
-      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #E30613">02</span><strong style="font-size: 18px">Dobijete popis materijala</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Paneli, stupovi i pribor s količinama i okvirnom cijenom.</span></div>
-      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #E30613">03</span><strong style="font-size: 18px">Pošaljete jednim klikom</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Narudžba ide Martomu preko WhatsAppa; potvrda stanja, cijene i dostave obično isti dan.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #D71222">01</span><strong style="font-size: 18px">Opišite šta trebate</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Dužina, visina i za šta je ograda. Savjetnik pita samo ono što fali.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #D71222">02</span><strong style="font-size: 18px">Dobijete popis materijala</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Paneli, stupovi i pribor s količinama i okvirnom cijenom.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #D71222">03</span><strong style="font-size: 18px">Pošaljete jednim klikom</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Narudžba ide Martomu preko WhatsAppa; potvrda stanja, cijene i dostave obično isti dan.</span></div>
     </div>
   </section>
 

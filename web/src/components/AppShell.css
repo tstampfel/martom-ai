@@ -9,10 +9,10 @@
   flex: 1;
 }
 
-/* ---- Red top strip ---- */
+/* ---- Charcoal top strip ---- */
 
 .top-strip {
-  background: var(--color-red);
+  background: var(--color-charcoal);
   color: var(--color-on-brand);
   font-size: 13px;
 }
@@ -29,6 +29,11 @@
 
 .top-strip__phone {
   font-weight: 700;
+}
+
+/* The default charcoal focus ring would vanish on the charcoal strip. */
+.top-strip :focus-visible {
+  outline-color: var(--color-on-brand);
 }
 
 /* ---- Header ---- */

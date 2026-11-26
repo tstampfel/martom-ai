@@ -172,10 +172,10 @@
 .chip {
   min-height: var(--touch-target);
   padding: 0 18px;
-  border: 1px solid color-mix(in srgb, var(--color-on-brand) 55%, transparent);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-on-brand);
+  background: var(--color-card);
+  color: var(--color-charcoal);
   font: inherit;
   font-size: 15px;
   font-weight: 500;
@@ -184,8 +184,9 @@
   cursor: pointer;
 }
 
+/* Charcoal text stays above 10:1 on both white and this grey. */
 .chip:hover {
-  background: color-mix(in srgb, var(--color-on-brand) 14%, transparent);
+  background: var(--color-border);
 }
 
 /* ---- Example agent card ---- */
@@ -440,7 +441,6 @@
   .chip {
     padding: 0 16px;
     font-size: 14px;
-    border-color: color-mix(in srgb, var(--color-on-brand) 60%, transparent);
   }
 
   .about {

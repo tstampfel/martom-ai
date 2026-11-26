@@ -38,7 +38,7 @@ export const copy = {
     eyebrowShort: 'AI savjetnik',
     title: ['Recite šta ograđujete.', 'Mi složimo cijeli popis.'],
     titleShort: 'Recite šta ograđujete. Mi složimo popis.',
-    lead: 'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.',
+    lead: 'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.',
   },
   start: {
     inputLabel: 'Vaše pitanje',
