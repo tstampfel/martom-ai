@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS sync_run (
     -- a later manual override can apply them after a human has checked them.
     skipped_listing_ids     bigint[],
     -- The skipped runs whose ids this run applied: one id for `martom sync --apply-skipped`
-    -- (kind 'apply_skipped'), the two consecutive skipped runs for an automatic apply.
+    -- (kind 'apply_skipped'); for an automatic apply, this run and the skipped run before it.
     applied_run_ids         bigint[],
     -- 20% re-check guard: the GET re-check before applying skipped ids failed (network
     -- error, timeout, 429, 5xx, ...) for more than 20% of them, so nothing was applied.

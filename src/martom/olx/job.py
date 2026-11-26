@@ -23,12 +23,12 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
 
 Getting a real large removal past the 10% guard:
 
-- **Automatic:** when the two runs before this one (nightly or full) both tripped the
-  guard, this run deactivates the ids flagged in both of them, if they are still
-  candidates now and its own re-check confirms them, without the 10% guard. If the
+- **Automatic:** when a run trips the guard and the run before it (nightly or full)
+  tripped it too, this second run deactivates the ids flagged in both runs that its own
+  re-check confirms, without the 10% guard (Tomislav, 26 Nov). If the
   re-check fails for more than 20% of those ids, it applies none of them and flags the
-  run (`recheck_skipped`, status 'skipped_guard'). The remaining confirmed ids go through
-  the 10% guard as usual.
+  run (`recheck_skipped`, status 'skipped_guard'). The other confirmed ids stay skipped
+  and are stored in `skipped_listing_ids`, so the next run can match them.
 - **Manual:** `martom sync --apply-skipped <run id>` (`apply_skipped_run`) re-checks the
   ids stored for that skipped run and deactivates the confirmed ones, with the same
   per-listing rules and the same 20% re-check guard. It is its own `sync_run`
@@ -335,49 +335,51 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
     stats.errors += len(recheck.errors)
     active_count = await store.count_active(conn)  # before any deactivation below
     gone: dict[int, GoneReason] = dict(recheck.gone)
+    if not gone:
+        return
+    if deactivation_allowed(len(gone), active_count):
+        await _deactivate(conn, gone, stats, trigger=f"sync run {stats.run_id}")
+        return
 
-    # Automatic apply: ids flagged by the two previous runs, still candidates now.
-    previous = await store.consecutive_skipped_runs(conn, stats.run_id)
+    # The 10% guard trips: deactivate none of them, except (auto-apply) the ids the
+    # previous run flagged as well, when that run tripped the guard too.
+    stats.deactivation_skipped = True
+    stats.would_deactivate = len(gone)
+    logger.error(
+        "deactivation skipped: %d of %d active listings (over %d%%) would be deactivated",
+        len(gone),
+        active_count,
+        MAX_DEACTIVATION_PERCENT,
+        extra={
+            "event": "deactivation_skipped",
+            "run_id": stats.run_id,
+            "would_deactivate": len(gone),
+            "active_listings": active_count,
+        },
+    )
+    assert stats.run_id is not None  # set by `_recorded` before the run starts
+    previous = await store.previous_skipped_run(conn, stats.run_id)
     if previous is not None:
-        run_ids, flagged = previous
-        auto_ids = flagged & candidates
-        if auto_ids and not recheck_allowed(len(auto_ids & recheck.errors.keys()), len(auto_ids)):
-            _flag_recheck_failure(stats, recheck, auto_ids)
-        elif auto_ids:
-            auto_gone: dict[int, GoneReason] = {
-                i: gone.pop(i) for i in sorted(auto_ids) if i in gone
-            }
+        previous_id, flagged = previous
+        # Flagged in both runs; re-check failures among them count against the 20% guard.
+        both = flagged & candidates
+        if both and not recheck_allowed(len(both & recheck.errors.keys()), len(both)):
+            _flag_recheck_failure(stats, recheck, both)
+        elif both:
+            auto_gone: dict[int, GoneReason] = {i: gone.pop(i) for i in sorted(both) if i in gone}
+            trigger_runs = [stats.run_id, previous_id]
             logger.warning(
                 "auto-apply: deactivating %d listings flagged by both skipped runs %d and %d",
                 len(auto_gone),
-                run_ids[0],
-                run_ids[1],
-                extra={"event": "auto_apply", "run_id": stats.run_id, "trigger_runs": run_ids},
+                previous_id,
+                stats.run_id,
+                extra={"event": "auto_apply", "run_id": stats.run_id, "trigger_runs": trigger_runs},
             )
-            stats.applied_run_ids = run_ids
-            trigger = f"auto-apply of runs {run_ids[0]} and {run_ids[1]}"
+            stats.applied_run_ids = trigger_runs
+            trigger = f"auto-apply of runs {previous_id} and {stats.run_id}"
             await _deactivate(conn, auto_gone, stats, trigger=trigger)
-
-    if not gone:
-        return
-    if not deactivation_allowed(len(gone), active_count):
-        stats.deactivation_skipped = True
-        stats.would_deactivate = len(gone)
-        stats.skipped_listing_ids = sorted(gone)
-        logger.error(
-            "deactivation skipped: %d of %d active listings (over %d%%) would be deactivated",
-            len(gone),
-            active_count,
-            MAX_DEACTIVATION_PERCENT,
-            extra={
-                "event": "deactivation_skipped",
-                "run_id": stats.run_id,
-                "would_deactivate": len(gone),
-                "active_listings": active_count,
-            },
-        )
-        return
-    await _deactivate(conn, gone, stats, trigger=f"sync run {stats.run_id}")
+    # What is still skipped: the next run (or `--apply-skipped`) works from these ids.
+    stats.skipped_listing_ids = sorted(gone)
 
 
 async def _save(

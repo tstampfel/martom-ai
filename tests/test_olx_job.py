@@ -673,32 +673,33 @@ def test_recheck_allowed_up_to_exactly_20_percent(errors: int, total: int, allow
     assert recheck_allowed(errors, total) is allowed
 
 
-async def test_auto_apply_after_two_consecutive_trips_uses_only_the_intersection(
+async def test_second_consecutive_trip_applies_only_the_intersection(
     conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
 ) -> None:
     server = FakeShop(ten_listings())
     await sync(conn, server)
     first = await trip_guard(conn, server, {8, 9, 10})
     server.listed[8] = "Listing 8"  # back on the pages
-    second = await trip_guard(conn, server, {6, 7, 9, 10})
     server.requests.clear()
 
     with caplog.at_level(logging.INFO, logger="martom.olx.job"):
-        await sync(conn, server)  # the run after the two trips; 6, 7, 9, 10 still missing
+        second = await trip_guard(conn, server, {6, 7, 9, 10})  # trips again: 40%
 
     stored = await listings(conn)
-    # Flagged in both trips: 9 and 10. 6 and 7 were flagged only once, and on their own
-    # they are still 20% of the active listings, so the 10% guard keeps them.
+    # Flagged in both trips: 9 and 10, deactivated by the second trip itself. 6 and 7 were
+    # flagged only once, so the 10% guard keeps them (and stores them for the next run).
     assert stored[9]["active"] is False
     assert stored[10]["active"] is False
     assert stored[6]["active"] is True
     assert stored[7]["active"] is True
+    assert stored[8]["active"] is True
     assert {9, 10} <= set(server.detail_requests())  # re-checked with a GET first
     run = await last_run(conn)
+    assert run["id"] == second
+    assert run["status"] == "skipped_guard"
     assert run["deactivated"] == 2
-    assert run["status"] == "skipped_guard"  # 6 and 7 tripped the 10% guard
     assert run["applied_run_ids"] == [second, first]
-    assert run["deactivation_skipped"] is True
+    assert run["would_deactivate"] == 4
     assert run["skipped_listing_ids"] == [6, 7]
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert any(str(first) in m and str(second) in m and "auto-apply" in m for m in warnings)
@@ -713,10 +714,9 @@ async def test_auto_apply_never_deactivates_a_listing_olx_says_is_active(
     server = FakeShop(ten_listings())
     await sync(conn, server)
     await trip_guard(conn, server, {8, 9, 10})
-    await trip_guard(conn, server, {8, 9, 10})
     server.off_list = {9: "active"}
 
-    await sync(conn, server)
+    await trip_guard(conn, server, {8, 9, 10})  # 8 and 10 confirmed gone: 20%, trips
 
     stored = await listings(conn)
     assert stored[9]["active"] is True
@@ -733,9 +733,8 @@ async def test_no_auto_apply_when_the_trips_are_not_consecutive(
     server.listed[9] = "Listing 9"
     server.listed[10] = "Listing 10"
     await sync(conn, server)  # a normal run in between
-    await trip_guard(conn, server, {9, 10})
 
-    await sync(conn, server)
+    await trip_guard(conn, server, {9, 10})
 
     stored = await listings(conn)
     assert stored[9]["active"] is True
@@ -751,10 +750,9 @@ async def test_auto_apply_with_too_many_recheck_failures_applies_nothing(
     server = FakeShop(ten_listings())
     await sync(conn, server)
     await trip_guard(conn, server, {8, 9, 10})
-    await trip_guard(conn, server, {8, 9, 10})
-    server.detail_errors = {9: 502}  # 1 of 3 = 33%
+    server.detail_errors = {9: 502}  # 1 of the 3 flagged ids fails its re-check: 33%
 
-    await sync(conn, server)
+    await trip_guard(conn, server, {8, 9, 10})  # 8 and 10 confirmed gone: 20%, trips
 
     stored = await listings(conn)
     assert all(stored[i]["active"] is True for i in (8, 9, 10))
@@ -762,6 +760,7 @@ async def test_auto_apply_with_too_many_recheck_failures_applies_nothing(
     assert run["status"] == "skipped_guard"
     assert run["recheck_skipped"] is True
     assert run["deactivated"] == 0
+    assert run["applied_run_ids"] is None
 
 
 async def test_listing_with_a_new_owner_is_deactivated_as_not_martom(

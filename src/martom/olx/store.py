@@ -210,21 +210,22 @@ async def load_skipped_ids(conn: psycopg.AsyncConnection, run_id: int) -> list[i
     return list(row[0] or []) if row is not None else []
 
 
-async def consecutive_skipped_runs(
+async def previous_skipped_run(
     conn: psycopg.AsyncConnection, before_run_id: int
-) -> tuple[list[int], set[int]] | None:
-    """If the two sync runs before `before_run_id` both tripped the 10% guard, return their
-    ids (newest first) and the listing ids flagged in both; otherwise None.
+) -> tuple[int, set[int]] | None:
+    """The sync run right before `before_run_id`, if it tripped the 10% guard: its id and
+    the listing ids it left skipped. None when that run didn't trip the guard.
 
     Only `nightly` and `full` runs count: a manual `apply_skipped` run doesn't break or
-    make a streak. Any other sync run in between (succeeded, failed or crashed) does.
+    make a streak. Any other sync run in between (succeeded, partial, failed or crashed)
+    does, so the two trips must be consecutive.
     """
     cursor = await conn.execute(
         "SELECT id, deactivation_skipped, skipped_listing_ids FROM sync_run "
-        "WHERE kind IN ('nightly', 'full') AND id < %s ORDER BY id DESC LIMIT 2",
+        "WHERE kind IN ('nightly', 'full') AND id < %s ORDER BY id DESC LIMIT 1",
         (before_run_id,),
     )
-    rows = await cursor.fetchall()
-    if len(rows) < 2 or not all(skipped and ids for _, skipped, ids in rows):
+    row = await cursor.fetchone()
+    if row is None or not row[1] or not row[2]:
         return None
-    return [rows[0][0], rows[1][0]], set(rows[0][2]) & set(rows[1][2])
+    return int(row[0]), set(row[2])
