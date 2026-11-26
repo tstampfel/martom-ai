@@ -49,6 +49,14 @@
           "title": "Unpriced Count",
           "type": "integer"
         },
+        "extra_lines": {
+          "description": "No-price order lines outside the BOM, e.g. concrete posts 'po upitu'.",
+          "items": {
+            "$ref": "#/$defs/ExtraLine"
+          },
+          "title": "Extra Lines",
+          "type": "array"
+        },
         "notes": {
           "description": "Extra notes in Bosnian.",
           "items": {
@@ -65,6 +73,7 @@
         "lines",
         "total",
         "unpriced_count",
+        "extra_lines",
         "notes"
       ],
       "title": "BomEvent",
@@ -350,6 +359,34 @@
         "retry_after_seconds"
       ],
       "title": "ErrorEvent",
+      "type": "object"
+    },
+    "ExtraLine": {
+      "additionalProperties": false,
+      "description": "A no-price order line that is not part of the BOM calculation.\n\nE.g. \"Stupovi za betoniranje – po upitu\" when the customer sets the posts in\nconcrete (Tomislav, 26 Nov 2026; built in #20 and #27). It has no quantity and no\nprice field at all, and it never counts in `total` or `unpriced_count`.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "name",
+        "note"
+      ],
+      "title": "ExtraLine",
       "type": "object"
     },
     "ProductCard": {

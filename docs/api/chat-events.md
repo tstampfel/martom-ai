@@ -71,8 +71,23 @@ is shown on the chip and `note` under the question once the option is picked.
 ```json
 {
   "type": "chips",
-  "intro": "Još dvije stvari:",
+  "intro": "Još tri stvari:",
   "questions": [
+    {
+      "id": "posts",
+      "text": "Gdje idu stupovi?",
+      "kind": "single",
+      "options": [
+        {"value": "plate", "label": "Na beton, s pločicom", "badge": null, "note": null},
+        {
+          "value": "concrete",
+          "label": "U zemlju (betoniram)",
+          "badge": "po upitu · po narudžbi",
+          "note": "Stupovi za betoniranje su po upitu i rade se po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami."
+        },
+        {"value": "unknown", "label": "Ne znam", "badge": null, "note": null}
+      ]
+    },
     {
       "id": "color",
       "text": "Koja boja?",
@@ -127,23 +142,66 @@ schema (the backend checks it against `martom.bom.common.Item`), so adding or re
 BOM item doesn't change the contract. Use it only as a key.
 
 A line with `price_on_request: true` has no `unit_price` and no `line_total` ("cijena na
-upit"); `made_to_order: true` marks a "po narudžbi" line that Toni
-confirms, and `label` holds its status text. The example is a shortened roll fence: the
-100 cm support T-post has no price yet ("cijena na upit"). Prices are illustrative.
+upit"); `made_to_order: true` marks a "po narudžbi" line that Toni confirms, and `label`
+holds its status text.
 
 `total` is never a fake `"0.00"`; `unpriced_count` says how many lines are "na upit":
 
 | Lines | `total` | `unpriced_count` | UI (copy lands in #74/#27) |
 | --- | --- | --- | --- |
-| All priced | sum of the lines | `0` | "Ukupno: 905,10 KM" |
-| Some "na upit" | sum of the priced lines | number of "na upit" lines | "Ukupno: 905,10 KM + 2 stavke na upit" |
+| All priced | sum of the lines | `0` | "Ukupno: 530,00 KM" (the `extra_lines` example) |
+| Some "na upit" | sum of the priced lines | number of "na upit" lines | "Ukupno: 254,00 KM + 1 stavka na upit" (the roll fence example) |
 | All "na upit" | `null` | number of lines | "Ukupno: cijena na upit"; adding to the cart and ordering still work |
 
 The models check rules the JSON Schema cannot express: `line_total` is
 `unit_price × quantity`, `price_on_request` is true exactly when a line has no prices,
 `total` is the sum of the priced lines (or `null` when there are none), and
-`unpriced_count` equals the number of `price_on_request` lines. `web/src/api/events.test.ts`
+`unpriced_count` equals the number of `price_on_request` lines. The plural ("1 stavka", "2
+stavke", "5 stavki") is the frontend copy's job. `web/src/api/events.test.ts`
 checks the same rules on the fixtures.
+
+#### Posts set in concrete: `extra_lines`
+
+The clarify question "Gdje idu stupovi?" offers "U zemlju (betoniram)" (badge "po upitu ·
+po narudžbi"). Martom doesn't stock posts without a base plate, so that answer gives **no
+BOM calculation** (fence-rules.md): the BOM keeps its base-plate posts, and the reply's
+`bom` event carries one entry in `extra_lines`:
+
+```json
+{
+  "type": "bom",
+  "title": "Popis materijala",
+  "summary": "25 m · panel 153 cm · antracit",
+  "lines": [
+    {
+      "item": "panel",
+      "name": "Panel 153 × 250 cm",
+      "size": "153 × 250 cm",
+      "quantity": 10,
+      "unit_price": "53.00",
+      "line_total": "530.00",
+      "price_on_request": false,
+      "made_to_order": false,
+      "label": null
+    }
+  ],
+  "total": "530.00",
+  "unpriced_count": 0,
+  "extra_lines": [
+    {"name": "Stupovi za betoniranje – po upitu", "note": "Rade se po narudžbi, 10–15 dana."}
+  ],
+  "notes": []
+}
+```
+
+An extra line is not a BOM line: it has no `item`, no quantity and no price field, it is
+not counted in `total` or `unpriced_count`, and its quantity can't be edited. The cart and
+the order message (#20, #27) copy it as a no-price line so Toni follows it up. The server
+sends it, not the browser, because the customer may answer in free text ("betoniram
+stupove") without ever tapping the chip. The example above is shortened to one line.
+
+The roll fence example, shortened: the 100 cm support T-post has no price yet ("cijena na
+upit"). Prices are illustrative.
 
 ```json
 {
@@ -187,6 +245,7 @@ checks the same rules on the fixtures.
   ],
   "total": "254.00",
   "unpriced_count": 1,
+  "extra_lines": [],
   "notes": ["Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."]
 }
 ```

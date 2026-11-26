@@ -104,6 +104,16 @@ export interface BomLine {
   label: string | null
 }
 
+/**
+ * A no-price order line outside the BOM, e.g. "Stupovi za betoniranje – po
+ * upitu" when the posts go in concrete. No quantity, no price; never counted
+ * in total or unpriced_count. The cart and order copy it as it is.
+ */
+export interface ExtraLine {
+  name: string
+  note: string | null
+}
+
 /** The materials list (popis materijala). */
 export interface BomEvent {
   type: 'bom'
@@ -117,6 +127,8 @@ export interface BomEvent {
   total: Price | null
   /** How many lines are "na upit"; > 0 with a total: "+ 2 stavke na upit". */
   unpriced_count: number
+  /** No-price order lines outside the BOM; see ExtraLine. */
+  extra_lines: ExtraLine[]
   notes: string[]
 }
 

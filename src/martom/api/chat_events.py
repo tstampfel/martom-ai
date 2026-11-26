@@ -14,7 +14,7 @@ calculator), never from the model. The endpoint itself lands with #21 [M4-4].
 """
 
 # Field descriptions quote Bosnian labels with the real "×" and "–" signs.
-# ruff: noqa: RUF001, RUF003
+# ruff: noqa: RUF001, RUF002, RUF003
 
 import json
 import sys
@@ -46,13 +46,13 @@ LISTING_URL_PATTERN = r"^https://martom\.olx\.ba/artikal/[a-z0-9-]+$"
 
 def format_price(amount: Decimal) -> str:
     """A Decimal amount in KM as the wire format: "53.00" (rounded half up to cents)."""
-    if not amount.is_finite() or amount < 0:
-        raise ValueError(f"a price must be a non-negative amount, got {amount}")
     return str(round_to_cents(amount))
 
 
 def round_to_cents(amount: Decimal) -> Decimal:
-    """Round half up to whole cents; ValueError when the amount is too large to round."""
+    """Round half up to whole cents; ValueError for a price that can't be one."""
+    if not amount.is_finite() or amount < 0:
+        raise ValueError(f"a price must be a non-negative amount, got {amount}")
     try:
         return amount.quantize(CENT, rounding=ROUND_HALF_UP)
     except InvalidOperation:
@@ -214,7 +214,12 @@ class BomLineOut(_Event):
 
     @classmethod
     def from_line(cls, line: BomLine, unit_price: Decimal | None) -> Self:
-        """The wire line for a calculator line; unit_price comes from the database."""
+        """The wire line for a calculator line; unit_price comes from the database.
+
+        Raises ValueError for a price that can't be one (negative, infinite, too large).
+        pydantic's ValidationError is a ValueError too, so one `except ValueError`
+        catches every bad input.
+        """
         # An unconfirmed item never shows a price, even when one was found.
         if line.unit_price_on_request or unit_price is None:
             prices: dict[str, Any] = {"unit_price": None, "line_total": None}
@@ -235,6 +240,18 @@ class BomLineOut(_Event):
         )
 
 
+class ExtraLine(_Event):
+    """A no-price order line that is not part of the BOM calculation.
+
+    E.g. "Stupovi za betoniranje – po upitu" when the customer sets the posts in
+    concrete (Tomislav, 26 Nov 2026; built in #20 and #27). It has no quantity and no
+    price field at all, and it never counts in `total` or `unpriced_count`.
+    """
+
+    name: str
+    note: str | None = None
+
+
 class BomEvent(_Event):
     """The materials list (popis materijala) with an approximate total."""
 
@@ -247,6 +264,10 @@ class BomEvent(_Event):
         "(never a fake '0.00')."
     )
     unpriced_count: int = Field(ge=0, description="How many lines are 'na upit'.")
+    extra_lines: list[ExtraLine] = Field(
+        default_factory=list,
+        description="No-price order lines outside the BOM, e.g. concrete posts 'po upitu'.",
+    )
     notes: list[str] = Field(default_factory=list, description="Extra notes in Bosnian.")
 
     @model_validator(mode="after")

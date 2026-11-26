@@ -52,6 +52,7 @@ def bom_event(lines: list[dict[str, Any]], total: str | None, **overrides: Any) 
         "lines": lines,
         "total": total,
         "unpriced_count": 0,
+        "extra_lines": [],
         "notes": [],
     }
     event.update(overrides)
@@ -296,6 +297,29 @@ def test_bom_unpriced_count_is_the_number_of_on_request_lines(unpriced_count: in
         BomEvent.model_validate(bom_event(lines, "530.00", unpriced_count=unpriced_count))
 
 
+CONCRETE_POSTS = {
+    "name": "Stupovi za betoniranje – po upitu",
+    "note": "Rade se po narudžbi, 10–15 dana.",
+}
+
+
+def test_bom_extra_line_has_no_price_and_leaves_the_total_alone() -> None:
+    # Tomislav, 26 Nov 2026: posts set in concrete are one no-price order line, never
+    # a BOM line (#20, #27). It doesn't count as a "na upit" BOM line either.
+    event = BomEvent.model_validate(
+        bom_event([panel_line()], "530.00", unpriced_count=0, extra_lines=[CONCRETE_POSTS])
+    )
+    assert (event.total, event.unpriced_count) == ("530.00", 0)
+    assert event.model_dump(mode="json")["extra_lines"] == [CONCRETE_POSTS]
+
+
+def test_bom_extra_line_cannot_carry_a_price() -> None:
+    with pytest.raises(ValidationError, match="price"):
+        BomEvent.model_validate(
+            bom_event([panel_line()], "530.00", extra_lines=[{**CONCRETE_POSTS, "price": "1.00"}])
+        )
+
+
 def test_bom_line_from_calculator_line_carries_its_fields() -> None:
     line = BomLine(
         item=Item.BRACE_T_POST,
@@ -331,6 +355,14 @@ def test_calculator_line_with_sub_cent_price_rounds_before_multiplying() -> None
     line = BomLine(item=Item.PVC_CLIP, name="Obujmica PVC", quantity=2)
     out = BomLineOut.from_line(line, unit_price=Decimal("1.005"))
     assert (out.unit_price, out.line_total) == ("1.01", "2.02")
+
+
+@pytest.mark.parametrize("price", ["Infinity", "-1", "1e30"])
+def test_calculator_line_with_an_impossible_price_raises_value_error(price: str) -> None:
+    # A pydantic ValidationError is a ValueError too, so one except catches every case.
+    line = BomLine(item=Item.PVC_CLIP, name="Obujmica PVC", quantity=2)
+    with pytest.raises(ValueError, match="price"):
+        BomLineOut.from_line(line, unit_price=Decimal(price))
 
 
 def test_on_request_calculator_line_never_shows_a_price() -> None:

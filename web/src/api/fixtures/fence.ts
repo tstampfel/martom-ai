@@ -1,8 +1,9 @@
 // A fence conversation as two replies on one thread: the customer asks for
 // 25 m of yard fence, the advisor asks three clarify questions (2-clarify.html),
 // the customer answers and gets products and a materials list (3-results.html).
-// Listing 63996799 and its slug are recorded (tests/fixtures/olx); BOM prices are
-// the fence-rules.md reference prices; other prices are illustrative.
+// Listing 63996799 and its slug are recorded (tests/fixtures/olx). The panel
+// fence BOM prices are the fence-rules.md reference prices; every other price
+// (the roll fence, the cards' variants) is illustrative.
 
 import type { BomLine, ChatEvent } from '../events'
 
@@ -58,6 +59,21 @@ export const fenceClarify: ChatEvent[] = [
       },
       { id: 'sides', text: 'Dužina svake strane (m)', kind: 'side_lengths', options: [] },
       {
+        id: 'posts',
+        text: 'Gdje idu stupovi?',
+        kind: 'single',
+        options: [
+          { value: 'plate', label: 'Na beton, s pločicom', badge: null, note: null },
+          {
+            value: 'concrete',
+            label: 'U zemlju (betoniram)',
+            badge: 'po upitu · po narudžbi',
+            note: 'Stupovi za betoniranje su po upitu i rade se po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami.',
+          },
+          { value: 'unknown', label: 'Ne znam', badge: null, note: null },
+        ],
+      },
+      {
         id: 'color',
         text: 'Koja boja?',
         kind: 'single',
@@ -72,7 +88,7 @@ export const fenceClarify: ChatEvent[] = [
   { type: 'done', thread_id: THREAD_ID },
 ]
 
-/** Reply to the answers: 2 corners, 10 + 5 + 10 m, antracit (base-plate posts). */
+/** Reply to the answers: 2 corners, 10 + 5 + 10 m, na beton s pločicom, antracit. */
 export const fenceBom: ChatEvent[] = [
   { type: 'step', id: 'bom', text: 'Izračunao popis materijala', status: 'working' },
   { type: 'step', id: 'bom', text: 'Izračunao popis materijala', status: 'done' },
@@ -123,6 +139,33 @@ export const fenceBom: ChatEvent[] = [
     ],
     total: '913.10',
     unpriced_count: 0,
+    extra_lines: [],
+    notes: [NOTE],
+  },
+  { type: 'done', thread_id: THREAD_ID },
+]
+
+/**
+ * The same answers, but the posts go in concrete ("U zemlju (betoniram)"):
+ * no BOM calculation for those posts (fence-rules.md), the BOM keeps its
+ * base-plate posts, and one no-price extra line goes to the cart and order.
+ */
+export const fenceConcretePosts: ChatEvent[] = [
+  { type: 'step', id: 'bom', text: 'Izračunao popis materijala', status: 'done' },
+  { type: 'token', text: 'Stupove za betoniranje radimo po narudžbi; cijenu javlja Martom.' },
+  {
+    type: 'bom',
+    title: 'Popis materijala',
+    summary: '25 m · panel 153 cm · antracit',
+    lines: [
+      line('panel', 'Panel 153 × 250 cm', '153 × 250 cm', 10, '53.00', '530.00'),
+      line('post_base_plate', 'Stup s pločicom 155 cm', '155 cm', 11, '24.90', '273.90'),
+      line('pvc_clip', 'PVC kopča', null, 52, '1.00', '52.00'),
+      line('anchor_m8x80', 'Tiplo anker FI 10 / M8×80', 'M8×80', 44, '1.30', '57.20'),
+    ],
+    total: '913.10',
+    unpriced_count: 0,
+    extra_lines: [{ name: 'Stupovi za betoniranje – po upitu', note: 'Rade se po narudžbi, 10–15 dana.' }],
     notes: [NOTE],
   },
   { type: 'done', thread_id: THREAD_ID },
@@ -148,6 +191,7 @@ export const rollFenceSomeOnRequest: ChatEvent[] = [
     ],
     total: '292.55',
     unpriced_count: 1,
+    extra_lines: [],
     notes: [NOTE],
   },
   { type: 'done', thread_id: '6c2d9e14-5a3f-4b71-8e0d-2f9a4c6b1e57' },
@@ -167,6 +211,7 @@ export const bomAllOnRequest: ChatEvent[] = [
     ],
     total: null,
     unpriced_count: 2,
+    extra_lines: [],
     notes: [NOTE],
   },
   { type: 'done', thread_id: '9e4b1a73-2c8d-4f05-b6e2-7d3a5c0f8b19' },

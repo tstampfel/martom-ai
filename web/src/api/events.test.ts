@@ -26,6 +26,7 @@ import {
   type ChipsEvent,
   type DoneEvent,
   type ErrorEvent,
+  type ExtraLine,
   type ProductCard,
   type ProductCardsEvent,
   type StepEvent,
@@ -80,10 +81,12 @@ const SHAPES = {
     lines: false,
     total: true,
     unpriced_count: false,
+    extra_lines: false,
     notes: false,
   } satisfies Nullability<BomEvent>,
   ErrorEvent: { type: false, kind: false, retry_after_seconds: true } satisfies Nullability<ErrorEvent>,
   DoneEvent: { type: false, thread_id: false } satisfies Nullability<DoneEvent>,
+  ExtraLine: { name: false, note: true } satisfies Nullability<ExtraLine>,
 }
 
 const ENUMS: Record<string, readonly string[]> = {
@@ -201,6 +204,15 @@ describe('chat event contract', () => {
     expect([...cases].sort()).toEqual(['all na upit', 'all priced', 'some na upit'])
   })
 
+  it('has a concrete-posts reply: chip option with badge and note, then an extra line', () => {
+    const options = Object.values(fixtures)
+      .flat()
+      .flatMap((event) => (event.type === 'chips' ? event.questions : []))
+      .flatMap((question) => question.options)
+    expect(options.some((option) => option.badge !== null && option.note !== null)).toBe(true)
+    expect(allBoms().some((bom) => bom.extra_lines.length > 0)).toBe(true)
+  })
+
   it('has a rate-limited reply', () => {
     const errors = Object.values(fixtures)
       .flat()
@@ -217,6 +229,7 @@ describe('chat event contract', () => {
       { type: 'error', kind: 'overloaded', retry_after_seconds: null },
       { ...bom, total: 530 },
       { ...bom, unpriced_count: -1 },
+      { ...bom, extra_lines: [{ name: 'Stupovi za betoniranje – po upitu', note: null, price: null }] },
     ]
     for (const event of broken) {
       expect(validate(event)).toBe(false)
