@@ -195,7 +195,8 @@ RUN_COLUMNS = frozenset(
         "status", "shop_total", "coverage", "seen", "new", "fetched", "changed",
         "deactivation_candidates", "deactivated", "reactivated", "errors",
         "deactivation_skipped", "would_deactivate", "skipped_listing_ids",
-        "applied_run_ids", "recheck_skipped", "error",
+        "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
+        "error",
     }
 )  # fmt: skip
 
@@ -243,3 +244,14 @@ async def previous_skipped_run(
     if row is None or not row[1] or not row[2]:
         return None
     return int(row[0]), set(row[2])
+
+
+async def previous_failed_ids(conn: psycopg.AsyncConnection, before_run_id: int) -> set[int]:
+    """The listing ids whose GET still failed in the last nightly/full run before this one."""
+    cursor = await conn.execute(
+        "SELECT failed_listing_ids FROM sync_run "
+        "WHERE kind IN ('nightly', 'full') AND id < %s ORDER BY id DESC LIMIT 1",
+        (before_run_id,),
+    )
+    row = await cursor.fetchone()
+    return set(row[0] or []) if row is not None else set()

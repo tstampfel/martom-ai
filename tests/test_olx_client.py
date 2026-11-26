@@ -338,6 +338,29 @@ async def test_5xx_retries_with_exponential_backoff_then_succeeds() -> None:
     assert gaps(server.starts) == [2.0, 4.0]
 
 
+async def test_counts_requests_that_succeeded_only_after_a_retry() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(500), ok({"id": 1}), ok({"id": 2})])
+
+    async with make_client(clock, server) as client:
+        assert client.recovered_requests == 0
+        await client.get_listing(1)  # 500, then 200: recovered
+        await client.get_listing(2)  # 200 at once: not counted
+
+    assert client.recovered_requests == 1
+
+
+async def test_a_request_that_fails_after_its_retries_is_not_counted_as_recovered() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(502)])
+
+    async with make_client(clock, server, max_attempts=2) as client:
+        with pytest.raises(OlxApiError):
+            await client.get_listing(1)
+
+    assert client.recovered_requests == 0
+
+
 async def test_5xx_gives_up_after_max_attempts() -> None:
     clock = FakeClock()
     server = Recorder(clock, [httpx.Response(502)])

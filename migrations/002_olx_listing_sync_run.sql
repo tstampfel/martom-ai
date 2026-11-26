@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS sync_run (
     -- How the run ended. The freshness alert (M6-3) fires on anything but 'succeeded'.
     --   running       the run is in progress (or crashed hard: no finished_at)
     --   succeeded     a clean run: 100% coverage, no guard tripped
-    --   partial       coverage < 100%, so nothing was deactivated
+    --   partial       coverage < 100% (nothing was deactivated), or a detail fetch or
+    --                 GET re-check still failed after its retries (failed_listing_ids)
     --   skipped_guard the 10% guard or the 20% re-check guard skipped deactivation
     --   failed        the run broke (OLX rate-limit abort, OLX or database error)
     -- Precedence when several apply: failed > skipped_guard > partial > succeeded.
@@ -72,7 +73,13 @@ CREATE TABLE IF NOT EXISTS sync_run (
     deactivation_candidates integer NOT NULL DEFAULT 0,
     deactivated             integer NOT NULL DEFAULT 0,
     reactivated             integer NOT NULL DEFAULT 0,
-    errors                  integer NOT NULL DEFAULT 0,  -- failed detail fetches and checks
+    errors                  integer NOT NULL DEFAULT 0,  -- GETs still failing after retries
+    -- GETs that failed at first but succeeded on a retry: they don't change the status,
+    -- but a rising count shows OLX getting less reliable.
+    retried_count           integer NOT NULL DEFAULT 0,
+    -- Listing ids whose detail fetch or re-check still failed after its retries; the next
+    -- nightly/full run fetches and re-checks these first.
+    failed_listing_ids      bigint[],
     -- 10% guard: the run would have deactivated more than 10% of the active listings, so
     -- it deactivated none. The alert (M6-3) queries this flag.
     deactivation_skipped    boolean NOT NULL DEFAULT false,

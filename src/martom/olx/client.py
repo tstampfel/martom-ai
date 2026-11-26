@@ -201,6 +201,8 @@ class OlxClient:
         self._max_retry_after = max_retry_after_seconds
         self._max_limiter_pause = max_limiter_pause_seconds
         self._now = now
+        # Calls that succeeded only after at least one retry (sync_run.retried_count).
+        self.recovered_requests = 0
         self._limiter = rate_limiter or RateLimiter(
             min_request_interval_seconds, clock=clock, sleep=sleep
         )
@@ -258,11 +260,14 @@ class OlxClient:
                 status = response.status_code
                 if response.is_success:
                     try:
-                        return response.json()
+                        body = response.json()
                     except ValueError as exc:  # json.JSONDecodeError subclasses ValueError
                         raise OlxApiError(
                             f"GET {path} returned a body that is not JSON", status_code=status
                         ) from exc
+                    if attempt > 1:
+                        self.recovered_requests += 1
+                    return body
                 failure = OlxApiError(f"GET {path} returned HTTP {status}", status_code=status)
                 if status != 429 and status < 500:
                     raise failure  # other 4xx: retrying won't help

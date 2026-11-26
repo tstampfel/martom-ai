@@ -81,6 +81,7 @@ class FakeShop:
         self.detail_timeouts: set[int] = set()
         self.owners: dict[int, int] = {}
         self.string_ids = False  # send `id` and `user.id` as strings in detail bodies
+        self.flaky: dict[int, int] = {}  # id -> how many more GETs answer 500 first
         self.abort_on: str | None = None
         self.requests: list[httpx.Request] = []
 
@@ -147,6 +148,9 @@ class FakeShop:
             listing_id = int(path.rsplit("/", 1)[1])
             if listing_id in self.detail_timeouts:
                 raise httpx.ConnectTimeout("timed out", request=request)
+            if self.flaky.get(listing_id, 0) > 0:
+                self.flaky[listing_id] -= 1
+                return httpx.Response(500)
             if listing_id in self.detail_errors:
                 return httpx.Response(self.detail_errors[listing_id])
             if listing_id in self.listed:
@@ -163,13 +167,13 @@ class FakeShop:
         ]
 
 
-def make_client(server: FakeShop) -> OlxClient:
+def make_client(server: FakeShop, *, max_attempts: int = 1) -> OlxClient:
     clock = FakeClock()
     return OlxClient(
         transport=httpx.MockTransport(server),
         clock=clock.monotonic,
         sleep=clock.sleep,
-        max_attempts=1,
+        max_attempts=max_attempts,
     )
 
 
@@ -185,8 +189,10 @@ async def conn(db: str) -> AsyncIterator[psycopg.AsyncConnection]:
         yield connection
 
 
-async def sync(conn: psycopg.AsyncConnection, server: FakeShop, *, full: bool = False) -> RunStats:
-    async with make_client(server) as olx:
+async def sync(
+    conn: psycopg.AsyncConnection, server: FakeShop, *, full: bool = False, max_attempts: int = 1
+) -> RunStats:
+    async with make_client(server, max_attempts=max_attempts) as olx:
         return await run_sync(conn, olx, kind="full" if full else "nightly")
 
 
@@ -309,13 +315,81 @@ async def test_failed_detail_fetch_keeps_the_old_summary_hash(
     assert stored[2]["summary_hash"] == old_hash  # retried next run
     assert stored[3]["summary_hash"] is None  # stored from its summary, detail still missing
     run = await last_run(conn)
-    assert run["status"] == "succeeded"
+    assert run["status"] == "partial"  # a fetch still failing after its retries
     assert run["errors"] == 2
+    assert run["failed_listing_ids"] == [2, 3]
 
     server.detail_errors = {}
     server.requests.clear()
     await sync(conn, server)
     assert sorted(server.detail_requests()) == [2, 3]
+
+
+async def test_a_fetch_that_succeeds_on_retry_keeps_the_run_succeeded(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    server.flaky = {2: 1}  # one 500, then 200
+
+    await sync(conn, server, max_attempts=2)
+
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    assert run["retried_count"] == 1
+    assert (run["errors"], run["failed_listing_ids"]) == (0, None)
+    assert (await listings(conn))[2]["summary_hash"] is not None
+
+
+async def test_a_fetch_that_still_fails_after_its_retries_makes_the_run_partial(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    server.detail_errors = {2: 500}
+
+    stats = await sync(conn, server, max_attempts=2)
+
+    assert stats.status == "partial"
+    run = await last_run(conn)
+    assert run["status"] == "partial"
+    assert run["failed_listing_ids"] == [2]
+    assert (run["errors"], run["retried_count"]) == (1, 0)
+
+
+async def test_the_next_run_fetches_the_stored_failed_ids_first(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+    server.detail_errors = {3: 500}
+    await sync(conn, server)
+    server.detail_errors = {}
+    server.listed[1] = "Panel 103"  # 1 and 2 changed too, so they are fetched as well
+    server.listed[2] = "Stup 120"
+    server.requests.clear()
+
+    await sync(conn, server)
+
+    assert server.detail_requests() == [3, 1, 2]
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    assert run["failed_listing_ids"] is None
+
+
+async def test_the_next_run_rechecks_the_stored_failed_ids_first(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({i: f"Listing {i}" for i in range(1, 21)})
+    await sync(conn, server)
+    del server.listed[19], server.listed[20]  # 2 of 20 = 10%: allowed
+    server.detail_errors = {20: 503}
+    await sync(conn, server)
+    assert (await last_run(conn))["failed_listing_ids"] == [20]
+    server.detail_errors = {}
+    server.requests.clear()
+
+    await sync(conn, server)
+
+    assert server.detail_requests()[0] == 20
+    assert (await listings(conn))[20]["active"] is False
 
 
 # --- Deactivation -----------------------------------------------------------------------
@@ -374,6 +448,8 @@ async def test_candidate_check_error_deactivates_nothing(conn: psycopg.AsyncConn
     run = await last_run(conn)
     assert run["deactivated"] == 0
     assert run["errors"] == 1
+    assert run["status"] == "partial"  # the re-check still failed after its retries
+    assert run["failed_listing_ids"] == [10]
 
 
 async def test_incomplete_coverage_checks_and_deactivates_nothing(
@@ -475,29 +551,37 @@ async def test_more_than_ten_percent_deactivates_nothing_and_records_the_skip(
 
 
 @pytest.mark.parametrize(
-    ("coverage", "deactivation_skipped", "recheck_skipped", "expected"),
+    ("coverage", "deactivation_skipped", "recheck_skipped", "errors", "expected"),
     [
-        (1.0, False, False, "succeeded"),
-        (1.2, False, False, "succeeded"),  # saw more than OLX reports: still complete
-        (0.99, False, False, "partial"),
-        (0.0, False, False, "partial"),  # OLX reported an empty shop
-        (1.0, True, False, "skipped_guard"),
-        (1.0, False, True, "skipped_guard"),
-        (None, False, False, "succeeded"),  # --apply-skipped has no coverage
-        (None, False, True, "skipped_guard"),
-        # Precedence: a guard skip outranks partial coverage (documented in migration 002).
-        (0.5, True, False, "skipped_guard"),
-        (0.5, False, True, "skipped_guard"),
+        (1.0, False, False, 0, "succeeded"),
+        (1.2, False, False, 0, "succeeded"),  # saw more than OLX reports: still complete
+        (0.99, False, False, 0, "partial"),
+        (0.0, False, False, 0, "partial"),  # OLX reported an empty shop
+        (1.0, False, False, 1, "partial"),  # a GET still failing after its retries
+        (None, False, False, 1, "partial"),
+        (1.0, True, False, 0, "skipped_guard"),
+        (1.0, False, True, 0, "skipped_guard"),
+        (None, False, False, 0, "succeeded"),  # --apply-skipped has no coverage
+        (None, False, True, 0, "skipped_guard"),
+        # Precedence: a guard skip outranks partial (documented in migration 002).
+        (0.5, True, False, 0, "skipped_guard"),
+        (0.5, False, True, 0, "skipped_guard"),
+        (1.0, True, False, 3, "skipped_guard"),
     ],
 )
 def test_run_outcome_and_its_precedence(
-    coverage: float | None, deactivation_skipped: bool, recheck_skipped: bool, expected: str
+    coverage: float | None,
+    deactivation_skipped: bool,
+    recheck_skipped: bool,
+    errors: int,
+    expected: str,
 ) -> None:
     stats = RunStats(
         kind="nightly",
         coverage=coverage,
         deactivation_skipped=deactivation_skipped,
         recheck_skipped=recheck_skipped,
+        errors=errors,
     )
 
     assert run_outcome(stats) == expected

@@ -19,8 +19,10 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
      Above that the run deactivates none, logs an ERROR and records the skip, with the
      ids, in `sync_run` (`deactivation_skipped`, `skipped_listing_ids`).
 6. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
-   'partial' below 100% coverage, 'skipped_guard' when a guard skipped deactivation
-   (`run_outcome`), 'failed' when the run broke.
+   'partial' below 100% coverage or when a GET still failed after its retries (those ids
+   go in `failed_listing_ids`, and the next run fetches and re-checks them first),
+   'skipped_guard' when a guard skipped deactivation (`run_outcome`), 'failed' when the
+   run broke. GETs that succeeded on a retry only add to `retried_count`.
 
 Getting a real large removal past the 10% guard:
 
@@ -43,7 +45,7 @@ same way; the next scheduled run tries again.
 
 import itertools
 import logging
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
@@ -84,7 +86,9 @@ class RunStats:
     deactivation_candidates: int = 0
     deactivated: int = 0
     reactivated: int = 0
-    errors: int = 0
+    errors: int = 0  # GETs that still failed after their retries
+    retried_count: int = 0  # GETs that succeeded only after a retry
+    failed_listing_ids: list[int] | None = None
     deactivation_skipped: bool = False
     would_deactivate: int | None = None
     skipped_listing_ids: list[int] | None = None
@@ -112,13 +116,32 @@ def run_outcome(stats: "RunStats") -> RunStatus:
     """The status of a run that didn't break (see the `sync_run.status` comment in 002).
 
     Precedence: skipped_guard > partial > succeeded ('failed' is set by the caller when
-    the run breaks). `coverage` is None for `--apply-skipped`, which pages nothing.
+    the run breaks). Partial: coverage below 100%, or any detail fetch or re-check that
+    still failed after its retries (`errors`). A GET that succeeded on a retry only adds
+    to `retried_count`. `coverage` is None for `--apply-skipped`, which pages nothing.
     """
     if stats.deactivation_skipped or stats.recheck_skipped:
         return "skipped_guard"
     if stats.coverage is not None and stats.coverage < 1:
         return "partial"
+    if stats.errors > 0:
+        return "partial"
     return "succeeded"
+
+
+def _failed_first(ids: Iterable[int], failed: Collection[int]) -> list[int]:
+    """`ids` with the ones that failed last run first, both parts in their original order."""
+    ordered = list(ids)
+    return [i for i in ordered if i in failed] + [i for i in ordered if i not in failed]
+
+
+def _record_failures(stats: "RunStats", listing_ids: Iterable[int]) -> None:
+    """Add ids whose GET still failed after its retries to the run's failed list and count."""
+    new = set(listing_ids)
+    if not new:
+        return
+    stats.errors += len(new)
+    stats.failed_listing_ids = sorted(set(stats.failed_listing_ids or ()) | new)
 
 
 def recheck_allowed(failures: int, total: int) -> bool:
@@ -168,8 +191,17 @@ async def shop_id(olx: OlxClient) -> int:
         raise OlxResponseError(f"unexpected OLX response: shop profile ({exc!r})") from exc
 
 
-async def recheck_listings(olx: OlxClient, listing_ids: Collection[int], owner_id: int) -> Recheck:
+async def recheck_listings(
+    olx: OlxClient,
+    listing_ids: Collection[int],
+    owner_id: int,
+    *,
+    first: Collection[int] = (),
+) -> Recheck:
     """GET /listings/{id} for each id (through the rate-limited client) and sort the answers.
+
+    Ids in `first` (those whose re-check failed last run) are asked about first; the rest
+    follow in id order.
 
     Gone: 404, a `status` other than "active" ("inactive"), or a `user.id` other than
     `owner_id` ("not_martom"). Still active: status "active" and Martom's. Everything
@@ -177,7 +209,7 @@ async def recheck_listings(olx: OlxClient, listing_ids: Collection[int], owner_i
     `OlxRateLimitAbortError` propagates: the caller ends the run and deactivates nothing.
     """
     result = Recheck()
-    for listing_id in sorted(listing_ids):
+    for listing_id in _failed_first(sorted(listing_ids), first):
         try:
             body = await olx.get_listing(listing_id)
         except OlxRateLimitAbortError:
@@ -270,7 +302,7 @@ async def run_sync(conn: psycopg.AsyncConnection, olx: OlxClient, *, kind: RunKi
     """
     if kind == "apply_skipped":
         raise ValueError("use apply_skipped_run for kind 'apply_skipped'")
-    return await _recorded(conn, kind, lambda stats: _sync(conn, olx, stats))
+    return await _recorded(conn, olx, kind, lambda stats: _sync(conn, olx, stats))
 
 
 async def apply_skipped_run(
@@ -290,13 +322,13 @@ async def apply_skipped_run(
             raise _RunFailedError(f"sync run {skipped_run_id} has no skipped deactivations")
         stats.deactivation_candidates = len(ids)
         recheck = await recheck_listings(olx, ids, await shop_id(olx))
-        stats.errors = len(recheck.errors)
+        _record_failures(stats, recheck.errors)
         if not recheck_allowed(len(recheck.errors), len(ids)):
             _flag_recheck_failure(stats, recheck, ids)  # status becomes skipped_guard
             return
         await _deactivate(conn, recheck.gone, stats, trigger=f"applying run {skipped_run_id}")
 
-    return await _recorded(conn, "apply_skipped", apply)
+    return await _recorded(conn, olx, "apply_skipped", apply)
 
 
 class _RunFailedError(Exception):
@@ -305,12 +337,14 @@ class _RunFailedError(Exception):
 
 async def _recorded(
     conn: psycopg.AsyncConnection,
+    olx: OlxClient,
     kind: RunKind,
     body: Callable[[RunStats], Awaitable[None]],
 ) -> RunStats:
     """Open a `sync_run` row, run `body`, and record how it ended."""
     stats = RunStats(kind=kind)
     stats.run_id = await store.start_run(conn, kind)
+    recovered_at_start = olx.recovered_requests
     logger.info("sync run %d (%s) started", stats.run_id, kind)
     try:
         await body(stats)
@@ -322,8 +356,10 @@ async def _recorded(
     except Exception as exc:
         stats.status = "failed"
         stats.error = f"{type(exc).__name__}: {exc}"
+        stats.retried_count = olx.recovered_requests - recovered_at_start
         await _finish_quietly(conn, stats)
         raise
+    stats.retried_count = olx.recovered_requests - recovered_at_start
     await store.finish_run(conn, stats.run_id, stats.columns())
     _log_summary(stats)
     return stats
@@ -347,7 +383,12 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
     await store.save_summaries(conn, result.listings)
     stats.new = sum(1 for i in result.listings if i not in stored)
     stats.reactivated = sum(1 for i in result.listings if i in stored and not stored[i].active)
-    for batch in itertools.batched(result.listings, DETAIL_BATCH_SIZE):
+    # Listings whose GET still failed last run go first, so a short run retries them.
+    assert stats.run_id is not None  # set by `_recorded` before the run starts
+    failed_last_run = await store.previous_failed_ids(conn, stats.run_id)
+    for batch in itertools.batched(
+        _failed_first(result.listings, failed_last_run), DETAIL_BATCH_SIZE
+    ):
         rows = {i: result.listings[i] for i in batch}
         try:
             details = await fetch_changed_details(olx, rows, stored_hashes)
@@ -360,8 +401,8 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
     stats.deactivation_candidates = len(candidates)
     if not candidates:
         return
-    recheck = await recheck_listings(olx, candidates, await shop_id(olx))
-    stats.errors += len(recheck.errors)
+    recheck = await recheck_listings(olx, candidates, await shop_id(olx), first=failed_last_run)
+    _record_failures(stats, recheck.errors)
     active_count = await store.count_active(conn)  # before any deactivation below
     gone: dict[int, GoneReason] = dict(recheck.gone)
     if not gone:
@@ -386,7 +427,6 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
             "active_listings": active_count,
         },
     )
-    assert stats.run_id is not None  # set by `_recorded` before the run starts
     previous = await store.previous_skipped_run(conn, stats.run_id)
     if previous is not None:
         previous_id, flagged = previous
@@ -423,7 +463,7 @@ async def _save_details(
     """Save one batch of fetched details and add it to the fetched / changed / error counts."""
     await store.save_details(conn, details.fetched)
     stats.fetched += len(details.fetched)
-    stats.errors += len(details.failed)
+    _record_failures(stats, details.failed)
     stats.changed += sum(
         1
         for i, fetched in details.fetched.items()
