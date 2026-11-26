@@ -22,7 +22,7 @@ Panels come from OLX listing 63996799.
 - **Panel widths:** 200 cm and 250 cm.
 - **Posts:** base-plate posts are stock items, priced from OLX, and the default recommendation.
 - **PVC clips:** 1,00 KM each (reference price).
-- **Anchors M8×80:** 4 per post, corner posts included. 1,30 KM each (reference price).
+- **Anchors M8×80:** 4 per post, corner posts included. 1,30 KM each (reference price). Panel posts only; the roll-fence foot-plate post uses M8×70 (below), so don't mix them up.
 
 ### Corners (kutovi)
 
@@ -59,7 +59,9 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 
 - Prices per height always come from the OLX sync ("from 10,00 KM" for the T-post is a reference only).
 - **Foot-plate post (b), reference prices** (26 Nov 2026): 60 cm → 10,50 · 80 cm → 11,90 · 100 cm → 14,00 · 125 cm → 16,50 · 150 cm → 21,00 KM. Colours: green and anthracite.
-- **Anchors for (b):** the foot plate has 3 anchor holes, so the BOM assumes **3 anchors per post** until Toni confirms. The anchor type is still pending, so the anchor line stays "cijena na upit" with no price until then.
+- **Anchors for (b): M8×70** (Toni), reference price 0,80 KM each. **Not** the M8×80 used for panel posts.
+  - The foot plate has 3 holes, so the BOM assumes **3 anchors per post** until Toni confirms.
+  - **No OLX listing sells an M8×70 anchor** (searched 26 Nov 2026: "anker", "tiplo", "8x70"; the closest, 76152153, has only 8×80, 8×100 and 10×120). Prices come only from synced data, so until a listing exists the anchor line shows the quantity with **"cijena na upit"** and no price. 0,80 KM appears only in test fixtures.
 - The clarify step for a roll fence asks where the posts go: **into soil or concrete → (a)**, **on a concrete wall or base → (b)**.
 - Listing (b) currently sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni has been asked to move it. Until that's confirmed, listing **81645615** is on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45).
 
@@ -132,6 +134,6 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
   - which post height goes with each fence height;
   - tension wire quantity rule (rows, thickness), and whether ties are needed;
   - with corners, whether the tensioner rule uses the total length or each side;
-  - anchors for the foot-plate post (model b): the anchor type, and confirmation of the assumed 3 per post;
+  - foot-plate post anchors (model b): confirmation of 3 per post, and an OLX listing for the M8×70 anchor (none exists, so the line has no price);
   - whether Toni moved the foot-plate post (81645615) to "Ograde";
   - whether pletivo and chain link use the same posts and 2 m spacing.
