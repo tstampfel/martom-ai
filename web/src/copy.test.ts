@@ -43,7 +43,7 @@ describe('copy', () => {
   })
 
   // Canvas wording from docs/mockups/{web,mobile}/1-start.html; the phone
-  // mockup shows the full step text, so the short form is the same.
+  // mockup shows the full step text, the same as wide screens.
   it('uses the canvas title and steps on the agent card', () => {
     expect(copy.agentCard.title).toBe('Kako savjetnik radi')
     const canvasSteps = [
@@ -52,6 +52,5 @@ describe('copy', () => {
       'Popis: 10 panela · 11 stupova · 44 kopče',
     ]
     expect(copy.agentCard.steps.map((step) => step.text)).toEqual(canvasSteps)
-    expect(copy.agentCard.steps.map((step) => step.short)).toEqual(canvasSteps)
   })
 })

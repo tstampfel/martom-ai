@@ -152,8 +152,7 @@ function AgentCard({ shownSteps }: { shownSteps: number }) {
             aria-hidden="true"
           >
             <span className="agent-card__mark">{state === 'done' ? '✓' : '…'}</span>
-            <span className="agent-card__text--wide">{step.text}</span>
-            <span className="agent-card__text--short">{step.short}</span>
+            <span>{step.text}</span>
           </div>
         )
       })}
