@@ -55,6 +55,31 @@ MADE_TO_ORDER_LABEL = "po narudžbi, 10–15 dana"
 # A closed loop (around a yard) needs at least a triangle.
 MIN_CLOSED_SIDES = 3
 
+# Length limits (Tomislav, 26 Nov 2026), both inclusive. A bigger fence gets no BOM: the
+# advisor sends the customer to Martom directly (M4-3 maps FenceTooLargeError to that).
+MAX_SIDE_M = 300
+MAX_TOTAL_M = 1000
+
+
+class FenceLimit(StrEnum):
+    SIDE = "side"  # one side is longer than MAX_SIDE_M
+    TOTAL = "total"  # all sides together are longer than MAX_TOTAL_M
+
+
+class FenceTooLargeError(ValueError):
+    """The fence is valid but too large for a calculated BOM.
+
+    A subclass of ValueError, so code that only catches ValueError still gets no BOM.
+    `limit` says which limit was hit, `value_m` the length that broke it (metres, after
+    rounding to whole centimetres) and `max_m` the limit itself.
+    """
+
+    def __init__(self, limit: FenceLimit, value_m: Decimal, max_m: int) -> None:
+        self.limit = limit
+        self.value_m = value_m
+        self.max_m = max_m
+        super().__init__(f"fence {limit} of {value_m} m is over the {max_m} m limit")
+
 
 class PostType(StrEnum):
     BASE_PLATE = "base_plate"  # stock item, the default recommendation
@@ -125,11 +150,16 @@ def panel_fence_bom(
     (Martom sells no concrete). Only the confirmed heights get a post size and a price
     reference; the others show "cijena na upit".
 
-    Raises ValueError for an empty or non-list `sides_m`, a side that isn't a positive
-    finite number, a closed loop with fewer than 3 sides, a panel height or width Toni
-    didn't confirm, an unknown post type, or a `closed` or `gate` that isn't a bool.
+    Raises FenceTooLargeError (a ValueError) when a side is over MAX_SIDE_M or all sides
+    together are over MAX_TOTAL_M; exactly the limit is allowed. Raises ValueError for an
+    empty or non-list `sides_m`, a side that isn't a positive finite number, a closed
+    loop with fewer than 3 sides, a panel height or width Toni didn't confirm, an unknown
+    post type, or a `closed` or `gate` that isn't a bool.
     """
     sides_cm = _sides_in_cm(sides_m)
+    total_m = sum(sides_cm, Decimal(0)) / 100
+    if total_m > MAX_TOTAL_M:
+        raise FenceTooLargeError(FenceLimit.TOTAL, total_m, MAX_TOTAL_M)
     if not isinstance(closed, bool):
         raise ValueError(f"closed must be True or False, got {closed!r}")
     if not isinstance(gate, bool):
@@ -264,7 +294,9 @@ def _side_in_cm(side_m: Decimal | int | float | str) -> Decimal:
         # Whole centimetres, so float noise like 5.000000000000001 m can't add a panel.
         side_cm = (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     except InvalidOperation:  # more digits than Decimal's precision, e.g. 1e27 m
-        raise ValueError(f"side length is too large, got {side_m!r} m") from None
+        raise FenceTooLargeError(FenceLimit.SIDE, metres, MAX_SIDE_M) from None
     if side_cm <= 0:
         raise ValueError(f"side length must be at least 1 cm, got {side_m!r} m")
+    if side_cm > MAX_SIDE_M * 100:
+        raise FenceTooLargeError(FenceLimit.SIDE, side_cm / 100, MAX_SIDE_M)
     return side_cm

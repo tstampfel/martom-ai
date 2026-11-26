@@ -10,8 +10,12 @@ from pathlib import Path
 import pytest
 
 from martom.bom.panel import (
+    MAX_SIDE_M,
+    MAX_TOTAL_M,
     PANEL_RULES,
     BomLine,
+    FenceLimit,
+    FenceTooLargeError,
     Item,
     PostType,
     PriceRef,
@@ -325,6 +329,67 @@ def test_a_gate_adds_one_price_on_request_line_and_changes_nothing_else() -> Non
 def test_no_gate_line_by_default() -> None:
     lines = panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153)
     assert Item.GATE not in quantities(lines)
+
+
+# --- length limits ----------------------------------------------------------------------
+# Tomislav, 26 Nov 2026: a side over 300 m or a total over 1000 m gets no BOM; the advisor
+# sends the customer to Martom directly. Both limits are inclusive.
+
+
+def test_limits_are_300m_per_side_and_1000m_in_total() -> None:
+    assert MAX_SIDE_M == 300
+    assert MAX_TOTAL_M == 1000
+
+
+@pytest.mark.parametrize("side_m", [Decimal(0), Decimal(-5)])
+def test_a_side_of_zero_or_less_is_invalid_input_not_too_large(side_m: Decimal) -> None:
+    with pytest.raises(ValueError, match="side") as error:
+        panel_fence_bom(sides_m=[side_m], panel_height_cm=153)
+    assert not isinstance(error.value, FenceTooLargeError)
+
+
+def test_a_301m_side_is_too_large() -> None:
+    with pytest.raises(FenceTooLargeError) as error:
+        panel_fence_bom(sides_m=[Decimal(10), Decimal(301)], panel_height_cm=153)
+
+    assert error.value.limit is FenceLimit.SIDE
+    assert error.value.value_m == Decimal(301)
+    assert error.value.max_m == MAX_SIDE_M
+
+
+def test_a_side_just_over_300m_is_too_large() -> None:
+    with pytest.raises(FenceTooLargeError) as error:
+        panel_fence_bom(sides_m=[Decimal("300.01")], panel_height_cm=153)
+    assert error.value.limit is FenceLimit.SIDE
+
+
+def test_a_1200m_total_is_too_large() -> None:
+    with pytest.raises(FenceTooLargeError) as error:
+        panel_fence_bom(sides_m=[Decimal(300)] * 4, closed=True, panel_height_cm=153)
+
+    assert error.value.limit is FenceLimit.TOTAL
+    assert error.value.value_m == Decimal(1200)
+    assert error.value.max_m == MAX_TOTAL_M
+
+
+def test_too_large_is_still_a_value_error() -> None:
+    # Callers that only catch ValueError still get no BOM instead of a crash.
+    assert issubclass(FenceTooLargeError, ValueError)
+
+
+def test_a_side_of_exactly_300m_gets_a_bom() -> None:
+    lines = panel_fence_bom(sides_m=[Decimal(300)], panel_height_cm=153)
+
+    assert line_for(lines, Item.PANEL).quantity == 120
+    assert line_for(lines, Item.POST_BASE_PLATE).quantity == 121
+
+
+def test_exactly_1000m_in_total_gets_a_bom() -> None:
+    sides = [Decimal(300), Decimal(300), Decimal(300), Decimal(100)]
+    lines = panel_fence_bom(sides_m=sides, closed=True, panel_height_cm=153)
+
+    assert line_for(lines, Item.PANEL).quantity == 400
+    assert line_for(lines, Item.POST_BASE_PLATE).quantity == 400
 
 
 # --- invalid input ----------------------------------------------------------------------
