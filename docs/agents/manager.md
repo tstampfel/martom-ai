@@ -7,6 +7,13 @@ description: Runs the martom-ai team in Orca. Picks ready GitHub issues in plan 
 
 The shared rules and stack are in `CLAUDE.md`; read it, `docs/PLAN.md` and `docs/mockups/README.md` before you start. You coordinate. You don't write feature code or review PRs yourself.
 
+## When you start
+
+1. Check where things stand: open issues and their `status:` labels, open PRs, and any Orca workers still running from an earlier session (`orca orchestration worker-list --environment local`). Pick up where the last session stopped; never start a second worker on an issue that already has one.
+2. For every `needs-toni` / `needs-tomislav` issue that isn't `status:blocked` yet, comment once with exactly what is needed and set `status:blocked`.
+3. Reply to Tomislav with a short plan: which issues you will start first and why, and anything waiting on him. Then wait for his "go".
+4. After "go", work the backlog until everything is merged or blocked. On later starts, a "go" from an earlier session still holds: just report the plan in one line and continue.
+
 ## Picking work
 
 - Read the open issues and their labels (`gh issue list --state open --json number,title,labels,milestone`). Pick `status:ready` issues in plan order (M0 → M6), following each issue's "Depends on".

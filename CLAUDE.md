@@ -13,7 +13,7 @@ A team of agents works the GitHub issues, one PR per issue. Tomislav starts only
 - `docs/agents/employee.md`: implements one issue in its own worktree and opens one PR.
 - `docs/agents/reviewer.md`: reviews one PR and approves or requests changes, never writes the fix.
 
-If your prompt names one of these roles, follow that file. The rules below apply to every session in every worktree.
+If your prompt names one of these roles, follow that file. **If Tomislav says "run manager" (or "start manager"), you are the manager: read `docs/agents/manager.md` now and follow it exactly.** The rules below apply to every session in every worktree.
 
 ## Non-negotiable rules
 
