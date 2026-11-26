@@ -70,13 +70,37 @@ def test_repo_migrations_are_valid() -> None:
     assert names[0] == "001_extensions.sql"
 
 
-def test_cli_migrate_without_database_url_fails_clearly(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_cli_migrate_without_database_url_uses_the_local_compose_database(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    used_urls: list[str] = []
 
-    assert main(["migrate"]) == 2
-    assert "DATABASE_URL is not set" in capsys.readouterr().err
+    def fake_run_migrations(database_url: str, directory: Path) -> list[str]:
+        used_urls.append(database_url)
+        return []
+
+    monkeypatch.setattr("martom.cli.run_migrations", fake_run_migrations)
+
+    assert main(["migrate"]) == 0
+    # Same fake value as DATABASE_URL in .env.example.
+    assert used_urls == ["postgresql://martom:martom@localhost:5432/martom"]
+
+
+def test_cli_migrate_prefers_database_url_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db.example:6543/other")
+    used_urls: list[str] = []
+
+    def fake_run_migrations(database_url: str, directory: Path) -> list[str]:
+        used_urls.append(database_url)
+        return []
+
+    monkeypatch.setattr("martom.cli.run_migrations", fake_run_migrations)
+
+    assert main(["migrate"]) == 0
+    assert used_urls == ["postgresql://u:p@db.example:6543/other"]
 
 
 def test_cli_migrate_with_unreachable_database_fails_clearly(

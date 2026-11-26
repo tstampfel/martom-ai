@@ -1,8 +1,12 @@
 # Local development services: Postgres 16 with pgvector, and Redis.
-# Start: `docker compose up -d`, then `uv run martom migrate`.
+# Start: `docker compose up -d --wait`, then `uv run martom migrate`.
 # Credentials are local-only defaults and match DATABASE_URL in .env.example.
 # Host ports can be moved with POSTGRES_PORT / REDIS_PORT if 5432 or 6379 is taken
 # (then change the port in DATABASE_URL / REDIS_URL too).
+# The fixed project name makes every git worktree share this one stack (same containers,
+# ports and volume) instead of each starting its own; tests use throwaway databases.
+name: martom
+
 services:
   db:
     image: pgvector/pgvector:pg16
