@@ -33,21 +33,21 @@ Panels come from OLX listing 63996799.
 - Anchors stay at 4 per corner post.
 - The clarify step asks how many corners the fence has. The default is 0 for a straight run, but the advisor asks whenever the layout is unclear (for example "oko dvorišta", around the yard).
 
-### Concrete-in-soil posts (stupovi za betoniranje)
+### Concrete-in-soil posts (stupovi za betoniranje): not in the BOM
 
-- Martom does **not** stock posts without a base plate; customers rarely ask for them. They are made to order, with a lead time of **10–15 days**.
-- The BOM line is labelled **"po narudžbi, 10–15 dana"**.
-- **Size and price (Toni, 26 Nov 2026):** the concrete post is **one size taller** than the base-plate post for the same panel height, and costs the **same as that base-plate post**. The price comes from the OLX sync at call time, never from code.
+- **The BOM calculator never adds concrete-in-soil posts** (Toni, 26 Nov 2026 14:52: nobody orders them). The panel BOM always uses base-plate posts.
+- Martom does **not** stock posts without a base plate. When a customer asks for them, the advisor says: **"Stupovi za betoniranje – po upitu (rade se po narudžbi, 10–15 dana)"**, and adds a **no-price note** to the order so Toni follows it up. The wording and the order note are built in the advisor and order issues (#20, #27), not in the BOM.
+- **Reference only, not used by any code:** Toni's size mapping. A concrete post is **one size up** from the base-plate post and is **priced like the size below**, i.e. the base-plate post for the same panel height. Prices would come from the OLX sync, never from this table.
 
-  | Panel height | Base-plate post | Concrete post (no plate) | Price | Status |
-  | --- | --- | --- | --- | --- |
-  | 103 cm | 105 cm | **125 cm** | = base-plate post 105 cm (19,00 KM reference, OLX) | **confirmed** |
-  | 83, 123, 153, 203 cm | 85 / 125 / 155 / 205 cm | pending | "cijena na upit", no price | pending Toni (his 14:29 answer, 83→85 and 103→105, repeats the base-plate mapping and conflicts with 103→125; Tomislav is clarifying it with him) |
+  | Panel height | Base-plate post | Concrete post (no plate) | Priced like |
+  | --- | --- | --- | --- |
+  | 83 cm | 85 cm | 105 cm | base-plate post 85 cm |
+  | 103 cm | 105 cm | 125 cm | base-plate post 105 cm |
+  | 123 cm | 125 cm | 155 cm | base-plate post 125 cm |
+  | 153 cm | 155 cm | 205 cm | base-plate post 155 cm |
+  | 203 cm | 205 cm | none | – |
 
-- For the pending heights, **don't extrapolate** the "one size taller" rule: the line shows no post size and no price ("cijena na upit") until Toni confirms each height.
-- Concrete posts get **no anchors** (there is no plate). Clips stay as for base-plate posts.
-- The WhatsApp order message flags every "po narudžbi" line so Toni confirms it.
-- Base-plate posts remain the default recommendation.
+- Base-plate posts remain the only posts in a panel BOM.
 
 ### Concrete, installation and availability
 
@@ -115,9 +115,10 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
 ### Bracing: support T-posts (potporni T-stupovi)
 
 - **Each strainer and each corner post gets 2 support T-posts** (OLX 59473597), **the same height as the post they brace** (Toni). This applies to T-post fences and to foot-plate fences (example: foot-plate post 125 cm → 2 × T-post 125 cm).
-- Support T-posts = **2 × (corners + Σ strainers per side)**.
-- **End posts** (the two free ends of an open fence): whether they get braces is **pending from Toni**. The BOM adds none for them until then.
-- **Foot-plate fences at 60, 80 and 100 cm:** the braces are **support T-posts 100 cm** (Toni, 26 Nov 2026 14:29), 2 per strainer or corner post as usual, reference price 11,50 KM. The 100 cm variant **isn't on OLX yet**; Toni will add it to the T-post listing 59473597. Until the sync sees a 100 cm variant there, the line reads **"potporni stup 100 cm – cijena na upit"**, with the count and the size but **no price**. Never take the 11,50 KM from this document: prices come only from the sync.
+- Support T-posts = **2 × (corners + Σ strainers per side) + 1 × end posts** (end posts: 2 for an open fence, 0 for a closed loop).
+- **End posts** (the two free ends of an open fence, where it starts and ends): **1 support T-post each**, the same height as the post (Toni, 26 Nov 2026 14:53). An open fence therefore gets **2 end-post braces**; a closed loop has no end posts and gets none. Corners and strainers stay at 2.
+- End-post braces follow the **same size rule** as corner and strainer braces, including the 100 cm support T-post below for 60, 80 and 100 cm foot-plate fences (Tomislav, 26 Nov 2026).
+- **Foot-plate fences at 60, 80 and 100 cm:** the braces are **support T-posts 100 cm** (Toni, 26 Nov 2026 14:29), 2 per strainer or corner post and 1 per end post as usual, reference price 11,50 KM. The 100 cm variant **isn't on OLX yet**; Toni will add it to the T-post listing 59473597. Until the sync sees a 100 cm variant there, the line reads **"potporni stup 100 cm – cijena na upit"**, with the count and the size but **no price**. Never take the 11,50 KM from this document: prices come only from the sync.
 - Braces are accessories: separate, removable lines.
 
 ### Accessories
@@ -159,17 +160,18 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | --- | --- |
 | 25 m straight fence, 153 cm panels, base-plate posts, OLX prices of 26 Nov 2026 | Total **905,10 KM** |
 | The same fence with 2 corners | **+8 clips** (each corner post goes from 4 to 8) |
-| Panel fence, 103 cm panels, customer asks for posts to set in concrete | **125 cm** concrete posts (no plate) at **19,00 KM** each (= base-plate post 105 cm, OLX reference 26 Nov 2026), line "po narudžbi, 10–15 dana", **no anchors**, flagged in the order message |
-| Panel fence, 153 cm panels, posts to set in concrete | A "po narudžbi, 10–15 dana" post line with **no size and no price** ("cijena na upit"), no anchors, flagged in the order message |
+| Panel fence, customer asks for posts to set in concrete | **No concrete post line**: the BOM keeps base-plate posts; the advisor says "Stupovi za betoniranje – po upitu (rade se po narudžbi, 10–15 dana)" and adds a no-price note to the order |
 | Customer asks whether Martom sells concrete or builds the base | The advisor says Martom doesn't sell concrete or do construction work; it never adds concrete to the BOM |
 | Any stock product | Shown as "dostupno"; never "dostupnost potvrđujemo" |
 | Customer asks for a 100 cm Eurofence | The advisor says it doesn't exist and offers 80 cm or 125 cm |
 | Roll fence, 25 m straight | **14 posts** |
 | Roll fence, 10 m straight | **6 posts** |
 | Roll fence, two 10 m sides with 1 corner | **11 posts** (6 + 6 − 1 shared corner post) |
-| Roll fence, 30 m straight | **16 posts** (the strainer at 25 m replaces a line post), **2 support T-posts** (1 strainer) |
-| Roll fence, two 10 m sides with 1 corner | **2 support T-posts** (the corner post), none for the ends (end bracing pending) |
-| Foot-plate fence 125 cm, 1 corner | 2 × **T-post 125 cm** as braces |
+| Roll fence, 30 m straight | **16 posts** (the strainer at 25 m replaces a line post), **4 support T-posts** (2 for the strainer, 1 per end post) |
+| Roll fence, 25 m straight | **2 support T-posts** (1 per end post) |
+| Roll fence, two 10 m sides with 1 corner | **4 support T-posts** (2 for the corner post, 1 per end post) |
+| Roll fence, closed loop of 4 × 10 m | **8 support T-posts** (4 corners × 2, no end posts) |
+| Foot-plate fence 125 cm, 1 corner, open | 4 × **T-post 125 cm** as braces (2 corner + 2 end) |
 | Roll fence, customer asks for 3 m spacing | BOM still at 2 m, plus the "razmak do 3 m" note in the answer and in the order message |
 | Roll fence, 25 m | **3 tensioners**, **1 roll** |
 | Roll fence, 30 m straight | **6 tensioners** (two started 25 m stretches), **2 rolls** |
@@ -189,7 +191,7 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Customer asks about a gate | no gate line; the advisor says "Za kapije se javite direktno Martomu: 036 651 427" |
 | Customer asks about installation | mentioned only for an existing concrete wall, price on request, never a quoted price |
 | Any BOM | shows "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."; every accessory line can be removed |
-| Foot-plate fence 80 cm, 1 corner | brace line "potporni stup 100 cm – cijena na upit", 2 pieces, size 100 cm, no price (until the sync sees the 100 cm T-post variant) |
+| Foot-plate fence 80 cm, 1 corner, open | brace line "potporni stup 100 cm – cijena na upit", 4 pieces (2 corner + 2 end), size 100 cm, no price (until the sync sees the 100 cm T-post variant) |
 | Panel fence, any layout | **no** braces / support posts, end posts included |
 | Panel fence, no width given | **250 cm** panels |
 | Panel fence, 25 m straight, 153 cm | End posts get **4** clips each, like line posts (44 clips for 11 posts) |
@@ -213,8 +215,8 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 ## Still open (don't invent values)
 
 - **Gates:** out of scope until Toni says otherwise.
-- **Concrete-in-soil panel posts** for 83, 123, 153 and 203 cm panels: post size and price. Toni's answers conflict (see the table above); only 103 → 125 is confirmed, the others stay "cijena na upit".
 - **Chain link (pletivo, baklava):** all rules and posts.
-- **Welded roll fence, still pending** (the BOM leaves these out or shows "cijena na upit"; they don't block M4-2):
-  - whether the two free end posts get support T-posts (Toni's 14:29 answer "no braces incl. end posts" was about **panel** fences; the welded roll case is still open);
+- **Welded roll fence, still pending** (the BOM keeps the assumption; it doesn't block M4-2):
   - wire holders: confirm 1 per wire row per foot-plate post (still unanswered at 14:29; keep the assumption).
+
+Answered on 26 Nov 2026 (14:52–14:53): concrete-in-soil panel posts (dropped from the BOM, mapping kept as reference) and welded roll end posts (1 support T-post each).
