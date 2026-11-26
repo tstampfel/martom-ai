@@ -151,7 +151,7 @@ Seven Postgres tables.
 
 ## Customer experience
 
-Mobile-first, Bosnian UI, Martom's visual identity: the real "ŽELJEZARIJA MARTOM" logo, Martom red `#E30613`, a red curved hero panel and red hexagon badges (from martom.springmedia.hr), a red top strip and category tiles (Bauhaus-style), and a live "Savjetnik radi" card showing the agent's steps. Headings in Outfit, body in Inter. The customer reaches a complete materials list in about 4 taps after typing their need.
+Mobile-first, Bosnian UI, Martom's visual identity: the real "ŽELJEZARIJA MARTOM" logo, Martom red `#D71222` (the solid red in the logo, the only red), a red curved hero panel and red hexagon badges (from martom.springmedia.hr), a charcoal top strip, category tiles (Bauhaus-style), and a live "Savjetnik radi" card showing the agent's steps. Headings in Outfit, body in Inter. The customer reaches a complete materials list in about 4 taps after typing their need.
 
 **Mockups:** `docs/mockups/` — a clickable 5-screen web flow and the same 5 screens on mobile. Live canvas: https://claude.ai/artifact/PRhcz41JRzk4dGZvuAVNJP
 
