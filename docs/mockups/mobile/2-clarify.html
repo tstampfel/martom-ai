@@ -31,16 +31,16 @@ a{color:#16181D;text-decoration:none}
     </a>
   </header>
 
-  <!-- Four questions no longer fit in 844 px, so the conversation scrolls. -->
+  <!-- Three questions with side lengths no longer fit in 844 px, so the conversation scrolls. -->
   <main style="flex: 1; min-height: 0; padding: 20px 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto">
     <div style="align-self: flex-end; max-width: 80%; background: #16181D; color: #FFFFFF; padding: 12px 14px; border-radius: 16px 16px 4px 16px; font-size: 15px; line-height: 1.45">Treba mi 25 m ograde za dvorište, visina oko 1,5 m</div>
 
     <div style="display: flex; flex-direction: column; gap: 14px; background: #FFFFFF; border: 1px solid #E3E5E8; border-radius: 16px 16px 16px 4px; padding: 16px">
-      <p style="margin: 0; font-size: 15px; line-height: 1.5">Odlično, za dvorište od 25 m imamo dobra rješenja. Još četiri stvari da izaberem pravu ogradu:</p>
+      <p style="margin: 0; font-size: 15px; line-height: 1.5">Odlično, za dvorište od 25 m imamo dobra rješenja. Još tri stvari da izaberem pravu ogradu:</p>
 
       <!-- Corners: asked when the layout is unclear. Each corner is one shared post with double clips (fence-rules.md). -->
       <div style="display: flex; flex-direction: column; gap: 8px">
-        <span class="q">Broj kutova</span>
+        <span class="q">Koliko ima kutova?</span>
         <div style="display: flex; gap: 6px; flex-wrap: wrap">
           <button type="button" class="{{ k0 }}" onClick="{{ pick0 }}">0</button>
           <button type="button" class="{{ k1 }}" onClick="{{ pick1 }}">1</button>
@@ -76,7 +76,7 @@ a{color:#16181D;text-decoration:none}
           <button type="button" class="{{ pUnknown }}" onClick="{{ pickPostsUnknown }}">Ne znam</button>
         </div>
         <sc-if value="{{ isConcrete }}" hint-placeholder-val="{{ false }}">
-          <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #3E4450">Stupovi za betoniranje su po narudžbi, 10–15 dana. Beton ne prodajemo, njega nabavljate sami.</p>
+          <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #3E4450">Stupovi za betoniranje su po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami.</p>
         </sc-if>
       </div>
 
@@ -86,15 +86,6 @@ a{color:#16181D;text-decoration:none}
           <button type="button" onClick="{{ pickColorA }}" class="{{ colorA }}">Antracit</button>
           <button type="button" onClick="{{ pickColorZ }}" class="{{ colorZ }}">Zelena</button>
           <button type="button" class="chip">Svejedno</button>
-        </div>
-      </div>
-
-      <div style="display: flex; flex-direction: column; gap: 8px">
-        <span class="q">Treba li kapija?</span>
-        <div style="display: flex; gap: 8px; flex-wrap: wrap">
-          <button type="button" class="chip">Pješačka</button>
-          <button type="button" class="chip">Kolna</button>
-          <button type="button" class="chip on">Ne treba</button>
         </div>
       </div>
 
@@ -119,7 +110,8 @@ a{color:#16181D;text-decoration:none}
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    // Example story: 25 m around a yard, 2 corners, three open sides. Base-plate posts are the default.
+    // Shown state = the customer's example answer (25 m on three sides of a yard), not a default:
+    // the advisor never guesses corners or side lengths, it asks. Only the base-plate posts are a real default.
     this.state = { color: 'a', corners: 2, closed: false, sides: ['10', '5', '10'], posts: 'plate' };
   }
   sideCount(corners, closed) {
