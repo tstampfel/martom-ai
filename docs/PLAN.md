@@ -158,9 +158,9 @@ Mobile-first, Bosnian UI, Martom's visual identity: the real "ŽELJEZARIJA MARTO
 **Flow**
 
 1. **Start:** logo, one large input whose placeholder types an example letter by letter, erases it, then types the next ("Treba mi 25 m ograde za dvorište, visina 1,5 m", "Ograda za kokoši, 20 metara", "Šta sve treba za panelnu ogradu?", "Brusilica 125 mm za metal"), quick-start chips (Dvorište · Kokoši i životinje · Njiva i vinograd · Balkon · Gabioni · Alat i ostalo), and an always-visible phone button for people who would rather talk to Toni.
-2. **Clarify:** the advisor asks only what's missing, as tappable chips (colour, ground: zemlja/beton, gate yes/no, length or height if not given). On web, a "Vaš projekt" panel fills in as answers arrive.
+2. **Clarify:** the advisor asks only what's missing, as tappable chips (colour, number of corners when the layout is unclear, gate yes/no, length or height if not given; base-plate posts are the default, posts for concrete only "po narudžbi"). On web, a "Vaš projekt" panel fills in as answers arrive.
 3. **Recommend:** 1–3 product cards (photo, name, why it fits, variant picker for height/colour, price per unit, link to the OLX listing).
-4. **Materials list:** a BOM card with every line (panels × N, posts × N+1, clamps, PVC strip), quantities the customer can adjust, an estimated total in KM, and the note "Cijene informativne, dostava se potvrđuje". One tap adds everything to our own cart (korpa), which also takes single products found by search.
+4. **Materials list:** a BOM card with every line (panels, base-plate posts, PVC clips, anchors; "po narudžbi" and gate lines show "cijena na upit"), quantities the customer can adjust, an estimated total in KM, and the note "Cijene informativne, dostava se potvrđuje". One tap adds everything to our own cart (korpa), which also takes single products found by search.
 5. **Order request:** form with the same fields as martomshop.ba (ime i prezime, telefon, dostava/lično preuzimanje, adresa, napomena, consent). One button, "Pošalji narudžbu", opens WhatsApp with the order pre-filled to the owner's number; the customer only presses send.
 6. **Confirmation:** "Hvala! Zahtjev je kod Martoma" with what happens next and the message that was sent.
 
@@ -213,7 +213,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 
 | ID | Issue | Done when |
 | --- | --- | --- |
-| M4-1 | BOM calculator: panel system (panels, posts N+1, clamps by height, PVC strip, corners, gates) | Unit tests for 10 m, 25 m, corners, partial panels; rules from Toni |
+| M4-1 | BOM calculator: panel system (panels, base-plate posts, PVC clips and anchors by height, corners, gate and "po narudžbi" lines) | Unit tests for 10 m, 25 m, corners, partial panels; rules from [`docs/domain/fence-rules.md`](domain/fence-rules.md) |
 | M4-2 | BOM calculator: roll mesh, pletivo, chain link (posts every 2.5 m, tension wire, tensioners, corner braces) | Unit tests per system |
 | M4-3 | LangGraph graph: guardrail (in scope = anything Martom sells), clarify, retrieve, grade, rewrite (max 2), generate + tools, grounding check; Postgres checkpointer | Graph tests with a fake LLM; every node traced in LangSmith |
 | M4-4 | `POST /api/chat` SSE with typed events: token, chips, product_cards, bom, error | Event contract documented; first token < 2 s locally |
@@ -280,9 +280,12 @@ Expect roughly **$45–80 per month** at launch traffic (a few hundred conversat
 
 ## Open questions
 
-The first two block M4 and M3. The rest can wait until their milestone.
+Roll-fence posts block M4-2 and the customer questions block M3-1. The rest can wait until their milestone.
 
-- [ ] **Toni: fence rules for the BOM** — post spacing per system, which posts and clamps go with which panel height, clamps per post, concrete vs base plate, corners and gates. Blocks M4-1/M4-2.
+- [x] **Toni: panel fence rules** — answered 26 Nov 2026, written up in [`docs/domain/fence-rules.md`](domain/fence-rules.md): base-plate post per panel height, PVC clips and anchors per post, corners (one post, double clips), concrete-in-soil posts only "po narudžbi" with no price. Unblocks M4-1.
+- [ ] **Toni: gate sizes and prices** — gates are answered as a rule (separate product, "Kapija – cijena na upit", never a calculated price), but the data is pending. Not blocking.
+- [ ] **Toni: roll-fence posts** — which post listings go with roll mesh, pletivo and chain link, and how they pair. Blocks M4-2.
+- [ ] **Toni: the 905,10 KM reference example** — which panel width and line items make up the 25 m / 153 cm total in `fence-rules.md`. Needed before the M4-1 fixture is final.
 - [ ] **Toni: 50 real customer questions** with the products he would sell for each (35 fence, 15 other). Blocks M3-1.
 - [ ] **Toni: fix the listing errors** from the 26 Nov audit (panel 153 × 2500 cm, "Korišteno" items, wrong materials). Not blocking, but the advisor is only as good as the listings.
 - [x] **Order number** — decided: orders go to Tomislav's own number while testing, set only as the `ORDER_PHONE` env var / GitHub secret, never in the repo. Switch to Toni's number at launch (M6-4).
