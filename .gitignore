@@ -1,10 +1,12 @@
 # --- Secrets and local config (public repo: never commit these) ---
 .env
 .env.*
+*.env
 !.env.example
 *.pem
 *.key
 .claude/settings.local.json
+.argent/
 
 # --- Data dumps, exports and customer data ---
 /data/
@@ -19,6 +21,7 @@
 !tests/fixtures/**/*.csv
 !tests/fixtures/**/*.jsonl
 !evals/**/*.jsonl
+!tests/fixtures/**/*dump*.json
 
 # --- Review reports and screenshots (local only) ---
 .reviews/
@@ -28,8 +31,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-/build/
-/dist/
+build/
+dist/
 .venv/
 .pytest_cache/
 .ruff_cache/
