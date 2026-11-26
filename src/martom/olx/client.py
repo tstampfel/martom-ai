@@ -2,8 +2,11 @@
 
 - At most one request start every 1.3 s, shared by every caller of one `RateLimiter`.
 - HTTP 429 and 5xx are retried with exponential backoff, honouring `Retry-After`.
-- Timeouts and connection errors are retried the same way; other 4xx are not retried.
+- Timeouts, connection errors and decoding errors are retried the same way; other 4xx
+  and 2xx bodies that are not JSON are not retried.
 - Every retry still goes through the limiter, so retries never break the 1.3 s rule.
+- A Retry-After longer than `max_retry_after_seconds` (default 300 s) makes the call
+  give up; when a call gives up, the shared limiter still pauses, for at most that cap.
 
 The clock, sleep and "now" functions are constructor arguments so tests can replace them
 with fakes and never wait for real.
@@ -41,8 +44,9 @@ def _utc_now() -> datetime:
 class OlxApiError(Exception):
     """A request to OLX failed for good (not retryable, or out of attempts).
 
-    `status_code` is the HTTP status, or None when no response arrived (timeout,
-    connection error); in that case `__cause__` holds the original httpx exception.
+    `status_code` is the HTTP status, or None when no usable response arrived (timeout,
+    connection error, undecodable body); in that case `__cause__` holds the original
+    httpx exception.
     """
 
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
@@ -95,6 +99,8 @@ def parse_retry_after(value: str | None, *, now: datetime) -> float | None:
 
     The header is either whole seconds ("120") or an HTTP date
     ("Thu, 26 Nov 2026 12:00:20 GMT"). A date in the past means "retry now" (0.0).
+    Absurd values pass through unchanged (a 400-digit number becomes `math.inf`);
+    `OlxClient` caps how long it acts on them.
     """
     if value is None:
         return None
@@ -212,18 +218,21 @@ class OlxClient:
             delay = retry_after if retry_after is not None else self._backoff_delay(attempt)
             # Pause the shared limiter BEFORE either give-up below, so whoever sends the
             # next request through this limiter (another coroutine, or the sync moving on
-            # after catching OlxApiError) still waits as long as OLX asked.
-            self._limiter.pause(delay)
+            # after catching OlxApiError) still waits. The pause is capped, so an absurd
+            # header ("9" * 400 parses as inf) can't block the limiter forever.
+            pause = min(delay, self._max_retry_after)
+            self._limiter.pause(pause)
 
-            if attempt == self._max_attempts:
+            over_cap = retry_after is not None and retry_after > self._max_retry_after
+            if over_cap or attempt == self._max_attempts:
+                if over_cap:
+                    failure = OlxApiError(
+                        f"{failure} with Retry-After {retry_after:.0f} s, longer than the "
+                        f"{self._max_retry_after:.0f} s cap",
+                        status_code=failure.status_code,
+                    )
+                logger.warning("%s; giving up; limiter paused %.1f s", failure, pause)
                 raise failure
-            if retry_after is not None and retry_after > self._max_retry_after:
-                raise OlxApiError(
-                    f"{failure} with Retry-After {retry_after:.0f} s, longer than the "
-                    f"{self._max_retry_after:.0f} s this call is willing to wait "
-                    "(the shared limiter still waits the full time)",
-                    status_code=failure.status_code,
-                ) from failure
             logger.warning(
                 "%s; retry %d/%d in %.1f s", failure, attempt, self._max_attempts - 1, delay
             )

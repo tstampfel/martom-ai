@@ -6,6 +6,7 @@ monotonic clock forward instead of waiting.
 """
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -353,16 +354,54 @@ async def test_retry_after_longer_than_the_cap_raises_instead_of_waiting() -> No
     assert len(server.starts) == 1
 
 
-async def test_giving_up_on_a_long_retry_after_still_pauses_later_requests() -> None:
+@pytest.mark.parametrize(
+    "retry_after",
+    [
+        "3600",
+        "99999999999",  # about 3,170 years
+        "9" * 400,  # float() turns this into inf
+        "Fri, 31 Dec 9999 23:59:59 GMT",  # an HTTP date far in the future
+    ],
+)
+async def test_giving_up_on_a_long_retry_after_pauses_later_requests_up_to_the_cap(
+    retry_after: str, caplog: pytest.LogCaptureFixture
+) -> None:
     clock = FakeClock()
-    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "3600"}), ok()])
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": retry_after}), ok()])
 
     async with make_client(clock, server, max_retry_after_seconds=300.0) as client:
         with pytest.raises(OlxApiError):
             await client.get_listing(1)
         await client.get_listing(2)  # e.g. the sync moving on to the next category
 
-    assert gaps(server.starts) == [3600.0]
+    # Later requests wait the full cap, but are never blocked for longer than it.
+    assert gaps(server.starts) == [300.0]
+    assert "giving up; limiter paused 300.0 s" in caplog.text
+
+
+async def test_giving_up_on_the_last_attempt_also_caps_the_pause() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "9" * 400}), ok()])
+
+    async with make_client(clock, server, max_attempts=1, max_retry_after_seconds=300.0) as client:
+        with pytest.raises(OlxApiError):
+            await client.get_listing(1)
+        await client.get_listing(2)
+
+    assert gaps(server.starts) == [300.0]
+
+
+async def test_giving_up_on_the_last_attempt_logs_the_pause(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "60"})])
+
+    async with make_client(clock, server, max_attempts=1) as client:
+        with pytest.raises(OlxApiError):
+            await client.get_listing(1)
+
+    assert "giving up; limiter paused 60.0 s" in caplog.text
 
 
 async def test_giving_up_on_the_last_attempt_still_honours_retry_after() -> None:
@@ -495,6 +534,12 @@ async def test_connection_error_is_retried() -> None:
         ("-5", None),
         ("soon", None),
         ("²", None),  # str.isdigit() is True for superscripts, but float() rejects them
+        ("9" * 400, math.inf),  # absurd, but the client caps how long it pauses
+        (
+            "Fri, 31 Dec 9999 23:59:59 GMT",
+            (datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC) - FIXED_NOW).total_seconds(),
+        ),
+        ("Sat, 01 Jan 10000 00:00:00 GMT", None),  # past datetime's range: invalid
         ("", None),
         (None, None),
     ],
