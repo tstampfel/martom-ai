@@ -132,6 +132,11 @@
   display: none;
 }
 
+/* The default charcoal focus ring would vanish on the charcoal footer. */
+.site-footer :focus-visible {
+  outline-color: var(--color-on-brand);
+}
+
 .site-footer__brand {
   display: flex;
   align-items: center;
@@ -203,5 +208,10 @@
   .site-footer__phone {
     font-weight: 700;
     color: var(--color-ink);
+  }
+
+  /* The phone footer sits on the light page background. */
+  .site-footer :focus-visible {
+    outline-color: var(--color-charcoal);
   }
 }

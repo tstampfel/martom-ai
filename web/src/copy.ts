@@ -11,7 +11,7 @@ const shop = {
 
 /** Builds a `tel:` link in international form (+387) from a BiH number. */
 export function telHref(phone: string): string {
-  const digits = phone.replace(/[^\d+]/g, '')
+  const digits = phone.replace(/[^\d+]/g, '').replace(/^00/, '+')
   const international = digits.startsWith('+') ? digits : `+387${digits.replace(/^0/, '')}`
   return `tel:${international}`
 }
@@ -29,10 +29,14 @@ export const copy = {
     call: 'Pozovi Martom',
     cart: (count: number) => `Korpa · ${count}`,
   },
+  // `...Short` is the phone wording from docs/mockups/mobile/1-start.html.
+  // Phones show no lead paragraph.
   hero: {
     eyebrow: 'AI savjetnik za ograde i alat',
+    eyebrowShort: 'AI savjetnik',
     title: ['Recite šta ograđujete.', 'Mi složimo cijeli popis.'],
-    lead: 'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.',
+    titleShort: 'Recite šta ograđujete. Mi složimo popis.',
+    lead:'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.',
   },
   about: {
     label: 'O Martomu',

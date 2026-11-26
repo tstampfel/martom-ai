@@ -37,11 +37,17 @@ describe('App shell', () => {
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Krstine 106, Međugorje')
   })
 
-  it('shows the hero heading in Bosnian', () => {
+  it('has the web and the phone wording of the hero heading', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Recite šta ograđujete. Mi složimo cijeli popis.',
-    )
+    const heading = screen.getByRole('heading', { level: 1 })
+    expect(within(heading).getByText(/Mi složimo cijeli popis\./)).toHaveClass('hero__wide')
+    expect(within(heading).getByText('Recite šta ograđujete. Mi složimo popis.')).toHaveClass('hero__short')
+  })
+
+  it('has the web and the phone wording of the hero eyebrow', () => {
+    render(<App />)
+    expect(screen.getByText('AI savjetnik za ograde i alat')).toHaveClass('hero__wide')
+    expect(screen.getByText('AI savjetnik')).toHaveClass('hero__short')
   })
 
   it('shows the four hexagon badges about Martom', () => {

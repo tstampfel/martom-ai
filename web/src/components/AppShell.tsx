@@ -52,6 +52,7 @@ export function AppShell({ children, cartCount = 0 }: AppShellProps) {
             <a className="icon-button icon-button--outline site-header__call" href={phoneHref} aria-label={copy.header.call}>
               <PhoneIcon />
             </a>
+            {/* Placeholder target: the cart (korpa) screen arrives in M5-5. */}
             <a className="cart-button" href="#korpa" aria-label={copy.header.cart(cartCount)}>
               <CartIcon />
               <span className="cart-button__label" aria-hidden="true">

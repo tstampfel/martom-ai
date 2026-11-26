@@ -1,13 +1,11 @@
 // Line icons copied from the mockups. All are decorative: the link or button
-// around them carries the accessible name.
+// around them carries the accessible name. CSS may resize them.
 
-type IconProps = { size?: number }
-
-export function CartIcon({ size = 18 }: IconProps) {
+export function CartIcon() {
   return (
     <svg
-      width={size}
-      height={size}
+      width="18"
+      height="18"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -23,11 +21,11 @@ export function CartIcon({ size = 18 }: IconProps) {
   )
 }
 
-export function PhoneIcon({ size = 20 }: IconProps) {
+export function PhoneIcon() {
   return (
     <svg
-      width={size}
-      height={size}
+      width="20"
+      height="20"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

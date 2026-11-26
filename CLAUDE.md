@@ -69,7 +69,7 @@ npm --prefix web test        # vitest run
 npm --prefix web run build   # typecheck + production build into web/dist
 ```
 
-Before every push that touches `web/`: lint, typecheck, test and build. Design tokens live only in `web/src/styles/tokens.css` (values from `docs/mockups/README.md`, checked by `tokens.test.ts`); use the CSS variables, never raw hex values in components. All customer-facing Bosnian text lives in `web/src/copy.ts`. Fonts (Outfit, Inter) are self-hosted from `@fontsource` packages; don't load Google Fonts at runtime.
+Before every push that touches `web/`: lint, typecheck, test and build. Design tokens live only in `web/src/styles/tokens.css` (values from `docs/mockups/README.md`, checked by `tokens.test.ts`); use the CSS variables, never raw hex values in components. All customer-facing Bosnian text lives in `web/src/copy.ts`, except the page `<title>` and meta description, which stay in `web/index.html` so they are in the static HTML that crawlers and link previews read. Fonts (Outfit, Inter) are self-hosted from `@fontsource` packages; don't load Google Fonts at runtime.
 
 ## Git
 

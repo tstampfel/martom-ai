@@ -9,6 +9,10 @@ describe('telHref', () => {
   it('keeps a number that is already international', () => {
     expect(telHref('+387 36 651 427')).toBe('tel:+38736651427')
   })
+
+  it('turns a 00 international prefix into +', () => {
+    expect(telHref('00387 36 651 427')).toBe('tel:+38736651427')
+  })
 })
 
 describe('copy', () => {

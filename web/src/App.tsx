@@ -11,10 +11,18 @@ export default function App() {
     <AppShell>
       <section className="hero">
         <div className="hero__panel">
-          <p className="hero__eyebrow">{copy.hero.eyebrow}</p>
+          {/* Both wordings are rendered; CSS shows one per breakpoint. */}
+          <p className="hero__eyebrow">
+            <span className="hero__wide">{copy.hero.eyebrow}</span>
+            <span className="hero__short">{copy.hero.eyebrowShort}</span>
+          </p>
           <h1 className="hero__title">
-            {copy.hero.title[0]} <br className="hero__break" />
-            {copy.hero.title[1]}
+            <span className="hero__wide">
+              {copy.hero.title[0]}
+              <br />
+              {copy.hero.title[1]}
+            </span>
+            <span className="hero__short">{copy.hero.titleShort}</span>
           </h1>
           <p className="hero__lead">{copy.hero.lead}</p>
         </div>

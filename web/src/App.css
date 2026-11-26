@@ -40,6 +40,11 @@
   opacity: 0.95;
 }
 
+/* Phone wording of the eyebrow and title; swapped in below 768 px. */
+.hero__short {
+  display: none;
+}
+
 /* ---- Hexagon badges ---- */
 
 .about {
@@ -98,12 +103,13 @@
     letter-spacing: 0;
   }
 
-  .hero__break {
+  .hero__wide,
+  .hero__lead {
     display: none;
   }
 
-  .hero__lead {
-    font-size: 16px;
+  .hero__short {
+    display: inline;
   }
 
   .about {
