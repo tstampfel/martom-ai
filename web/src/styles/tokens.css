@@ -1,0 +1,37 @@
+/* Design tokens from docs/mockups/README.md. tokens.test.ts checks them. */
+:root {
+  --color-red: #e30613;
+  --color-charcoal: #26292e;
+  --color-ink: #16181d;
+  --color-muted: #4f5560;
+  --color-muted-strong: #3b4049;
+  --color-page: #f2f2f0;
+  --color-card: #ffffff;
+  --color-border: #e2e2de;
+  --color-border-strong: #d5d6d1;
+  --color-on-dark: #c9cdd4;
+  --color-on-brand: #ffffff;
+  --color-success: #157a3a;
+  --color-success-tint: #ddf2e3;
+
+  --font-heading: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+
+  --radius-card: 14px;
+  --radius-card-lg: 20px;
+  --radius-panel: 24px;
+  --radius-pill: 999px;
+
+  --touch-target: 44px;
+  --content-max: 1280px;
+  --gutter: 32px;
+
+  /* Badges and step numbers; echoes the hex nut in the logo. */
+  --hexagon: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+@media (max-width: 767px) {
+  :root {
+    --gutter: 16px;
+  }
+}

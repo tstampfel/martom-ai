@@ -1,0 +1,217 @@
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell__main {
+  flex: 1;
+}
+
+/* ---- Red top strip ---- */
+
+.top-strip {
+  background: var(--color-red);
+  color: var(--color-on-brand);
+  font-size: 13px;
+}
+
+.top-strip__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 8px var(--gutter);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.top-strip__phone {
+  font-weight: 700;
+}
+
+/* ---- Header ---- */
+
+.site-header {
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.site-header__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 16px var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.site-header__home {
+  display: flex;
+  flex: none;
+}
+
+.site-header__logo {
+  height: 48px;
+  width: auto;
+}
+
+.site-header__nav {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.site-header__nav a:hover {
+  color: var(--color-red);
+}
+
+.site-header__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  width: var(--touch-target);
+  height: var(--touch-target);
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-button--outline {
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-ink);
+}
+
+.site-header__call {
+  display: none;
+}
+
+.cart-button {
+  height: var(--touch-target);
+  min-width: var(--touch-target);
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  background: var(--color-charcoal);
+  color: var(--color-on-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ---- Footer ---- */
+
+.site-footer {
+  background: var(--color-charcoal);
+  color: var(--color-on-dark);
+  font-size: 13px;
+}
+
+.site-footer__inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 24px var(--gutter);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.site-footer__inner--narrow {
+  display: none;
+}
+
+/* The default charcoal focus ring would vanish on the charcoal footer. */
+.site-footer :focus-visible {
+  outline-color: var(--color-on-brand);
+}
+
+.site-footer__brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.site-footer__brand img {
+  height: 32px;
+  width: auto;
+}
+
+/* ---- Phones: layout from docs/mockups/mobile/ ---- */
+
+@media (max-width: 767px) {
+  .top-strip {
+    display: none;
+  }
+
+  .site-header {
+    border-top: 5px solid var(--color-red);
+    border-bottom: 0;
+  }
+
+  .site-header__inner {
+    padding: 10px var(--gutter);
+    gap: 12px;
+  }
+
+  .site-header__logo {
+    height: 34px;
+  }
+
+  .site-header__nav {
+    display: none;
+  }
+
+  .site-header__call {
+    display: flex;
+  }
+
+  .cart-button {
+    padding: 0;
+  }
+
+  .cart-button__label {
+    display: none;
+  }
+
+  .cart-button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .site-footer {
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 12px;
+  }
+
+  .site-footer__inner--wide {
+    display: none;
+  }
+
+  .site-footer__inner--narrow {
+    display: flex;
+    padding: 14px var(--gutter) 18px;
+  }
+
+  .site-footer__phone {
+    font-weight: 700;
+    color: var(--color-ink);
+  }
+
+  /* The phone footer sits on the light page background. */
+  .site-footer :focus-visible {
+    outline-color: var(--color-charcoal);
+  }
+}

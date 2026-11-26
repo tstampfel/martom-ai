@@ -28,6 +28,9 @@ Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3
 | Muted text | `#4F5560` / `#3B4049` | Secondary text (both pass 4.5:1 on the page background) |
 | Page background | `#F2F2F0` | |
 | Card | `#FFFFFF` with `1px #E2E2DE` border, radius 14–20 px | |
+| Strong border | `#D5D6D1` | Outlined icon buttons (phone button on mobile) |
+| Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Savjetnik radi" card) |
+| Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
 | Headings | Outfit 700/800 | |
 | Body | Inter 400–700 | |
