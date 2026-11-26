@@ -1,6 +1,8 @@
-// A fence conversation as two replies on one thread: the customer asks for
-// 25 m of yard fence, the advisor asks three clarify questions (2-clarify.html),
-// the customer answers and gets products and a materials list (3-results.html).
+// A fence conversation on one thread: the customer asks for 25 m of yard
+// fence, the advisor asks three clarify questions (2-clarify.html), the
+// customer answers and gets products and a materials list (3-results.html).
+// fenceBom answers the posts question with base-plate posts; fenceConcretePosts
+// is the alternative second reply when the posts go in concrete.
 // Listing 63996799 and its slug are recorded (tests/fixtures/olx). The panel
 // fence BOM prices are the fence-rules.md reference prices; every other price
 // (the roll fence, the cards' variants) is illustrative.

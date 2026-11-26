@@ -205,12 +205,14 @@ describe('chat event contract', () => {
   })
 
   it('has a concrete-posts reply: chip option with badge and note, then an extra line', () => {
-    const options = Object.values(fixtures)
-      .flat()
+    const posts = fixtures.fenceClarify
       .flatMap((event) => (event.type === 'chips' ? event.questions : []))
-      .flatMap((question) => question.options)
-    expect(options.some((option) => option.badge !== null && option.note !== null)).toBe(true)
-    expect(allBoms().some((bom) => bom.extra_lines.length > 0)).toBe(true)
+      .find((question) => question.id === 'posts')
+    const concrete = posts?.options.find((option) => option.value === 'concrete')
+    expect(concrete?.badge).toBe('po upitu · po narudžbi')
+    expect(concrete?.note).toBeTruthy()
+    const bom = fixtures.fenceConcretePosts.find((event): event is BomEvent => event.type === 'bom')
+    expect(bom?.extra_lines.map((line) => line.name)).toEqual(['Stupovi za betoniranje – po upitu'])
   })
 
   it('has a rate-limited reply', () => {

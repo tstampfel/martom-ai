@@ -366,6 +366,7 @@
       "description": "A no-price order line that is not part of the BOM calculation.\n\nE.g. \"Stupovi za betoniranje – po upitu\" when the customer sets the posts in\nconcrete (Tomislav, 26 Nov 2026; built in #20 and #27). It has no quantity and no\nprice field at all, and it never counts in `total` or `unpriced_count`.",
       "properties": {
         "name": {
+          "minLength": 1,
           "title": "Name",
           "type": "string"
         },

@@ -313,6 +313,13 @@ def test_bom_extra_line_has_no_price_and_leaves_the_total_alone() -> None:
     assert event.model_dump(mode="json")["extra_lines"] == [CONCRETE_POSTS]
 
 
+def test_bom_extra_line_needs_a_name() -> None:
+    with pytest.raises(ValidationError, match="name"):
+        BomEvent.model_validate(
+            bom_event([panel_line()], "530.00", extra_lines=[{"name": "", "note": None}])
+        )
+
+
 def test_bom_extra_line_cannot_carry_a_price() -> None:
     with pytest.raises(ValidationError, match="price"):
         BomEvent.model_validate(

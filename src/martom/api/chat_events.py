@@ -248,7 +248,7 @@ class ExtraLine(_Event):
     price field at all, and it never counts in `total` or `unpriced_count`.
     """
 
-    name: str
+    name: str = Field(min_length=1)
     note: str | None = None
 
 
