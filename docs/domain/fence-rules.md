@@ -55,7 +55,7 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 | Model | Listing | Profile | Heights | Mounting |
 | --- | --- | --- | --- | --- |
 | (a) T-post | OLX 59473597 | green plastified T 35 × 35 × 3,50 mm | 120 / 125 / 150 / 175 / 200 cm | into soil or set in concrete |
-| (b) Post with foot plate (stup sa stopom) | OLX "STUP STUPOVI KOCI ZA STOPOM 40X40MM 60, 80, 100, 125 I 150CM" (listing ID to confirm) | 40 × 40 mm | 60 / 80 / 100 / 125 / 150 cm | anchored onto a concrete wall or base |
+| (b) Post with foot plate (stup sa stopom) | OLX 81645615 ("STUP STUPOVI KOCI ZA STOPOM 40X40MM 60, 80, 100, 125 I 150CM", category 876) | 40 × 40 mm | 60 / 80 / 100 / 125 / 150 cm | anchored onto a concrete wall or base |
 
 - Prices per height always come from the OLX sync ("from 10,00 KM" for the T-post is a reference only).
 - The clarify step for a roll fence asks where the posts go: **into soil or concrete → (a)**, **on a concrete wall or base → (b)**.
@@ -93,6 +93,20 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Roll fence, two 10 m sides with 1 corner | **11 posts** (6 + 6 − 1 shared corner post) |
 | Roll fence, customer asks for 3 m spacing | BOM still at 2 m, plus the "razmak do 3 m" note in the answer and in the order message |
 
+### The 905,10 KM example, line by line
+
+Toni confirmed the breakdown. The prices were checked against OLX listing 63996799 on 26 Nov 2026 and all match.
+
+| Line | Qty | Unit price | Total |
+| --- | --- | --- | --- |
+| Panel 153 × 250 cm | 10 | 53,00 KM | 530,00 KM |
+| Post 155 cm with base plate | 11 | 24,90 KM | 273,90 KM |
+| PVC clip | 44 (11 × 4) | 1,00 KM | 44,00 KM |
+| Anchor M8×80 | 44 (11 × 4) | 1,30 KM | 57,20 KM |
+| **Total** | | | **905,10 KM** |
+
+Where the prices live: posts, clips and anchors aren't separate OLX listings. Their prices are in the free-text description of the panel listing 63996799, next to the panel prices. Extraction (M2-1) must read them from there.
+
 Fixtures record the OLX prices they use next to the expected total, so a later price change on OLX never breaks the test silently and never leaks into runtime code.
 
 ## Still open (don't invent values)
@@ -102,6 +116,5 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
   - which post height goes with each fence height;
   - accessories (tension wire, tensioners, ties) and their quantities;
   - anchors per foot-plate post (model b);
-  - the OLX listing ID of the foot-plate post, and whether Toni moved it to "Ograde";
+  - whether Toni moved the foot-plate post (81645615) to "Ograde";
   - whether pletivo and chain link use the same posts and 2 m spacing.
-- **The 905,10 KM breakdown:** which panel width (200 or 250 cm) and which line items Toni used. Confirm with Toni before the M4-1 fixture is final.
