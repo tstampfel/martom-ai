@@ -21,14 +21,14 @@ from typing import Any
 import httpx
 import pytest
 
-from martom.olx.client import OlxClient
+from martom.olx.client import OlxApiError, OlxClient
 from martom.olx.sync import (
     Discovery,
     PageTarget,
     SyncResult,
     TargetCoverage,
+    deactivation_candidates,
     discover,
-    ids_to_deactivate,
     page_target,
     plan_targets,
     sync_shop,
@@ -242,8 +242,37 @@ async def test_plain_pagination_reproduces_the_bug_and_is_reported_incomplete() 
     assert coverage.reported_total == 130
     assert coverage.unique_matching == 100
     assert coverage.stop_reason == "page_clamped"
+    assert coverage.pages_fetched == 50
     assert not coverage.complete
     assert len({row["id"] for row in rows}) == 100
+
+
+def requested_pages(server: FakeOlx) -> list[int]:
+    return [int(params.get("page", 1)) for params in server.listing_requests()]
+
+
+async def test_page_target_never_requests_a_page_above_50() -> None:
+    # This fake would happily serve page 65 (no clamp), but OLX clamps above 50, so the
+    # sync must not even ask: it stops at 50 and reports the target incomplete.
+    server = FakeOlx({i: (881, 701) for i in range(1, 131)}, max_page=1000)
+
+    async with make_client(server) as olx:
+        coverage, _ = await page_target(olx, PageTarget.whole_shop(), per_page=2)
+
+    assert max(requested_pages(server)) == 50
+    assert requested_pages(server) == list(range(1, 51))
+    assert coverage.stop_reason == "page_clamped"
+    assert not coverage.complete
+
+
+async def test_sync_shop_never_requests_a_page_above_50() -> None:
+    server = FakeOlx({i: (881, 701) for i in range(1, 131)}, max_page=1000)
+
+    async with make_client(server) as olx:
+        result = await sync_shop(olx, per_page=2)
+
+    assert max(requested_pages(server)) <= 50
+    assert not result.is_complete
 
 
 async def test_page_target_stops_on_a_repeated_page_even_without_the_clamp_signal() -> None:
@@ -366,7 +395,7 @@ async def test_sync_below_full_coverage_is_incomplete() -> None:
     assert not result.is_complete
 
 
-async def test_sync_is_incomplete_when_the_shop_total_grows_during_the_run() -> None:
+async def test_sync_counts_a_listing_added_during_the_run() -> None:
     shop = make_shop()
     server = FakeOlx(shop)
     added = False
@@ -414,25 +443,25 @@ def make_result(*, seen: set[int], shop_total: int) -> SyncResult:
     )
 
 
-def test_ids_to_deactivate_returns_active_ids_not_seen_at_full_coverage() -> None:
+def test_deactivation_candidates_are_active_ids_not_seen_at_full_coverage() -> None:
     result = make_result(seen={1, 2, 3}, shop_total=3)
 
-    assert ids_to_deactivate({1, 2, 3, 4, 5}, result) == {4, 5}
+    assert deactivation_candidates({1, 2, 3, 4, 5}, result) == {4, 5}
 
 
-def test_nothing_is_deactivated_below_full_coverage() -> None:
+def test_no_deactivation_candidates_below_full_coverage() -> None:
     result = make_result(seen={1, 2}, shop_total=3)
 
-    assert ids_to_deactivate({1, 2, 3, 4, 5}, result) == set()
+    assert deactivation_candidates({1, 2, 3, 4, 5}, result) == set()
 
 
-def test_nothing_is_deactivated_when_the_shop_reports_zero_listings() -> None:
+def test_no_deactivation_candidates_when_the_shop_reports_zero_listings() -> None:
     result = make_result(seen=set(), shop_total=0)
 
-    assert ids_to_deactivate({1, 2, 3}, result) == set()
+    assert deactivation_candidates({1, 2, 3}, result) == set()
 
 
-async def test_nothing_is_deactivated_after_a_buggy_plain_pagination_run() -> None:
+async def test_no_deactivation_candidates_after_a_buggy_plain_pagination_run() -> None:
     # End to end: a shop that only plain pagination can reach (no categories in the
     # aggregation), with the page clamp. The sync can't see everything, so it must
     # refuse to deactivate the listings it didn't see.
@@ -445,7 +474,7 @@ async def test_nothing_is_deactivated_after_a_buggy_plain_pagination_run() -> No
 
     assert result.unique_count == 50
     assert not result.is_complete
-    assert ids_to_deactivate(set(shop), result) == set()
+    assert deactivation_candidates(set(shop), result) == set()
 
 
 def test_target_coverage_complete_needs_the_last_page_and_every_listing() -> None:
@@ -466,3 +495,56 @@ def test_target_coverage_complete_needs_the_last_page_and_every_listing() -> Non
     assert done.complete
     assert not short.complete
     assert not clamped.complete
+
+
+# --- Defensive parsing ------------------------------------------------------------------
+
+
+async def test_sync_ignores_rows_from_another_user() -> None:
+    shop = make_shop()
+    server = FakeOlx(shop)
+    original = server.listings_page
+
+    def add_foreign_row(params: httpx.QueryParams) -> dict[str, Any]:
+        body = original(params)
+        body["data"].append({"id": 5555, "category_id": 881, "top_category_id": "701",
+                             "user_id": 99})  # fmt: skip
+        return body
+
+    server.listings_page = add_foreign_row  # type: ignore[method-assign]
+
+    async with make_client(server) as olx:
+        result = await sync_shop(olx, per_page=10)
+
+    assert 5555 not in result.listings
+    assert result.unique_count == 78
+
+
+async def test_a_malformed_profile_raises_olx_api_error() -> None:
+    server = FakeOlx(make_shop())
+    original = server.__call__
+
+    def broken_profile(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/users/martom":
+            return httpx.Response(200, json={"data": None})
+        return original(request)
+
+    async with OlxClient(transport=httpx.MockTransport(broken_profile)) as olx:
+        with pytest.raises(OlxApiError, match="unexpected"):
+            await discover(olx)
+
+
+async def test_a_listing_row_without_an_id_raises_olx_api_error() -> None:
+    server = FakeOlx(make_shop())
+    original = server.listings_page
+
+    def drop_id(params: httpx.QueryParams) -> dict[str, Any]:
+        body = original(params)
+        del body["data"][0]["id"]
+        return body
+
+    server.listings_page = drop_id  # type: ignore[method-assign]
+
+    async with make_client(server) as olx:
+        with pytest.raises(OlxApiError, match="unexpected"):
+            await page_target(olx, PageTarget.leaf(881, "Ograde"), per_page=10)

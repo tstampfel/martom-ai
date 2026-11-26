@@ -12,14 +12,16 @@ So the sync works in small pieces that each fit under the clamp:
 2. `plan_targets`: page every listed sub-category ("leaf"); page the whole top category as
    well when its listed sub-categories don't add up to its count (the cap hid some); and
    finish with one whole-shop sweep to catch listings in no reported category.
-3. `page_target`: page one target to its last page, stopping early (and saying why) when
-   OLX clamps the page or repeats one.
+3. `page_target`: page one target to its last page, but never past page 50
+   (`OLX_MAX_PAGE`). It stops early, and says why, at page 50 or when OLX clamps or
+   repeats a page.
 4. `sync_shop`: run all targets, dedupe by listing id, recount the shop total at the end,
    and return a `SyncResult` with the coverage.
 
 Deactivation rule (CLAUDE.md): listings may only be deactivated when the sync saw at least
-as many unique listings as the shop reports. `ids_to_deactivate` is the one place that rule
-lives; M1-4 calls it instead of comparing ids itself.
+as many unique listings as the shop reports. `deactivation_candidates` is the one place that
+rule lives. It returns candidates, not verdicts: M1-4 confirms each one with
+GET /listings/{id} before deactivating it (see that function's docstring for why).
 
 Detail fetch and database writes are out of scope here (M1-3, M1-4).
 """
@@ -36,11 +38,24 @@ logger = logging.getLogger(__name__)
 # OLX accepts per_page=100 (checked 26 Nov 2026): fewer requests, and 50 pages of 100
 # reach 5,000 listings per query before the clamp.
 DEFAULT_PER_PAGE = 100
-# Safety net against a server that never reports a last page.
-MAX_PAGES_PER_TARGET = 500
+# OLX serves page 50 again for any page above 50 (recorded 26 Nov 2026), so never ask.
+OLX_MAX_PAGE = 50
 
 TargetKind = Literal["leaf", "top", "shop"]
-StopReason = Literal["last_page", "empty_page", "page_clamped", "repeated_page", "max_pages"]
+StopReason = Literal["last_page", "empty_page", "page_clamped", "repeated_page"]
+
+
+class OlxResponseError(OlxApiError):
+    """OLX answered 200, but the JSON is missing a field the sync needs (or has the wrong type).
+
+    A subclass of `OlxApiError`, so one `except OlxApiError` in M1-4 covers it too.
+    """
+
+
+def _unexpected(what: str, exc: Exception) -> OlxResponseError:
+    error = OlxResponseError(f"unexpected OLX response: {what} ({exc!r})")
+    error.__cause__ = exc
+    return error
 
 
 # --- Discovery --------------------------------------------------------------------------
@@ -101,16 +116,25 @@ async def discover(olx: OlxClient) -> Discovery:
     aggregation.
     """
     profile = await olx.get_shop()
-    shop_id = int(profile["data"]["id"])
+    try:
+        shop_id = int(profile["data"]["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _unexpected("shop profile has no data.id", exc) from exc
     shop_total = await _shop_total(olx)
     search = await olx.search_listings({"user_id": shop_id, "per_page": 1})
-    categories = (search.get("aggregations") or {}).get("categories") or []
-    return Discovery.from_api(shop_id=shop_id, shop_total=shop_total, categories=categories)
+    try:
+        categories = (search.get("aggregations") or {}).get("categories") or []
+        return Discovery.from_api(shop_id=shop_id, shop_total=shop_total, categories=categories)
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise _unexpected("search aggregation is malformed", exc) from exc
 
 
 async def _shop_total(olx: OlxClient) -> int:
     body = await olx.get_shop_listings({"page": 1, "per_page": 1})
-    return int(body["meta"]["total"])
+    try:
+        return int(body["meta"]["total"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _unexpected("shop listings have no meta.total", exc) from exc
 
 
 # --- Planning ---------------------------------------------------------------------------
@@ -183,6 +207,14 @@ class TargetCoverage:
 
     @property
     def complete(self) -> bool:
+        """Advisory only: the deactivation gate uses the overall unique count, not this.
+
+        A target can miss a listing or two on its own and still be covered by another
+        target. The live run on 26 Nov showed leaf 1126 at 492 of 493 and top 224 at 1,552
+        of 1,557, probably because the list shifts between page requests or a listing sits
+        in a deeper sub-category than the one being matched. The other targets still
+        brought the run to 100%.
+        """
         return self.stop_reason == "last_page" and self.unique_matching >= self.reported_total
 
 
@@ -191,9 +223,11 @@ async def page_target(
 ) -> tuple[TargetCoverage, list[dict[str, Any]]]:
     """Page `target` from page 1 to its last page; return its coverage and every row.
 
-    Stops early, without raising, when OLX answers a different page than asked
-    ("page_clamped"), sends the same ids as the previous page ("repeated_page") or an
-    empty page; the coverage then says the target is incomplete.
+    Never requests a page above `OLX_MAX_PAGE`: a target with more pages stops after page
+    50 as "page_clamped". It also stops early, without raising, when OLX answers a different
+    page than asked ("page_clamped"), sends the same ids as the previous page
+    ("repeated_page") or an empty page. In all those cases the coverage says the target is
+    incomplete. A response missing `id` or `meta` fields raises `OlxResponseError`.
     """
     rows: list[dict[str, Any]] = []
     matching_ids: set[int] = set()
@@ -201,25 +235,28 @@ async def page_target(
     reported_total = 0
     last_page = 1
     page = 0
-    stop_reason: StopReason = "max_pages"
+    stop_reason: StopReason = "page_clamped"  # what's left if we run out of allowed pages
 
-    while page < MAX_PAGES_PER_TARGET:
+    while page < OLX_MAX_PAGE:
         page += 1
         params: dict[str, str | int] = {"page": page, "per_page": per_page}
         if target.category_id is not None:
             params["category_id"] = target.category_id
         body = await olx.get_shop_listings(params)
-        meta = body.get("meta") or {}
-        data: list[dict[str, Any]] = body.get("data") or []
-        if page == 1:
-            reported_total = int(meta.get("total", 0))
-            last_page = int(meta.get("last_page", 1))
+        try:
+            meta = body.get("meta") or {}
+            data: list[dict[str, Any]] = body.get("data") or []
+            if page == 1:
+                reported_total = int(meta["total"])
+                last_page = int(meta.get("last_page", 1))
+            page_ids = [int(row["id"]) for row in data]
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise _unexpected(f"listings page {page} of {target.name} is malformed", exc) from exc
 
         current_page = _as_int(meta.get("current_page"))
         if current_page is not None and current_page != page:
             stop_reason = "page_clamped"
             break
-        page_ids = [int(row["id"]) for row in data]
         if page_ids and page_ids == previous_ids:
             stop_reason = "repeated_page"
             break
@@ -229,6 +266,7 @@ async def page_target(
 
         rows.extend(data)
         matching_ids.update(int(row["id"]) for row in data if target.matches(row))
+        # When last_page > OLX_MAX_PAGE the loop ends after page 50 with "page_clamped".
         previous_ids = page_ids
         if page >= last_page:
             stop_reason = "last_page"
@@ -310,12 +348,25 @@ async def sync_shop(olx: OlxClient, *, per_page: int = DEFAULT_PER_PAGE) -> Sync
 
     listings: dict[int, dict[str, Any]] = {}
     coverages: list[TargetCoverage] = []
+    foreign_ids: set[int] = set()
     for target in targets:
         coverage, rows = await page_target(olx, target, per_page=per_page)
         coverages.append(coverage)
         for row in rows:
+            listing_id = int(row["id"])
+            # A row from another user (say, a promoted listing) must not count as ours.
+            owner = _as_int(row.get("user_id"))
+            if owner is not None and owner != discovery.shop_id:
+                foreign_ids.add(listing_id)
+                continue
             # setdefault keeps the first row seen for an id (like `??=` on a JS object key).
-            listings.setdefault(int(row["id"]), row)
+            listings.setdefault(listing_id, row)
+    if foreign_ids:
+        logger.warning(
+            "ignored %d listings that belong to another user: %s",
+            len(foreign_ids),
+            sorted(foreign_ids)[:20],
+        )
 
     result = SyncResult(
         shop_total_at_start=discovery.shop_total,
@@ -334,11 +385,19 @@ async def sync_shop(olx: OlxClient, *, per_page: int = DEFAULT_PER_PAGE) -> Sync
     return result
 
 
-def ids_to_deactivate(active_ids: Iterable[int], result: SyncResult) -> set[int]:
-    """Listing ids that are active in our database but were not seen in this sync.
+def deactivation_candidates(active_ids: Iterable[int], result: SyncResult) -> set[int]:
+    """Listing ids active in our database that this sync did not see: CANDIDATES only.
 
     Returns an empty set unless the sync covered 100% of the shop's reported total, so a
-    partial run can never deactivate a listing that is still for sale.
+    partial run never even proposes a listing.
+
+    Why only candidates: the 100% gate compares counts, not sets. During a ~3-minute run a
+    listing X can be seen and then sold while a new listing Y is added, so the start and
+    end totals stay equal. If that same change shifts a page so that active listing Z is
+    missed by every target, the run still counts as complete and Z shows up here, though
+    it is still for sale. So M1-4 must confirm each candidate with GET /listings/{id}
+    (through the rate-limited client) and deactivate it only when OLX says it is gone or
+    inactive.
     """
     if not result.is_complete:
         return set()
@@ -347,15 +406,17 @@ def ids_to_deactivate(active_ids: Iterable[int], result: SyncResult) -> set[int]
 
 __all__ = [
     "DEFAULT_PER_PAGE",
+    "OLX_MAX_PAGE",
     "Category",
     "Discovery",
     "OlxApiError",
+    "OlxResponseError",
     "PageTarget",
     "SyncResult",
     "TargetCoverage",
     "TopCategory",
+    "deactivation_candidates",
     "discover",
-    "ids_to_deactivate",
     "page_target",
     "plan_targets",
     "sync_shop",
