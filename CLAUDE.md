@@ -9,9 +9,11 @@
 
 A team of agents works the GitHub issues, one PR per issue. Tomislav starts only the manager in Orca. The role briefs live in `docs/agents/` and are the single source of truth for each role:
 
-- `docs/agents/manager.md`: picks issues, starts employees and reviewers as Orca workers, reports to Tomislav.
-- `docs/agents/employee.md`: implements one issue in its own worktree and opens one PR.
-- `docs/agents/reviewer.md`: reviews one PR and approves or requests changes, never writes the fix.
+- `docs/agents/manager.md`: picks ready issues and starts them without waiting for approval, runs each issue through implement → review → fix → ship, reports to Tomislav.
+- `docs/agents/employee.md`: implements one issue in its own worktree (phases IMPLEMENT, FIX, SHIP) and opens one PR.
+- `docs/agents/reviewer.md`: reviews the employee's local branch before it is pushed and writes a PASS/FAIL report to `.reviews/` (git-ignored), never writes the fix.
+
+Reviews are local reports, not GitHub reviews: every agent runs under Tomislav's GitHub account, and GitHub doesn't let an account approve its own PR. `.claude/settings.json` blocks merging, force-pushing, pushing to `main`, reading `.env` files and `terraform apply` for every agent.
 
 If your prompt names one of these roles, follow that file. **If Tomislav says "run manager" (or "start manager"), you are the manager: read `docs/agents/manager.md` now and follow it exactly.** The rules below apply to every session in every worktree.
 

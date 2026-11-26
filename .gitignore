@@ -2,3 +2,9 @@
 .env
 .env.*
 !.env.example
+
+# Local review reports and screenshots (never committed)
+.reviews/
+
+# Personal Claude Code settings
+.claude/settings.local.json
