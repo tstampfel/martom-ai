@@ -46,10 +46,15 @@ LISTING_URL = "https://martom.olx.ba/artikal/{slug}"
 # "kvalitetene<a> trake</a>" stays "kvalitetene trake".
 _BLOCK_TAGS = frozenset(
     {"p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "table",
-     "blockquote", "section", "article", "header", "footer", "hr"}
+     "caption", "dl", "dt", "dd", "pre", "blockquote", "section", "article", "header",
+     "footer", "hr"}
 )  # fmt: skip
+# Table cells on one row are joined with " | ", so "153 x 250" and "45,00 KM" in two cells
+# can't run together into "153 x 25045,00 KM".
+_CELL_TAGS = frozenset({"td", "th"})
+_CELL_SEPARATOR = " | "
 _SKIP_TAGS = frozenset({"script", "style"})
-_INVISIBLE = str.maketrans({"\xa0": " ", "﻿": None, "​": None})
+_INVISIBLE = str.maketrans({"\xa0": " ", "\ufeff": None, "\u200b": None})
 _SPACES = re.compile(r"[^\S\n]+")  # any whitespace except a newline
 
 
@@ -64,29 +69,50 @@ class _TextCollector(HTMLParser):
         super().__init__()
         self.parts: list[str] = []
         self._skip_depth = 0  # > 0 while inside <script> or <style>
+        self._table_depth = 0  # > 0 while inside a <table>
+        self._line_has_text = False  # the current line has visible text so far
+
+    def _append_break(self) -> None:
+        self.parts.append("\n")
+        self._line_has_text = False
 
     def _newline(self) -> None:
         # One boundary between blocks, however many tags close and open there.
         if self.parts and not self.parts[-1].endswith("\n"):
-            self.parts.append("\n")
+            self._append_break()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
         elif tag == "br":
-            self.parts.append("\n")  # every <br> counts: <p><br></p> is a blank line
+            self._append_break()  # every <br> counts: <p><br></p> is a blank line
+        elif tag in _CELL_TAGS:
+            if self._line_has_text:
+                self.parts.append(_CELL_SEPARATOR)
         elif tag in _BLOCK_TAGS:
+            if tag == "table":
+                self._table_depth += 1
             self._newline()
 
     def handle_endtag(self, tag: str) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth = max(0, self._skip_depth - 1)
         elif tag in _BLOCK_TAGS:
+            if tag == "table":
+                self._table_depth = max(0, self._table_depth - 1)
             self._newline()
 
     def handle_data(self, data: str) -> None:
-        if not self._skip_depth:
-            self.parts.append(data)
+        if self._skip_depth:
+            return
+        if self._table_depth:
+            # Source line breaks between cells are layout, not text: rows come from <tr>.
+            data = data.replace("\n", " ")
+        self.parts.append(data)
+        if "\n" in data:
+            self._line_has_text = bool(data.rsplit("\n", 1)[1].strip())
+        elif data.strip():
+            self._line_has_text = True
 
 
 def description_to_text(html: str | None) -> str:
@@ -116,14 +142,14 @@ def _join_lines(lines: list[str]) -> str:
 
 # --- Boilerplate --------------------------------------------------------------------------
 
-# A line matching any of these is shop boilerplate, not a fact about the product. All are
-# case-insensitive. The patterns come from the recorded descriptions in
-# tests/fixtures/olx/listing_details.json; add a pattern and a fixture when a new footer
+# A line matching any of these is shop boilerplate, unless it also carries a product fact
+# (see `_FACT`). All are case-insensitive. The patterns come from the recorded descriptions
+# in tests/fixtures/olx/listing_details.json; add a pattern and a fixture when a new footer
 # style shows up.
 _BOILERPLATE_LINE = re.compile(
     "|".join(
         [
-            r"\b0\d{2}[ /-]?\d{3}[ -]?\d{3}\b",  # a phone number: 036 651 427, 063 ...
+            r"\b036[ /-]?651[ -]?427\b",  # the shop's public phone number
             r"martom-bekaert\.com",  # the shop's e-mail and website
             r"https?://|www\.",  # a bare link
             r"dostupno u želje?zarij",  # "Dostupno u Željezariji MARTOM ..."
@@ -142,17 +168,50 @@ _BOILERPLATE_LINE = re.compile(
     ),
     re.IGNORECASE,
 )
-# Everything from this heading to the end is the list of reference customers.
-_TRAILING_SECTION = re.compile(r"^\W*naše reference\b", re.IGNORECASE)
+# Any other phone number (Toni's mobile, say) counts only next to a contact word: three
+# zero-led groups alone can be an article code or sizes ("Šifra artikla 063 120 150").
+_PHONE = re.compile(r"\b0[3-6]\d[ /-]?\d{3}[ -]?\d{3,4}\b")
+_CONTACT_CUE = re.compile(
+    r"\btel\b|telefon|\bfax\b|kontakt|pozov|nazov|\bmob\b|📞|☎|\btoni\b", re.IGNORECASE
+)
+# A product fact: a number with a price or measuring unit ("18,00KM", "155 cm", "50 m",
+# "4 kom") or a size ("83x200", "153 x 250"). A line with one is never dropped, whatever
+# else it says: losing a variant is worse than keeping a phone number or a link.
+_FACT = re.compile(
+    r"\d(?:[\d.,]*\d)?\s*(?:km|kn|eur|€|mm|cm|m|m2|m²|kg|g|kom|komada|kpl|rol[aeiu]?|l|lit)"
+    r"(?!\w)|\d\s*[x\u00d7]\s*\d",  # x or the multiplication sign
+    re.IGNORECASE,
+)
+# The list of reference customers starts here. Its lines are dropped up to the next line
+# that carries a fact (old descriptions put product facts after it, too).
+_REFERENCES_HEADING = re.compile(r"^\W*naše reference\b", re.IGNORECASE)
+
+
+def _is_boilerplate(line: str) -> bool:
+    if _FACT.search(line):
+        return False
+    if _BOILERPLATE_LINE.search(line):
+        return True
+    return bool(_PHONE.search(line) and _CONTACT_CUE.search(line))
 
 
 def strip_boilerplate(text: str) -> str:
-    """Drop the shop's boilerplate lines from description text; keep every other line."""
+    """Drop the shop's boilerplate lines from description text; keep every other line.
+
+    Lines are kept or dropped whole, never edited, so what stays is copied as written.
+    """
     kept: list[str] = []
+    in_references = False
     for line in text.split("\n"):
-        if _TRAILING_SECTION.search(line):
-            break
-        if _BOILERPLATE_LINE.search(line):
+        has_fact = bool(_FACT.search(line))
+        if _REFERENCES_HEADING.search(line) and not has_fact:
+            in_references = True
+            continue
+        if in_references:
+            if not has_fact:
+                continue
+            in_references = False
+        if _is_boilerplate(line):
             continue
         kept.append(line)
     return _join_lines(kept)
@@ -195,6 +254,28 @@ def needs_detail_fetch(row: Mapping[str, Any], stored_summary_hash: str | None) 
 # --- One listing's details ----------------------------------------------------------------
 
 
+def _typed[T](body: Mapping[str, Any], key: str, kind: type[T]) -> T | None:
+    """`body[key]` if it is a `kind`, None if it is missing or null; else TypeError.
+
+    `def _typed[T]` is Python 3.12 generic syntax, like `function typed<T>(...)` in TS.
+    """
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, kind):
+        raise TypeError(f"{key} is {type(value).__name__}, expected {kind.__name__}")
+    return value
+
+
+def _price(value: object) -> float | None:
+    """A price is a number or null. `bool` is a subclass of `int` in Python, so exclude it."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"price is {type(value).__name__}, expected a number")
+    return value
+
+
 @dataclass(frozen=True)
 class ListingDetail:
     """The parts of GET /listings/{id} we keep, plus the cleaned description."""
@@ -223,26 +304,33 @@ class ListingDetail:
             title = body["title"]
             if not isinstance(title, str):
                 raise TypeError(f"title is {type(title).__name__}")
+            slug = _typed(body, "slug", str)
+            if not slug:
+                raise ValueError("no slug: the listing link needs it")
             additional = body.get("additional") or {}
             html = additional.get("description") or ""
             brand = body.get("brand")
             attributes = tuple(
-                sorted((str(a["name"]), str(a["value"])) for a in body.get("attributes") or ())
+                sorted(
+                    (str(a["name"]), str(a["value"]))
+                    for a in body.get("attributes") or ()
+                    if a.get("value") is not None  # a null value is no value, not "None"
+                )
             )
             category_id = body.get("category_id")
             return cls(
                 id=listing_id,
-                slug=str(body.get("slug") or ""),
+                slug=slug,
                 title=title,
-                short_description=body.get("short_description"),
+                short_description=_typed(body, "short_description", str),
                 description_html=html,
                 description_text=clean_description(html),
-                price=body.get("price"),
-                display_price=body.get("display_price"),
+                price=_price(body.get("price")),
+                display_price=_typed(body, "display_price", str),
                 price_by_agreement=bool(body.get("price_by_agreement")),
-                state=body.get("state"),
-                status=body.get("status"),
-                available=body.get("available"),
+                state=_typed(body, "state", str),
+                status=_typed(body, "status", str),
+                available=_typed(body, "available", bool),
                 category_id=int(category_id) if category_id is not None else None,
                 brand=str(brand["name"]) if isinstance(brand, Mapping) else None,
                 attributes=attributes,
@@ -292,6 +380,19 @@ class DetailFetchResult:
     failed: dict[int, OlxApiError] = field(default_factory=dict)
 
 
+class DetailFetchAbortedError(OlxRateLimitAbortError):
+    """OLX stopped the run mid-fetch; `partial` holds everything fetched before that.
+
+    A subclass of `OlxRateLimitAbortError`, so an `except OlxRateLimitAbortError` still
+    catches it. M1-4 should save `partial.fetched` before ending the run, so the next run
+    does not request those listings again (their stored summary hash now matches).
+    """
+
+    def __init__(self, message: str, *, partial: DetailFetchResult) -> None:
+        super().__init__(message, status_code=None)
+        self.partial = partial
+
+
 async def fetch_changed_details(
     olx: OlxClient,
     rows: Mapping[int, Mapping[str, Any]],
@@ -303,8 +404,9 @@ async def fetch_changed_details(
     `stored_summary_hashes` is listing id -> the summary hash saved at the last fetch.
 
     One failed listing (a 404 because it sold meanwhile, a malformed body) is recorded in
-    `failed` and the rest continue. `OlxRateLimitAbortError` is not caught: it means
-    "stop the whole run" (see its docstring).
+    `failed` and the rest continue. When OLX stops the run (`OlxRateLimitAbortError`, see
+    its docstring), this raises `DetailFetchAbortedError`, a subclass of it, carrying what
+    was fetched before the abort in `.partial`, so M1-4 can save it before ending the run.
     """
     fetched: dict[int, FetchedDetail] = {}
     unchanged: list[int] = []
@@ -320,8 +422,14 @@ async def fetch_changed_details(
                 raise OlxResponseError(
                     f"unexpected OLX response: asked for listing {listing_id}, got {detail.id}"
                 )
-        except OlxRateLimitAbortError:
-            raise
+        except OlxRateLimitAbortError as exc:
+            partial = DetailFetchResult(fetched=fetched, unchanged=tuple(unchanged), failed=failed)
+            logger.error(
+                "detail fetch aborted at listing %d: %d fetched before the abort",
+                listing_id,
+                len(fetched),
+            )
+            raise DetailFetchAbortedError(str(exc), partial=partial) from exc
         except OlxApiError as exc:
             logger.warning("listing %d: detail fetch failed: %s", listing_id, exc)
             failed[listing_id] = exc
@@ -339,6 +447,7 @@ async def fetch_changed_details(
 
 __all__ = [
     "SUMMARY_HASH_FIELDS",
+    "DetailFetchAbortedError",
     "DetailFetchResult",
     "FetchedDetail",
     "ListingDetail",

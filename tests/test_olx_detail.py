@@ -18,6 +18,7 @@ import pytest
 
 from martom.olx.client import OlxApiError, OlxClient, OlxRateLimitAbortError
 from martom.olx.detail import (
+    DetailFetchAbortedError,
     ListingDetail,
     clean_description,
     description_to_text,
@@ -56,7 +57,7 @@ def test_block_tags_become_lines_and_inline_tags_do_not_split_words() -> None:
 
 
 def test_entities_nbsp_and_bom_are_decoded_and_whitespace_collapsed() -> None:
-    html = "<p>&amp; Ø&nbsp;4,20 &lt;mm&gt;  ﻿👉 x</p><p><br></p><p><br></p><p>y</p>"
+    html = "<p>&amp; Ø&nbsp;4,20 &lt;mm&gt;  \ufeff👉 x</p><p><br></p><p><br></p><p>y</p>"
     assert description_to_text(html) == "& Ø 4,20 <mm> 👉 x\n\ny"
 
 
@@ -99,6 +100,44 @@ def test_strip_boilerplate_drops_contact_lines_and_keeps_facts() -> None:
 def test_strip_boilerplate_drops_the_references_list_at_the_end() -> None:
     text = "Stup 830 mm\n\nNAŠE REFERENCE:\n\nMeđunarodni aerodrom Sarajevo\nKONZUM"
     assert strip_boilerplate(text) == "Stup 830 mm"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "KATANAC 50MM - 18,00KM, pozovite 060 000 000",
+        "Panel 83x200 - 27 KM (slike na www.martom-bekaert.com)",
+        "Osobno preuzimanje: rola 50 m - 63 KM",
+        "Pogledajte tablicu: stup 155 cm ide 4 kopče, više ovdje",
+        "Mreža pletena 050 100 150 cm - 45,00KM",
+        "Šifra artikla 063 120 150",
+        "Dostupno u Željezariji Martom: panel 153 x 250 cm",
+    ],
+)
+def test_a_line_with_a_product_fact_is_kept_unchanged(line: str) -> None:
+    """A boilerplate phrase, link or number on a line never costs us the fact next to it."""
+    assert strip_boilerplate(f"Uvod\n{line}") == f"Uvod\n{line}"
+
+
+def test_a_fact_after_the_references_heading_is_kept() -> None:
+    html = "<p>NAŠE REFERENCE: OBI</p><p>KONZUM Mostar</p><p>Panel 153 x 250: 45 KM</p>"
+    assert clean_description(html) == "Panel 153 x 250: 45 KM"
+
+
+def test_table_cells_are_separated() -> None:
+    html = (
+        "<table><tr><th>Dimenzija</th><th>Cijena</th></tr>"
+        "<tr><td>153 x 250</td><td>45,00 KM</td></tr>"
+        "<tr>\n  <td>203 x 250</td>\n  <td>85,00 KM</td>\n</tr></table>"
+    )
+    assert description_to_text(html) == (
+        "Dimenzija | Cijena\n153 x 250 | 45,00 KM\n203 x 250 | 85,00 KM"
+    )
+
+
+def test_definition_lists_and_pre_are_blocks() -> None:
+    html = "<dl><dt>Visina</dt><dd>153 cm</dd></dl><pre>Ø 4,20 mm</pre>"
+    assert description_to_text(html) == "Visina\n153 cm\nØ 4,20 mm"
 
 
 def test_new_style_footer_is_stripped_and_every_price_line_survives(
@@ -238,6 +277,42 @@ def test_listing_detail_handles_missing_description_and_attributes() -> None:
     assert detail.description_html == ""
     assert detail.description_text == ""
     assert detail.attributes == ()
+
+
+def test_listing_detail_skips_attributes_without_a_value() -> None:
+    body = {
+        "id": 5,
+        "title": "T",
+        "slug": "t-5",
+        "attributes": [{"name": "Boja", "value": None}, {"name": "Tip", "value": "Panel"}],
+    }
+    assert ListingDetail.from_api(body).attributes == (("Tip", "Panel"),)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"slug": ""},
+        {"slug": None},
+        {"price": "45 KM"},
+        {"price": True},
+        {"display_price": 45},
+        {"state": 1},
+        {"status": ["active"]},
+        {"available": "yes"},
+        {"short_description": 3},
+    ],
+)
+def test_listing_detail_rejects_fields_of_the_wrong_type(bad: dict[str, Any]) -> None:
+    from martom.olx.sync import OlxResponseError
+
+    body = {"id": 5, "title": "T", "slug": "t-5", "price": 45.0, **bad}
+    with pytest.raises(OlxResponseError):
+        ListingDetail.from_api(body)
+
+
+def test_listing_detail_accepts_an_integer_price() -> None:
+    assert ListingDetail.from_api({"id": 5, "title": "T", "slug": "t-5", "price": 45}).price == 45
 
 
 def test_detail_hash_ignores_footer_edits(recorded: dict[str, Any]) -> None:
@@ -394,6 +469,28 @@ async def test_rate_limit_abort_stops_the_whole_fetch(recorded: dict[str, Any]) 
         with pytest.raises(OlxRateLimitAbortError):
             await fetch_changed_details(olx, rows, {})
     assert requested == [first]
+
+
+@pytest.mark.anyio
+async def test_details_fetched_before_an_abort_reach_the_caller(recorded: dict[str, Any]) -> None:
+    """A run that hits the rate-limit wall late must not lose what it already fetched."""
+    rows = summary_rows(recorded)
+    ids = list(rows)
+    third = ids[2]
+    stored = {ids[-1]: summary_hash(rows[ids[-1]])}  # one unchanged listing
+    requested: list[int] = []
+    abort = httpx.Response(429, headers={"Retry-After": "999999"})
+    async with make_client(recorded, requested, **{f"id_{third}": abort}) as olx:
+        with pytest.raises(DetailFetchAbortedError) as caught:
+            await fetch_changed_details(olx, rows, stored)
+
+    assert isinstance(caught.value, OlxRateLimitAbortError)  # old `except` clauses still work
+    assert isinstance(caught.value.__cause__, OlxRateLimitAbortError)
+    partial = caught.value.partial
+    assert set(partial.fetched) == set(ids[:2])
+    assert partial.fetched[ids[0]].detail.id == ids[0]
+    assert partial.failed == {}
+    assert requested == ids[:3]
 
 
 @pytest.fixture
