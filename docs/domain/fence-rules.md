@@ -63,6 +63,17 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 - The clarify step for a roll fence asks where the posts go: **into soil or concrete → (a)**, **on a concrete wall or base → (b)**.
 - Listing (b) currently sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni has been asked to move it. Until that's confirmed, listing **81645615** is on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45).
 
+### Accessories
+
+| Item | Listing | Details | Quantity |
+| --- | --- | --- | --- |
+| Tensioner (španer) | OLX 18129143, category "Biznis i Industrija > Poljoprivreda > Ostalo" | green or galvanized; reference price 1,65 KM | **3 × ceil(length / 25)**: 3 for every started 25 m |
+| Tension wire (žica nosiva) | OLX 46677177, category "Ograde" | PVC-coated, green or anthracite, 100 m coils, 3,10 / 2,7 / 2,2 mm | **optional**: quantity rule pending |
+
+- **Tensioners** are always in the BOM.
+- **Tension wire is optional ("po želji").** The advisor offers it but never adds it by default. Until Toni gives the quantity rule (how many rows, which thickness), the BOM doesn't calculate a wire quantity.
+- **Allowlist:** the tensioner listing is outside the fence categories, so it goes on the explicit sync allowlist next to 81645615 (issue #45). The tension wire is in "Ograde" and needs no allowlist entry.
+
 ### Post spacing and count
 
 - The BOM **always** calculates with posts every **2 m** (Toni's instruction).
@@ -94,6 +105,9 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Roll fence, 10 m straight | **6 posts** |
 | Roll fence, two 10 m sides with 1 corner | **11 posts** (6 + 6 − 1 shared corner post) |
 | Roll fence, customer asks for 3 m spacing | BOM still at 2 m, plus the "razmak do 3 m" note in the answer and in the order message |
+| Roll fence, 25 m | **3 tensioners** |
+| Roll fence, 30 m | **6 tensioners** (two started 25 m stretches) |
+| Roll fence, any length | Tension wire offered as "po želji", **not** in the BOM by default |
 
 ### The 905,10 KM example, line by line
 
@@ -116,7 +130,8 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 - **Gate sizes and prices.** Toni sends them later; until then gates are "cijena na upit".
 - **Roll fence, still missing** (blocks M4-2):
   - which post height goes with each fence height;
-  - accessories (tension wire, tensioners, ties) and their quantities;
+  - tension wire quantity rule (rows, thickness), and whether ties are needed;
+  - with corners, whether the tensioner rule uses the total length or each side;
   - anchors for the foot-plate post (model b): the anchor type, and confirmation of the assumed 3 per post;
   - whether Toni moved the foot-plate post (81645615) to "Ograde";
   - whether pletivo and chain link use the same posts and 2 m spacing.
