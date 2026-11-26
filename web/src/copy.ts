@@ -88,12 +88,63 @@ export const copy = {
       },
     ],
   },
-  // Placeholder chat until M5-3 builds the real one.
+  // The conversation (docs/mockups/{web,mobile}/2-clarify.html and 3-results.html).
   chat: {
     label: 'Razgovor sa savjetnikom',
     you: 'Vi',
-    pending: 'Savjetnik će uskoro odgovarati ovdje.',
+    advisor: 'Savjetnik',
     back: 'Novo pitanje',
+    writing: 'Savjetnik piše…',
+    steps: {
+      label: 'Savjetnik radi',
+      // Shown with a pulsing dot only while the reply streams.
+      live: 'uživo',
+      status: { working: 'radi', done: 'gotovo', needs_input: 'treba podatke' },
+    },
+    composer: {
+      label: 'Poruka',
+      submit: 'Pošalji',
+      placeholder: 'Pitajte dalje, npr. „a u zelenoj boji?”',
+      placeholderClarify: 'Ili napišite svojim riječima…',
+    },
+    clarify: {
+      side: (n: number) => `Strana ${n}`,
+      addSide: '+ strana',
+      removeSide: 'Ukloni zadnju stranu',
+      total: (metres: string) => `= ${metres} m`,
+      submit: 'Prikaži prijedlog',
+      incomplete: 'Odgovorite na sva pitanja ili napišite odgovor ispod.',
+    },
+    cards: {
+      label: 'Proizvodi',
+      variants: 'Varijante',
+      perUnit: (unit: string) => `/ ${unit}`,
+      onRequest: 'Cijena na upit',
+      olx: 'OLX oglas',
+      olxLabel: (title: string) => `${title}, oglas na OLX-u (otvara se u novoj kartici)`,
+      noPhoto: 'Slika s OLX oglasa',
+    },
+    project: {
+      label: 'Vaš projekt',
+      length: 'Dužina',
+      unanswered: '—',
+      hint: 'Promijenite bilo šta u razgovoru — popis materijala se ponovo izračuna.',
+    },
+    // Interim view of the bom event; the full materials list card is #74.
+    bom: {
+      quantity: (n: number) => `× ${n}`,
+    },
+    // The backend sends only the kind; the words are ours.
+    errors: {
+      rate_limited: (seconds: number | null) =>
+        seconds === null
+          ? 'Poslali ste puno poruka zaredom. Pokušajte ponovo za minutu.'
+          : `Poslali ste puno poruka zaredom. Pokušajte ponovo za ${seconds} s.`,
+      invalid_request: 'Ovu poruku ne možemo obraditi. Pokušajte je napisati drugačije.',
+      internal: `Savjetnik trenutno ne može odgovoriti. Pokušajte ponovo ili nazovite Martom: ${shop.phone}.`,
+      unknown_event: `Odgovor savjetnika nije stigao kako treba. Pokušajte ponovo ili nazovite Martom: ${shop.phone}.`,
+      connection: `Veza sa savjetnikom je prekinuta. Pokušajte ponovo ili nazovite Martom: ${shop.phone}.`,
+    },
   },
   about: {
     label: 'O Martomu',
