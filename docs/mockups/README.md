@@ -45,10 +45,11 @@ Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3
 | Page background | `#F2F2F0` | |
 | Card | `#FFFFFF` with `1px #E2E2DE` border, radius 14–20 px | |
 | Strong border | `#D5D6D1` | Outlined icon buttons (phone button on mobile) |
+| Subtle divider / chip hover | `#ECECE8` | Quick-start chip hover (background and border), cart row dividers on web. Not in `tokens.css` yet; add it with the React issue that builds the chip hover |
 | Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Kako savjetnik radi" card) |
 | Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
-| Agent card | `#4A4F57` (border), `#5A5F68` (dashed border, "primjer" badge border), `#34C46A` (step done), `#F5A623` (step working) | "Kako savjetnik radi" card on charcoal. Since canvas version 26 the start screens show only done steps, so no mockup uses `#F5A623` now |
+| Agent card | `#4A4F57` (border), `#5A5F68` ("primjer" badge border), `#34C46A` (step done), `#F5A623` (step working) | "Kako savjetnik radi" card on charcoal. Since canvas version 26 the start screens show only done steps, so no mockup uses `#F5A623` now |
 | Headings | Outfit 700/800 | |
 | Body | Inter 400–700 | |
 | Hexagon | `clip-path: polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)` | Badges and step numbers (echoes the hex nut in the logo) |
