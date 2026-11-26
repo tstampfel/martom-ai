@@ -6,12 +6,14 @@ wins. The functions return quantities only; prices are looked up from the databa
 the list is shown, so no KM amount lives in this module.
 """
 
-# The customer-facing labels use the real "×" and "–" signs, as in fence-rules.md.
-# ruff: noqa: RUF001, RUF003
+# The customer-facing labels (and the docs quoting them) use the real "×" and "–" signs,
+# as in fence-rules.md.
+# ruff: noqa: RUF001, RUF002, RUF003
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import StrEnum
 
 
@@ -21,15 +23,20 @@ class PanelHeightRule:
 
     post_height_cm: int  # base-plate post (stup s pločicom)
     clips_per_post: int  # PVC clips; a corner post gets twice as many
+    # Post without a plate, set in concrete. None = Toni hasn't confirmed the size yet:
+    # the line then has no size and no price. Never extrapolate a size here.
+    concrete_post_height_cm: int | None
 
 
-# Panel height in cm -> rule. Source: docs/domain/fence-rules.md, "Panel fence" table.
+# Panel height in cm -> rule. Sources: docs/domain/fence-rules.md, "Panel fence" table
+# (base-plate posts, clips) and "Concrete-in-soil posts" table (Toni, 26 Nov 2026,
+# docs PR #50): only the 103 cm panel has a confirmed concrete post (125 cm).
 PANEL_RULES: dict[int, PanelHeightRule] = {
-    83: PanelHeightRule(post_height_cm=85, clips_per_post=3),
-    103: PanelHeightRule(post_height_cm=105, clips_per_post=3),
-    123: PanelHeightRule(post_height_cm=125, clips_per_post=3),
-    153: PanelHeightRule(post_height_cm=155, clips_per_post=4),
-    203: PanelHeightRule(post_height_cm=205, clips_per_post=5),
+    83: PanelHeightRule(post_height_cm=85, clips_per_post=3, concrete_post_height_cm=None),
+    103: PanelHeightRule(post_height_cm=105, clips_per_post=3, concrete_post_height_cm=125),
+    123: PanelHeightRule(post_height_cm=125, clips_per_post=3, concrete_post_height_cm=None),
+    153: PanelHeightRule(post_height_cm=155, clips_per_post=4, concrete_post_height_cm=None),
+    203: PanelHeightRule(post_height_cm=205, clips_per_post=5, concrete_post_height_cm=None),
 }
 
 # fence-rules.md: "Panel widths: 200 cm and 250 cm". 250 cm is the reference example.
@@ -42,10 +49,16 @@ ANCHORS_PER_POST = 4
 # fence-rules.md, Corners: "That corner post gets double clips."
 CORNER_CLIP_FACTOR = 2
 
+# fence-rules.md, Concrete-in-soil posts: made to order with a 10–15 day lead time.
+MADE_TO_ORDER_LABEL = "po narudžbi, 10–15 dana"
+
+# A closed loop (around a yard) needs at least a triangle.
+MIN_CLOSED_SIDES = 3
+
 
 class PostType(StrEnum):
     BASE_PLATE = "base_plate"  # stock item, the default recommendation
-    CONCRETE_IN_SOIL = "concrete_in_soil"  # not stocked: "po narudžbi", price on request
+    CONCRETE_IN_SOIL = "concrete_in_soil"  # not stocked: made to order
 
 
 class Item(StrEnum):
@@ -60,59 +73,82 @@ class Item(StrEnum):
 
 
 @dataclass(frozen=True)
+class PriceRef:
+    """The product whose price a line uses, when it isn't the line's own item and size."""
+
+    item: Item
+    size: str
+
+
+@dataclass(frozen=True)
 class BomLine:
     item: Item
     name: str  # Bosnian label shown to the customer
     quantity: int
     size: str | None = None  # e.g. "153 × 250 cm"; None when the size isn't known
-    # True: never show a price, show "cijena na upit" (gates, "po narudžbi" items).
+    # True: never show a price, show "cijena na upit" (gates, unconfirmed "po narudžbi").
     unit_price_on_request: bool = False
     # True: "po narudžbi"; the order message flags the line so Toni confirms it.
     made_to_order: bool = False
+    # Extra status shown with the line, e.g. "po narudžbi, 10–15 dana".
+    label: str | None = None
+    # Look the price up from this product instead of the line's own item and size.
+    # E.g. a 125 cm concrete post costs the same as the 105 cm base-plate post.
+    price_from: PriceRef | None = None
 
 
 def panel_fence_bom(
     *,
-    length_m: Decimal | int | float,
+    sides_m: Sequence[Decimal | int | float | str],
     panel_height_cm: int,
     panel_width_cm: int = DEFAULT_PANEL_WIDTH_CM,
-    corners: int = 0,
+    closed: bool = False,
     gate: bool = False,
-    post_type: PostType = PostType.BASE_PLATE,
+    post_type: PostType | str = PostType.BASE_PLATE,
 ) -> list[BomLine]:
     """Return the materials list for one panel fence.
 
-    `length_m` is the total fence length. It is rounded to whole centimetres first, so a
-    float such as 5.000000000000001 can't add a panel. Every started panel counts as a
-    whole panel (a partial panel is cut from a full one), and a run of N panels needs
-    N + 1 posts. A corner is one of those posts, shared by the two sides, so corners add
-    no posts; each corner post gets double clips. Panels are counted from the total
-    length, because the inputs don't include the length of each side.
+    `sides_m` holds the length of each straight side in metres, in order around the
+    fence. Neighbouring sides meet at a corner. An open fence has len(sides) - 1 corners;
+    a closed loop (`closed=True`, e.g. around a yard) has len(sides) corners.
 
-    Raises ValueError for a length that isn't positive, a panel height or width Toni
-    didn't confirm, or more corners than there are inner posts.
+    Each side is rounded to whole centimetres first, so a float such as
+    5.000000000000001 can't add a panel. Each side gets its own whole number of panels
+    (a partial panel is cut from a full one), and a side of N panels needs N + 1 posts.
+    A corner is one post shared by two sides, so posts = Σ(panels per side + 1) - corners,
+    which gives a closed loop as many posts as panels. Corner posts get double clips.
+
+    A gate is a separate "Kapija – cijena na upit" line: the side lengths are taken as
+    the fence itself, and no gate opening is subtracted from them.
+
+    Concrete-in-soil posts are made to order and never come with anchors or concrete
+    (Martom sells no concrete). Only the confirmed heights get a post size and a price
+    reference; the others show "cijena na upit".
+
+    Raises ValueError for an empty or non-list `sides_m`, a side that isn't a positive
+    finite number, a closed loop with fewer than 3 sides, a panel height or width Toni
+    didn't confirm, or an unknown post type.
     """
-    length_cm = _length_in_cm(length_m)
-    if length_cm <= 0:
-        raise ValueError(f"length must be positive, got {length_m} m")
-    rule = PANEL_RULES.get(panel_height_cm)
-    if rule is None:
+    sides_cm = _sides_in_cm(sides_m)
+    if not isinstance(closed, bool):
+        raise ValueError(f"closed must be True or False, got {closed!r}")
+    if closed and len(sides_cm) < MIN_CLOSED_SIDES:
         raise ValueError(
-            f"panel height {panel_height_cm} cm is not one of {sorted(PANEL_RULES)} cm"
+            f"a closed fence needs at least {MIN_CLOSED_SIDES} sides, got {len(sides_cm)}"
         )
-    if panel_width_cm not in PANEL_WIDTHS_CM:
-        raise ValueError(f"panel width {panel_width_cm} cm is not one of {PANEL_WIDTHS_CM} cm")
+    rule = _rule_for(panel_height_cm)
+    if not _is_int(panel_width_cm) or panel_width_cm not in PANEL_WIDTHS_CM:
+        raise ValueError(f"panel width {panel_width_cm!r} cm is not one of {PANEL_WIDTHS_CM} cm")
+    try:
+        post_type = PostType(post_type)
+    except ValueError:
+        choices = [p.value for p in PostType]
+        raise ValueError(f"post type {post_type!r} is not one of {choices}") from None
 
-    panels = math.ceil(length_cm / panel_width_cm)
-    posts = panels + 1
-    inner_posts = posts - 2  # the two end posts can't be corners
-    if corners < 0:
-        raise ValueError(f"corners can't be negative, got {corners}")
-    if corners > inner_posts:
-        raise ValueError(
-            f"{corners} corner(s) don't fit: {panels} panel(s) have only "
-            f"{inner_posts} inner post(s) where a corner can be"
-        )
+    panels_per_side = [math.ceil(side_cm / panel_width_cm) for side_cm in sides_cm]
+    corners = len(sides_cm) if closed else len(sides_cm) - 1
+    panels = sum(panels_per_side)
+    posts = sum(side_panels + 1 for side_panels in panels_per_side) - corners
 
     # A corner post holds two panel edges at an angle, so its clips are doubled.
     clips = posts * rule.clips_per_post + corners * rule.clips_per_post * (CORNER_CLIP_FACTOR - 1)
@@ -126,7 +162,7 @@ def panel_fence_bom(
         ),
     ]
 
-    if post_type is PostType.BASE_PLATE:
+    if post_type == PostType.BASE_PLATE:
         lines.append(
             BomLine(
                 item=Item.POST_BASE_PLATE,
@@ -136,21 +172,12 @@ def panel_fence_bom(
             )
         )
     else:
-        # Martom doesn't stock these and Toni gave no length for them, so no size.
-        lines.append(
-            BomLine(
-                item=Item.POST_CONCRETE,
-                name=f"Stup za betoniranje (za panel {panel_height_cm} cm) – po narudžbi",
-                quantity=posts,
-                unit_price_on_request=True,
-                made_to_order=True,
-            )
-        )
+        lines.append(_concrete_post_line(rule, panel_height_cm, posts))
 
     lines.append(BomLine(item=Item.PVC_CLIP, name="PVC kopča", quantity=clips))
 
     # Anchors fix the base plate to concrete; a post set in concrete has no plate to anchor.
-    if post_type is PostType.BASE_PLATE:
+    if post_type == PostType.BASE_PLATE:
         lines.append(
             BomLine(
                 item=Item.ANCHOR_M8X80,
@@ -174,7 +201,64 @@ def panel_fence_bom(
     return lines
 
 
-def _length_in_cm(length_m: Decimal | int | float) -> Decimal:
-    # str() first: Decimal(0.1) would keep the float's binary error, Decimal("0.1") doesn't.
-    metres = Decimal(str(length_m))
-    return (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+def _concrete_post_line(rule: PanelHeightRule, panel_height_cm: int, posts: int) -> BomLine:
+    if rule.concrete_post_height_cm is None:
+        # Size and price pending Toni: no size, no price, "cijena na upit".
+        return BomLine(
+            item=Item.POST_CONCRETE,
+            name=f"Stup za betoniranje (za panel {panel_height_cm} cm)",
+            quantity=posts,
+            unit_price_on_request=True,
+            made_to_order=True,
+            label=MADE_TO_ORDER_LABEL,
+        )
+    # Toni: it costs the same as the base-plate post for this panel height, so the line
+    # points at that product's price, which comes from the database at call time.
+    return BomLine(
+        item=Item.POST_CONCRETE,
+        name=f"Stup za betoniranje {rule.concrete_post_height_cm} cm",
+        quantity=posts,
+        size=f"{rule.concrete_post_height_cm} cm",
+        made_to_order=True,
+        label=MADE_TO_ORDER_LABEL,
+        price_from=PriceRef(item=Item.POST_BASE_PLATE, size=f"{rule.post_height_cm} cm"),
+    )
+
+
+def _rule_for(panel_height_cm: int) -> PanelHeightRule:
+    rule = PANEL_RULES.get(panel_height_cm) if _is_int(panel_height_cm) else None
+    if rule is None:
+        raise ValueError(
+            f"panel height {panel_height_cm!r} cm is not one of {sorted(PANEL_RULES)} cm"
+        )
+    return rule
+
+
+def _is_int(value: object) -> bool:
+    # bool is a subclass of int in Python (True == 1), so rule it out explicitly.
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _sides_in_cm(sides_m: Sequence[Decimal | int | float | str]) -> list[Decimal]:
+    # A str is a Sequence too ("25" would be the sides "2" and "5"), so rule it out.
+    if not isinstance(sides_m, Sequence) or isinstance(sides_m, str | bytes):
+        raise ValueError(f"sides must be a list of side lengths in metres, got {sides_m!r}")
+    if not sides_m:
+        raise ValueError("sides must hold at least one side length")
+    return [_side_in_cm(side) for side in sides_m]
+
+
+def _side_in_cm(side_m: Decimal | int | float | str) -> Decimal:
+    if isinstance(side_m, bool) or side_m is None:
+        raise ValueError(f"side length must be a number of metres, got {side_m!r}")
+    try:
+        # str() first: Decimal(0.1) keeps the float's binary error, Decimal("0.1") doesn't.
+        metres = Decimal(str(side_m))
+    except InvalidOperation:
+        raise ValueError(f"side length must be a number of metres, got {side_m!r}") from None
+    if not metres.is_finite() or metres <= 0:
+        raise ValueError(f"side length must be a positive number of metres, got {side_m!r}")
+    side_cm = (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    if side_cm <= 0:
+        raise ValueError(f"side length must be at least 1 cm, got {side_m!r} m")
+    return side_cm

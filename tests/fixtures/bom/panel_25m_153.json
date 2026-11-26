@@ -1,10 +1,10 @@
 {
   "source": "docs/domain/fence-rules.md, 'The 905,10 KM example, line by line'. Prices from OLX listing 63996799, checked 26 Nov 2026. Test data only, never runtime constants.",
   "input": {
-    "length_m": "25",
+    "sides_m": ["25"],
     "panel_height_cm": 153,
     "panel_width_cm": 250,
-    "corners": 0,
+    "closed": false,
     "gate": false,
     "post_type": "base_plate"
   },
