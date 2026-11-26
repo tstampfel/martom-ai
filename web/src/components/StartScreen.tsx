@@ -1,4 +1,6 @@
+import { agentStepStates } from '../agentSteps'
 import { copy } from '../copy'
+import { useAgentCardSteps } from '../hooks'
 import { Hexagon } from './Hexagon'
 import { QuestionForm } from './QuestionForm'
 import './StartScreen.css'
@@ -17,6 +19,10 @@ type StartScreenProps = {
  * where they differ.
  */
 export function StartScreen({ onStartChat, focusQuestion = false }: StartScreenProps) {
+  // One loop drives both copies of the card (hero on wide screens, below the
+  // badges on phones), so they never drift apart.
+  const shownSteps = useAgentCardSteps(copy.agentCard.steps)
+
   return (
     <>
       <section className="hero">
@@ -64,7 +70,7 @@ export function StartScreen({ onStartChat, focusQuestion = false }: StartScreenP
           </div>
 
           <div className="hero__aside">
-            <AgentCard />
+            <AgentCard shownSteps={shownSteps} />
           </div>
         </div>
       </section>
@@ -89,7 +95,7 @@ export function StartScreen({ onStartChat, focusQuestion = false }: StartScreenP
 
       {/* On phones the card sits below the badges instead of inside the hero. */}
       <div className="agent-card-narrow">
-        <AgentCard />
+        <AgentCard shownSteps={shownSteps} />
       </div>
 
       <section className="how" aria-label={copy.howItWorks.label}>
@@ -110,24 +116,47 @@ export function StartScreen({ onStartChat, focusQuestion = false }: StartScreenP
 }
 
 /**
- * Static picture of the advisor at work. It is an illustration, not live
- * data, so screen readers skip it.
+ * Example of the advisor at work, badged "primjer" because it is not live.
+ * Its steps appear one by one (`shownSteps` of them are visible); hidden
+ * steps keep their space so the hero doesn't jump. The animated copy is
+ * hidden from screen readers, which get the full static list instead.
  */
-function AgentCard() {
+function AgentCard({ shownSteps }: { shownSteps: number }) {
+  const { title, badge, quote, steps } = copy.agentCard
+  const states = agentStepStates(shownSteps, steps.length)
+
   return (
-    <div className="agent-card" aria-hidden="true">
-      <div className="agent-card__head">
-        <strong>{copy.agentCard.title}</strong>
-        <span className="agent-card__badge">{copy.agentCard.badge}</span>
+    <div className="agent-card">
+      <div className="visually-hidden">
+        <p>{quote}</p>
+        <ul aria-label={`${title}, ${badge}`}>
+          {steps.map((step) => (
+            <li key={step.text}>{step.text}</li>
+          ))}
+        </ul>
       </div>
-      <span className="agent-card__quote">{copy.agentCard.quote}</span>
-      {copy.agentCard.steps.map((step) => (
-        <div key={step.text} className={`agent-card__step agent-card__step--${step.state}`}>
-          <span className="agent-card__mark">{step.state === 'done' ? '✓' : '…'}</span>
-          <span className="agent-card__text--wide">{step.text}</span>
-          <span className="agent-card__text--short">{step.short}</span>
-        </div>
-      ))}
+      <div className="agent-card__head" aria-hidden="true">
+        <strong>{title}</strong>
+        <span className="agent-card__badge">{badge}</span>
+      </div>
+      <span className="agent-card__quote" aria-hidden="true">
+        {quote}
+      </span>
+      {steps.map((step, index) => {
+        const state = states[index]
+        return (
+          <div
+            key={step.text}
+            className={`agent-card__step agent-card__step--${state}`}
+            data-state={state}
+            aria-hidden="true"
+          >
+            <span className="agent-card__mark">{state === 'done' ? '✓' : '…'}</span>
+            <span className="agent-card__text--wide">{step.text}</span>
+            <span className="agent-card__text--short">{step.short}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }

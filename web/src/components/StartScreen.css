@@ -228,15 +228,39 @@
   gap: 10px;
   border-radius: 10px;
   padding: 10px 12px;
+  /* Every step has the working step's 1px border, so steps are the same
+     height whatever they show and the card never changes height. */
+  border: 1px solid transparent;
 }
 
 .agent-card__step--done {
   background: var(--color-charcoal);
+  /* Paint inside the transparent border so the box matches the mockup. */
+  background-clip: padding-box;
 }
 
 .agent-card__step--working {
   border: 1px dashed var(--color-dark-border-soft);
   color: var(--color-on-dark);
+}
+
+/* Not shown yet, but it keeps its space so the card's height stays put. */
+.agent-card__step--hidden {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .agent-card__step--working,
+  .agent-card__step--done {
+    animation: agent-step-in 300ms ease-out;
+  }
+}
+
+@keyframes agent-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .agent-card__mark {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { nextAgentStep } from './agentSteps'
 import { INITIAL_TYPING_STATE, nextTypingStep, typingText } from './typing'
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
@@ -51,4 +52,52 @@ export function useTypingPlaceholder(
   }, [examples, paused])
 
   return { text: typingText(state, examples), example: examples[state.index] ?? '' }
+}
+
+function subscribePageVisibility(onChange: () => void): () => void {
+  document.addEventListener('visibilitychange', onChange)
+  return () => document.removeEventListener('visibilitychange', onChange)
+}
+
+/** False while the browser tab is hidden (another tab, minimised window). */
+export function usePageVisible(): boolean {
+  return useSyncExternalStore(
+    subscribePageVisibility,
+    () => document.visibilityState !== 'hidden',
+    () => true,
+  )
+}
+
+/**
+ * How many of the agent card's example steps to show. They appear one at a
+ * time, pause when all are showing, clear and loop (see agentSteps.ts).
+ * With reduced motion every step shows and no timer runs; when motion is
+ * allowed again the loop restarts from an empty card. While the tab is
+ * hidden the loop stops and later carries on from where it stopped.
+ */
+export function useAgentCardSteps(steps: readonly { text: string }[]): number {
+  const reducedMotion = usePrefersReducedMotion()
+  const pageVisible = usePageVisible()
+  const paused = reducedMotion || !pageVisible
+  const [shown, setShown] = useState(0)
+
+  // When reduced motion switches on, reset the count during render (React's
+  // "adjust state when an input changes" pattern, no effect needed). The
+  // full card shows meanwhile, and turning motion back on starts cleanly
+  // from an empty card instead of an old step count.
+  const [wasReduced, setWasReduced] = useState(reducedMotion)
+  if (wasReduced !== reducedMotion) {
+    setWasReduced(reducedMotion)
+    if (reducedMotion) setShown(0)
+  }
+
+  // One timer per step: each change of `shown` schedules the next one.
+  useEffect(() => {
+    if (paused) return
+    const { shown: next, delay } = nextAgentStep(shown, steps)
+    const timer = setTimeout(() => setShown(next), delay)
+    return () => clearTimeout(timer)
+  }, [steps, paused, shown])
+
+  return reducedMotion ? steps.length : shown
 }
