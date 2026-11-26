@@ -1,0 +1,23 @@
+{
+  "source": "docs/domain/fence-rules.md, 'The 905,10 KM example, line by line'. Prices from OLX listing 63996799, checked 26 Nov 2026. Test data only, never runtime constants.",
+  "input": {
+    "sides_m": ["25"],
+    "panel_height_cm": 153,
+    "panel_width_cm": 250,
+    "closed": false,
+    "post_type": "base_plate"
+  },
+  "unit_prices_km": {
+    "panel": "53.00",
+    "post_base_plate": "24.90",
+    "pvc_clip": "1.00",
+    "anchor_m8x80": "1.30"
+  },
+  "expected_quantities": {
+    "panel": 10,
+    "post_base_plate": 11,
+    "pvc_clip": 44,
+    "anchor_m8x80": 44
+  },
+  "expected_total_km": "905.10"
+}
