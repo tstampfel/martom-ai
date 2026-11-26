@@ -23,7 +23,7 @@ Panels come from OLX listing 63996799.
 - **End posts:** an end post gets the same clips as a line post (3 / 4 / 5). Only corner posts get double clips.
 - **Posts:** base-plate posts are stock items, priced from OLX, and the default recommendation.
 - **PVC clips:** 1,00 KM each (reference price).
-- **Anchors M8×80:** **"Tiplo anker FI 10 / M8×80"** (Toni, 26 Nov 2026 14:29), 4 per post, corner posts included. 1,30 KM each (reference price). They need a **10 mm drill bit** (relevant for suggested tools, #59).
+- **Anchors M8×80:** **"Tiplo anker FI 10 / M8×80"** (Toni, 26 Nov 2026 14:29), 4 per post, corner posts included. 1,30 KM each (reference price). Drill bit: **Ø 8 mm with an SDS(-plus) shank**, for both the M8×80 and the M8×70 anchors (Toni, 26 Nov 2026 14:32: not 10 mm), so installation needs an SDS-plus hammer drill (relevant for suggested tools, #59).
 - **No braces / support posts on panel fences at all**, end posts included (Toni, 26 Nov 2026 14:29).
 
 ### Corners (kutovi)
