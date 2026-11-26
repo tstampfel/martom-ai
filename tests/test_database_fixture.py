@@ -1,4 +1,4 @@
-"""Tests for the `database_url` fixture in conftest.py. They need no database.
+"""Tests for the `database_url` and `redis_url` fixtures in conftest.py. They need no server.
 
 `pytester` runs a small throwaway test session that uses a copy of our conftest.py,
 so we can check what the fixture does when Postgres can't be reached.
@@ -54,3 +54,45 @@ def test_unreachable_database_fails_in_ci(
 
     result.assert_outcomes(errors=1)
     result.stdout.fnmatch_lines(["*cannot connect to Postgres at localhost:1*"])
+
+
+UNREACHABLE_REDIS_URL = "redis://:s3cret-pw@localhost:1/0"
+
+
+@pytest.fixture
+def session_using_redis(pytester: pytest.Pytester) -> pytest.Pytester:
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(
+        """
+        def test_needs_redis(redis_url):
+            assert redis_url
+        """
+    )
+    return pytester
+
+
+def test_unreachable_redis_skips_locally(
+    session_using_redis: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("TEST_REDIS_URL", UNREACHABLE_REDIS_URL)
+
+    result = session_using_redis.runpytest("-rs")
+
+    result.assert_outcomes(skipped=1)
+    result.stdout.fnmatch_lines(["*cannot connect to Redis at localhost:1*"])
+    # Only host:port is printed, never a password from the URL (CI logs are public).
+    assert "s3cret-pw" not in result.stdout.str()
+
+
+def test_unreachable_redis_fails_in_ci(
+    session_using_redis: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("TEST_REDIS_URL", UNREACHABLE_REDIS_URL)
+
+    result = session_using_redis.runpytest()
+
+    result.assert_outcomes(errors=1)
+    result.stdout.fnmatch_lines(["*cannot connect to Redis at localhost:1*"])
+    assert "s3cret-pw" not in result.stdout.str()

@@ -52,9 +52,10 @@ uv run ruff format          # format (CI uses --check)
 uv add <pkg>                # runtime dependency; `uv add --dev <pkg>` for dev-only
 docker compose up -d --wait # Postgres 16 + pgvector and Redis, waits until both are healthy
 uv run martom migrate       # run from the repo root
+uv run martom api           # FastAPI on http://127.0.0.1:8000, JSON logs (--reload, --host, --port)
 ```
 
-When `DATABASE_URL` / `TEST_DATABASE_URL` are unset, `martom migrate` and the database tests use the local compose database on port 5432 (the fake values in `.env.example`), so no env prefix is needed. Every worktree shares one compose stack (fixed project name `martom`); tests create and drop their own throwaway databases on it. If Postgres can't be reached, the database tests are **skipped** locally (and fail in CI, where `CI` is set).
+When `DATABASE_URL` / `TEST_DATABASE_URL` are unset, `martom migrate` and the database tests use the local compose database on port 5432 (the fake values in `.env.example`), so no env prefix is needed. Every worktree shares one compose stack (fixed project name `martom`); tests create and drop their own throwaway databases on it. Redis tests use `TEST_REDIS_URL` or the compose Redis on port 6379 the same way. If Postgres or Redis can't be reached, those tests are **skipped** locally (and fail in CI, where `CI` is set).
 
 **Never source, read or print `.env`** (no `. ./.env`, `source .env`, `set -a`, `--env-file .env`): it will hold real API keys and the private `ORDER_PHONE`. Compose reads `.env` by itself for variable substitution, so **never run `docker compose config`** (it prints the resolved values). If port 5432 is taken (Tomislav's Mac runs a Homebrew Postgres there), pass the port inline and use it in both URLs:
 
@@ -63,6 +64,8 @@ POSTGRES_PORT=5433 docker compose up -d --wait
 DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run martom migrate
 TEST_DATABASE_URL=postgresql://martom:martom@localhost:5433/postgres uv run pytest
 ```
+
+App config is the `Settings` class in `src/martom/settings.py` (pydantic-settings, env vars only, never a `.env` file); add new config there as a typed field with a safe local default. The API is built by `create_app()` in `src/martom/api/app.py`; log with `logging.getLogger(__name__)` and pass fields with `extra={...}`, never `print`.
 
 Before every push: `uv run ruff check`, `uv run ruff format --check`, and `uv run pytest` with the database up. Check that the summary shows no skipped database tests before you claim they pass. CI (`.github/workflows/ci.yml`) runs the same checks, plus `martom migrate` twice against a fresh Postgres service, and the frontend checks when `web/` changed.
 

@@ -10,8 +10,12 @@ authors = [
 ]
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "fastapi>=0.165.0",
     "httpx>=0.28.1",
     "psycopg[binary]>=3.3.9",
+    "pydantic-settings>=2.16.3",
+    "redis>=8.2.0",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [project.scripts]
@@ -24,6 +28,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "anyio>=4.16.0",
+    "httpx2>=2.16.2",
     "pytest>=9.2.0",
     "ruff>=0.17.6",
 ]
