@@ -19,7 +19,8 @@ Panels come from OLX listing 63996799.
 | 153 cm | 155 cm | 4 | 8 |
 | 203 cm | 205 cm | 5 | 10 |
 
-- **Panel widths:** 200 cm and 250 cm.
+- **Panel widths:** 200 cm and 250 cm. The default is **250 cm** (fewer posts, so cheaper). The advisor offers 200 cm only when the customer asks for it or when the length fits 200 cm panels better.
+- **End posts:** an end post gets the same clips as a line post (3 / 4 / 5). Only corner posts get double clips.
 - **Posts:** base-plate posts are stock items, priced from OLX, and the default recommendation.
 - **PVC clips:** 1,00 KM each (reference price).
 - **Anchors M8×80:** 4 per post, corner posts included. 1,30 KM each (reference price).
@@ -33,10 +34,25 @@ Panels come from OLX listing 63996799.
 
 ### Concrete-in-soil posts (stupovi za betoniranje)
 
-- Martom does **not** stock posts without a base plate; customers rarely ask for them.
-- The advisor may offer them as **"po narudžbi"** (made to order): no price, shown as "cijena na upit" and clearly labelled.
+- Martom does **not** stock posts without a base plate; customers rarely ask for them. They are made to order, with a lead time of **10–15 days**.
+- The BOM line is labelled **"po narudžbi, 10–15 dana"**.
+- **Size and price (Toni, 26 Nov 2026):** the concrete post is **one size taller** than the base-plate post for the same panel height, and costs the **same as that base-plate post**. The price comes from the OLX sync at call time, never from code.
+
+  | Panel height | Base-plate post | Concrete post (no plate) | Price | Status |
+  | --- | --- | --- | --- | --- |
+  | 103 cm | 105 cm | **125 cm** | = base-plate post 105 cm (19,00 KM reference, OLX) | **confirmed** |
+  | 83, 123, 153, 203 cm | 85 / 125 / 155 / 205 cm | pending | "cijena na upit", no price | pending Toni |
+
+- For the pending heights, **don't extrapolate** the "one size taller" rule: the line shows no post size and no price ("cijena na upit") until Toni confirms each height.
+- Concrete posts get **no anchors** (there is no plate). Clips stay as for base-plate posts.
 - The WhatsApp order message flags every "po narudžbi" line so Toni confirms it.
 - Base-plate posts remain the default recommendation.
+
+### Concrete, installation and availability
+
+- **Martom does not sell concrete and does no construction work.** The advisor never suggests buying concrete from Martom and never adds concrete to the BOM. It may say the customer needs their own concrete for concrete-in-soil posts.
+- **Installation:** Martom installs fences **only on an existing concrete wall**. The advisor may mention it, with the price on request. How to present it is pending Toni's confirmation, so for now it is a mention only, never a BOM or cart line.
+- **Availability:** always show **"dostupno"** for stock products (Toni's decision). Never write "dostupnost potvrđujemo" or similar. "Po narudžbi" lines show their lead time instead.
 
 ### Gates (kapija)
 
@@ -50,6 +66,12 @@ Panels come from OLX listing 63996799.
 
 Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain link use the same posts and spacing isn't confirmed yet.
 
+### Rolls
+
+- A roll is **25 m** long.
+- Rolls per fence = **ceil(length / 25)**.
+- Nothing comes with a roll. Posts, tensioners, wire and anchors are all sold separately and are separate BOM lines.
+
 ### Posts: two models
 
 | Model | Listing | Profile | Heights | Mounting |
@@ -58,10 +80,21 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 | (b) Post with foot plate (stup sa stopom) | OLX 81645615, [listing](https://martom.olx.ba/artikal/stup-stupovi-koci-za-stopom-40x40mm-60-80-100-125-i-150cm-81645615) (category 876) | 40 × 40 mm | 60 / 80 / 100 / 125 / 150 cm | anchored onto a concrete wall or base |
 
 - Prices per height always come from the OLX sync ("from 10,00 KM" for the T-post is a reference only).
+- **T-post (a) height:** 40 cm of the post goes into the ground. Confirmed by Toni: an 80 cm roll takes a **120 cm** T-post.
+- **Derived rule, pending Toni's confirmation:** the T-post is the smallest available height ≥ roll height + 40 cm.
+
+  | Roll height | T-post | Status |
+  | --- | --- | --- |
+  | 60 cm | 120 cm | derived, pending Toni |
+  | 80 cm | 120 cm | **confirmed** |
+  | 100 cm | 150 cm | derived, pending Toni |
+  | 125 cm | 175 cm | derived, pending Toni |
+  | 150 cm | 200 cm | derived, pending Toni |
 - **Foot-plate post (b), reference prices** (26 Nov 2026): 60 cm → 10,50 · 80 cm → 11,90 · 100 cm → 14,00 · 125 cm → 16,50 · 150 cm → 21,00 KM. Colours: green and anthracite.
-- **Anchors for (b):** the foot plate has 3 anchor holes, so the BOM assumes **3 anchors per post** until Toni confirms. The anchor type is still pending, so the anchor line stays "cijena na upit" with no price until then.
+- **Anchors for (b):** **3 anchors M8×70 per post** (Toni confirmed). These are not the panel fence's M8×80 anchors; keep them as separate products. No OLX listing for M8×70 has been found yet, so the anchor line carries the quantity with "cijena na upit" and no price until it exists.
+- **Support T-posts (potporni T-stupovi):** foot-plate post fences are braced with support T-posts. How many and which height is pending from Toni, so the BOM adds no support-post line yet.
 - The clarify step for a roll fence asks where the posts go: **into soil or concrete → (a)**, **on a concrete wall or base → (b)**.
-- Listing (b) currently sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni has been asked to move it. Until that's confirmed, listing **81645615** is on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45).
+- Listing (b) sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni can't change categories himself (he'll call OLX), so listing **81645615** stays on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45). Keep it there even if OLX moves it later; the sync dedupes it.
 
 ### Accessories
 
@@ -72,7 +105,7 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 
 - **Tensioners** are always in the BOM.
 - **Tension wire is optional ("po želji").** The advisor offers it but never adds it by default. Until Toni gives the quantity rule (how many rows, which thickness), the BOM doesn't calculate a wire quantity.
-- **Allowlist:** the tensioner listing is outside the fence categories, so it goes on the explicit sync allowlist next to 81645615 (issue #45). The tension wire is in "Ograde" and needs no allowlist entry.
+- **Allowlist:** the tensioner listing **18129143** is outside the fence categories, so it stays on the explicit sync allowlist next to 81645615 (issue #45). The tension wire is in "Ograde" and needs no allowlist entry.
 
 ### Post spacing and count
 
@@ -80,6 +113,12 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 - Up to 3 m is possible depending on the terrain. The advisor may mention it as a note, "razmak do 3 m ovisno o terenu – potvrdite s Martomom", but **never uses 3 m in the BOM**, even when the customer asks. If the customer asks for wider spacing, the BOM stays at 2 m and the note goes into the order message for Toni to confirm.
 - Posts per straight run = **ceil(length / 2) + 1**.
 - Adjacent runs share the corner post, so each corner removes one post from the sum of the runs.
+
+### Corner and strainer posts (kutni stupovi)
+
+- A strainer post stands at **every corner** and **every 25 m** (Toni). Whether the two ends of a run count as strainer posts is pending; it doesn't change the count.
+- Strainer posts have the **same height and the same price** as line posts. Whether they are the same OLX listing, and whether they need a brace, is pending from Toni.
+- **Derived count, pending Toni's confirmation:** a run longer than 25 m is split into 25 m sections plus the remainder. Each section counts ceil(section / 2) + 1 posts, and adjacent sections share their strainer post. Example: 30 m = 25 m + 5 m → 14 + 4 − 1 = **17 posts** (one more than ceil(30 / 2) + 1 = 16, because the strainer at 25 m doesn't fall on the 2 m grid). Runs up to 25 m are unchanged.
 
 ## Eurofence (for reference)
 
@@ -99,7 +138,10 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | --- | --- |
 | 25 m straight fence, 153 cm panels, base-plate posts, OLX prices of 26 Nov 2026 | Total **905,10 KM** |
 | The same fence with 2 corners | **+8 clips** (each corner post goes from 4 to 8) |
-| Customer asks for posts to set in concrete | A "po narudžbi" post line with no price, flagged in the order message |
+| Panel fence, 103 cm panels, customer asks for posts to set in concrete | **125 cm** concrete posts (no plate) at **19,00 KM** each (= base-plate post 105 cm, OLX reference 26 Nov 2026), line "po narudžbi, 10–15 dana", **no anchors**, flagged in the order message |
+| Panel fence, 153 cm panels, posts to set in concrete | A "po narudžbi, 10–15 dana" post line with **no size and no price** ("cijena na upit"), no anchors, flagged in the order message |
+| Customer asks whether Martom sells concrete or builds the base | The advisor says Martom doesn't sell concrete or do construction work; it never adds concrete to the BOM |
+| Any stock product | Shown as "dostupno"; never "dostupnost potvrđujemo" |
 | Customer asks for a 100 cm Eurofence | The advisor says it doesn't exist and offers 80 cm or 125 cm |
 | Roll fence, 25 m straight | **14 posts** |
 | Roll fence, 10 m straight | **6 posts** |
@@ -108,6 +150,14 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Roll fence, 25 m | **3 tensioners** |
 | Roll fence, 30 m | **6 tensioners** (two started 25 m stretches) |
 | Roll fence, any length | Tension wire offered as "po želji", **not** in the BOM by default |
+| Roll fence, 25 m | **1 roll** |
+| Roll fence, 30 m | **2 rolls** |
+| Roll fence, 80 cm roll, T-posts | **120 cm** T-posts |
+| Roll fence, 100 cm roll, T-posts | 150 cm T-posts (derived rule, pending Toni; mark the test as such) |
+| Roll fence, 30 m straight | 17 posts (derived strainer rule, pending Toni; mark the test as such) |
+| Roll fence on foot-plate posts, 10 posts | **30 anchors M8×70**, no price ("cijena na upit") |
+| Panel fence, no width given | **250 cm** panels |
+| Panel fence, 25 m straight, 153 cm | End posts get **4** clips each, like line posts (44 clips for 11 posts) |
 
 ### The 905,10 KM example, line by line
 
@@ -127,11 +177,16 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 
 ## Still open (don't invent values)
 
-- **Gate sizes and prices.** Toni sends them later; until then gates are "cijena na upit".
+- **Gate sizes and prices.** Toni sends them separately; until then gates are "cijena na upit".
+- **Concrete-in-soil panel posts** for 83, 123, 153 and 203 cm panels: post size and price.
+- **Installation on an existing concrete wall:** how the advisor presents it.
 - **Roll fence, still missing** (blocks M4-2):
-  - which post height goes with each fence height;
-  - tension wire quantity rule (rows, thickness), and whether ties are needed;
+  - confirmation of the derived T-post heights for 60, 100, 125 and 150 cm rolls;
+  - confirmation of the derived strainer-post count for runs over 25 m;
   - with corners, whether the tensioner rule uses the total length or each side;
-  - anchors for the foot-plate post (model b): the anchor type, and confirmation of the assumed 3 per post;
-  - whether Toni moved the foot-plate post (81645615) to "Ograde";
+  - tension wire quantity rule (rows, thickness), and whether ties are needed;
+  - the OLX listing for the M8×70 anchors;
+  - strainer posts: same listing as line posts or not, and whether they need a brace;
+  - support T-posts for foot-plate fences: how many and which height;
+  - which foot-plate post (b) height goes with each roll height;
   - whether pletivo and chain link use the same posts and 2 m spacing.
