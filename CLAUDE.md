@@ -51,11 +51,15 @@ uv run ruff check           # lint (add --fix to auto-fix)
 uv run ruff format          # format (CI uses --check)
 uv add <pkg>                # runtime dependency; `uv add --dev <pkg>` for dev-only
 docker compose up -d --wait # Postgres 16 + pgvector and Redis, waits until both are healthy
-set -a; . ./.env; set +a    # export .env into the shell (nothing loads .env automatically yet)
-uv run martom migrate       # apply pending migrations/NNN_*.sql (reads DATABASE_URL; run from repo root)
+
+# Run from the repo root. Pass the local, fake URLs (same as .env.example) inline:
+DATABASE_URL=postgresql://martom:martom@localhost:5432/martom uv run martom migrate
+TEST_DATABASE_URL=postgresql://martom:martom@localhost:5432/postgres uv run pytest
 ```
 
-Before every push: `uv run ruff check`, `uv run ruff format --check`, `uv run pytest`. Database tests need `docker compose up -d --wait` and `TEST_DATABASE_URL` set (see `.env.example`); without it they are skipped, so set it before you claim they pass.
+**Never source, read or print `.env`** (no `. ./.env`, `source .env`, `set -a`, `--env-file .env`): it will hold real API keys and the private `ORDER_PHONE`. Agents pass the fake values above inline. If port 5432 is taken (Tomislav's Mac runs a Homebrew Postgres there), start compose with `POSTGRES_PORT=5433 docker compose up -d --wait` and use port 5433 in both URLs.
+
+Before every push: `uv run ruff check`, `uv run ruff format --check`, and `uv run pytest` with `TEST_DATABASE_URL` set as above (the database must be up). Without `TEST_DATABASE_URL` the database tests are skipped, so set it before you claim they pass.
 
 Migrations are plain SQL in `migrations/NNN_name.sql`, applied in number order by `martom migrate`, which records each file and its checksum in `schema_migrations` and skips files already applied. Each file runs in one transaction, so it must not contain its own `BEGIN`/`COMMIT` or `CREATE INDEX CONCURRENTLY`. Never edit a migration that has been merged; add a new one. Write every statement so it re-runs safely (`IF NOT EXISTS`, existence checks). Each table arrives in the issue that first needs it, and the manager assigns the migration number. The `martom` text search config (migration 001) is unaccent followed by the Serbian Snowball stemmer; the reasons are in that file.
 
