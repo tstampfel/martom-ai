@@ -8,7 +8,7 @@ const tokensCss = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8')
 // The values in docs/mockups/README.md ("Design tokens"). If the design
 // changes, change the README, this table and tokens.css together.
 const expected: Record<string, string> = {
-  '--color-red': '#E30613',
+  '--color-red': '#D71222',
   '--color-charcoal': '#26292E',
   '--color-ink': '#16181D',
   '--color-muted': '#4F5560',

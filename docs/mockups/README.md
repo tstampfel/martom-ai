@@ -22,8 +22,8 @@ Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3
 
 | Token | Value | Use |
 | --- | --- | --- |
-| Red (brand) | `#E30613` | Hero, primary buttons, top strip, hexagon badges, accents |
-| Charcoal | `#26292E` | Secondary buttons, dark panels ("Vaš projekt", materials list on web), footer |
+| Red (brand) | `#D71222` | Hero, primary buttons, hexagon badges, accents. The only red: it matches the solid red in the logo |
+| Charcoal | `#26292E` | Top announcement bar, secondary buttons, dark panels ("Vaš projekt", materials list on web), footer, quick-start chip text |
 | Ink | `#16181D` | Body text |
 | Muted text | `#4F5560` / `#3B4049` | Secondary text (both pass 4.5:1 on the page background) |
 | Page background | `#F2F2F0` | |
