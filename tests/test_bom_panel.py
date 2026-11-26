@@ -157,7 +157,7 @@ def test_203cm_panels_use_5_clips_and_4_anchors_per_post() -> None:
 
 
 # --- sides and corners -----------------------------------------------------------------
-# A corner is one post shared by two sides (fence-rules.md, "Corners"). Each side gets its
+# A corner is one post shared by two sides (fence-rules.md, "Corners (kutovi)"). Each side gets its
 # own whole number of panels, so partial panels on different sides never merge.
 
 
@@ -218,7 +218,7 @@ def test_sides_can_be_any_sequence_of_numbers() -> None:
 
 
 # --- concrete-in-soil posts: "po narudžbi, 10–15 dana" ---------------------------------
-# Rules: fence-rules.md, "Concrete-in-soil posts" (Toni, 26 Nov 2026, docs PR #50).
+# Rules: fence-rules.md, "Concrete-in-soil posts (stupovi za betoniranje)" (Toni, 26 Nov 2026).
 
 
 def test_103cm_concrete_posts_are_125cm_priced_as_the_105cm_base_plate_post() -> None:
@@ -370,6 +370,33 @@ def test_a_1200m_total_is_too_large() -> None:
     assert error.value.limit is FenceLimit.TOTAL
     assert error.value.value_m == Decimal(1200)
     assert error.value.max_m == MAX_TOTAL_M
+
+
+def test_a_total_just_over_1000m_is_too_large() -> None:
+    sides = [Decimal(300), Decimal(300), Decimal(300), Decimal("100.01")]
+    with pytest.raises(FenceTooLargeError) as error:
+        panel_fence_bom(sides_m=sides, closed=True, panel_height_cm=153)
+
+    assert error.value.limit is FenceLimit.TOTAL
+    assert error.value.value_m == Decimal("1000.01")
+
+
+@pytest.mark.parametrize(
+    ("side", "expected_value_m"),
+    [
+        ("1e27", Decimal("1E+27")),
+        ("123456789012345678901234567.89", Decimal("123456789012345678901234568")),
+    ],
+)
+def test_a_side_too_big_for_decimal_precision_reports_a_rounded_length(
+    side: str, expected_value_m: Decimal
+) -> None:
+    with pytest.raises(FenceTooLargeError) as error:
+        panel_fence_bom(sides_m=[side], panel_height_cm=153)
+
+    assert error.value.limit is FenceLimit.SIDE
+    assert error.value.value_m == expected_value_m
+    assert error.value.value_m == error.value.value_m.to_integral_value()
 
 
 def test_too_large_is_still_a_value_error() -> None:

@@ -28,9 +28,10 @@ class PanelHeightRule:
     concrete_post_height_cm: int | None
 
 
-# Panel height in cm -> rule. Sources: docs/domain/fence-rules.md, "Panel fence" table
-# (base-plate posts, clips) and "Concrete-in-soil posts" table (Toni, 26 Nov 2026,
-# docs PR #50): only the 103 cm panel has a confirmed concrete post (125 cm).
+# Panel height in cm -> rule. Sources: docs/domain/fence-rules.md, "Panel fence (panelna
+# ograda)" table (base-plate posts, clips per post; end posts get the same clips as line
+# posts) and "Concrete-in-soil posts (stupovi za betoniranje)" table: only the 103 cm
+# panel has a confirmed concrete post (125 cm); the other heights are pending Toni.
 PANEL_RULES: dict[int, PanelHeightRule] = {
     83: PanelHeightRule(post_height_cm=85, clips_per_post=3, concrete_post_height_cm=None),
     103: PanelHeightRule(post_height_cm=105, clips_per_post=3, concrete_post_height_cm=125),
@@ -39,17 +40,18 @@ PANEL_RULES: dict[int, PanelHeightRule] = {
     203: PanelHeightRule(post_height_cm=205, clips_per_post=5, concrete_post_height_cm=None),
 }
 
-# fence-rules.md: "Panel widths: 200 cm and 250 cm". 250 cm is the reference example.
+# fence-rules.md, "Panel fence": "Panel widths: 200 cm and 250 cm. The default is 250 cm".
 PANEL_WIDTHS_CM: tuple[int, ...] = (200, 250)
 DEFAULT_PANEL_WIDTH_CM = 250
 
-# fence-rules.md: "Anchors M8×80: 4 per post, corner posts included."
+# fence-rules.md, "Panel fence": "Anchors M8×80: 4 per post, corner posts included."
 ANCHORS_PER_POST = 4
 
-# fence-rules.md, Corners: "That corner post gets double clips."
+# fence-rules.md, "Corners (kutovi)": "That corner post gets double clips"; one shared post.
 CORNER_CLIP_FACTOR = 2
 
-# fence-rules.md, Concrete-in-soil posts: made to order with a 10–15 day lead time.
+# fence-rules.md, "Concrete-in-soil posts (stupovi za betoniranje)": made to order,
+# 10–15 day lead time. "Concrete, installation and availability": no concrete in the BOM.
 MADE_TO_ORDER_LABEL = "po narudžbi, 10–15 dana"
 
 # A closed loop (around a yard) needs at least a triangle.
@@ -294,7 +296,9 @@ def _side_in_cm(side_m: Decimal | int | float | str) -> Decimal:
         # Whole centimetres, so float noise like 5.000000000000001 m can't add a panel.
         side_cm = (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
     except InvalidOperation:  # more digits than Decimal's precision, e.g. 1e27 m
-        raise FenceTooLargeError(FenceLimit.SIDE, metres, MAX_SIDE_M) from None
+        # Round to whole metres instead: that can't overflow, and is whole cm too.
+        whole_m = metres.to_integral_value(rounding=ROUND_HALF_UP)
+        raise FenceTooLargeError(FenceLimit.SIDE, whole_m, MAX_SIDE_M) from None
     if side_cm <= 0:
         raise ValueError(f"side length must be at least 1 cm, got {side_m!r} m")
     if side_cm > MAX_SIDE_M * 100:

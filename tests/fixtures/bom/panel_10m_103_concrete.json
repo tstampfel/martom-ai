@@ -1,5 +1,5 @@
 {
-  "source": "docs/domain/fence-rules.md, 'Concrete-in-soil posts' (Toni, 26 Nov 2026, docs PR #50): a 103 cm panel takes a 125 cm concrete post with no plate, priced the same as the base-plate post 105 cm. Price from OLX listing 63996799 (19,00 KM reference). Test data only, never runtime constants.",
+  "source": "docs/domain/fence-rules.md, 'Concrete-in-soil posts (stupovi za betoniranje)' (Toni, 26 Nov 2026): a 103 cm panel takes a 125 cm concrete post with no plate, priced the same as the base-plate post 105 cm. Price from OLX listing 63996799 (19,00 KM reference). Test data only, never runtime constants.",
   "input": {
     "sides_m": ["10"],
     "panel_height_cm": 103,
