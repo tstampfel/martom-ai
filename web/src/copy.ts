@@ -64,16 +64,17 @@ export const copy = {
     ],
   },
   // A static illustration of what the advisor does; the real steps stream in
-  // from the API in the chat (M5-3). The mockups label it "uživo" (live); a
-  // static card says "primjer" (example) so it doesn't claim to be live.
+  // from the API in the chat (M5-3). It says "primjer" (example) so it doesn't
+  // claim to be live. Title and steps are the canvas wording
+  // (docs/mockups/{web,mobile}/1-start.html); phones show the same text.
   agentCard: {
-    title: 'Savjetnik radi',
+    title: 'Kako savjetnik radi',
     badge: 'primjer',
     quote: '„25 m ograde za dvorište, visina oko 1,5 m”',
     steps: [
       { text: 'Razumijem: 25 m · dvorište · 150 cm', short: 'Razumijem: 25 m · dvorište · 150 cm' },
-      { text: 'Pregledao 39 ograda i 12 vrsta stupova', short: 'Pregledao 39 ograda' },
-      { text: 'Računam panele, stupove i kopče', short: 'Računam panele i stupove' },
+      { text: 'Pronašao panele, stupove i pribor', short: 'Pronašao panele, stupove i pribor' },
+      { text: 'Popis: 10 panela · 11 stupova · 44 kopče', short: 'Popis: 10 panela · 11 stupova · 44 kopče' },
     ],
   },
   howItWorks: {

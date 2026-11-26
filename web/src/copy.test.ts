@@ -40,6 +40,18 @@ describe('copy', () => {
     const startCopy = JSON.stringify([copy.hero, copy.start, copy.agentCard, copy.howItWorks])
     expect(startCopy).not.toMatch(/obujmic/i)
     expect(copy.hero.lead).toContain('Panele, stupove, kopče i žicu')
-    expect(copy.agentCard.steps[2].text).toBe('Računam panele, stupove i kopče')
+  })
+
+  // Canvas wording from docs/mockups/{web,mobile}/1-start.html; the phone
+  // mockup shows the full step text, so the short form is the same.
+  it('uses the canvas title and steps on the agent card', () => {
+    expect(copy.agentCard.title).toBe('Kako savjetnik radi')
+    const canvasSteps = [
+      'Razumijem: 25 m · dvorište · 150 cm',
+      'Pronašao panele, stupove i pribor',
+      'Popis: 10 panela · 11 stupova · 44 kopče',
+    ]
+    expect(copy.agentCard.steps.map((step) => step.text)).toEqual(canvasSteps)
+    expect(copy.agentCard.steps.map((step) => step.short)).toEqual(canvasSteps)
   })
 })
