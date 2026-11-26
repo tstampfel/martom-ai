@@ -31,7 +31,9 @@ def database_url() -> Iterator[str]:
     except psycopg.OperationalError as exc:
         params = conninfo_to_dict(server_url)
         where = f"{params.get('host', 'localhost')}:{params.get('port', 5432)}"
-        message = f"cannot connect to Postgres at {where} ({exc})"
+        # libpq errors span several lines; join them so the reason stays on one line.
+        reason = " ".join(str(exc).split())
+        message = f"cannot connect to Postgres at {where} ({reason})"
         if os.environ.get("CI"):
             pytest.fail(f"{message}; in CI database tests must run, not be skipped")
         pytest.skip(

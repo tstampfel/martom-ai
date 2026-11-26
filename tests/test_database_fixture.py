@@ -13,7 +13,7 @@ pytest_plugins = ["pytester"]
 CONFTEST = (Path(__file__).parent / "conftest.py").read_text(encoding="utf-8")
 
 # Port 1 refuses connections immediately; no database server is needed.
-UNREACHABLE_URL = "postgresql://martom:martom@127.0.0.1:1/postgres"
+UNREACHABLE_URL = "postgresql://martom:martom@localhost:1/postgres"
 
 
 @pytest.fixture
@@ -37,8 +37,10 @@ def test_unreachable_database_skips_locally(
     result = session_using_database.runpytest("-rs")
 
     result.assert_outcomes(skipped=1)
+    # The whole reason must be on one line: libpq errors span several lines (localhost
+    # gives one per address tried, ::1 and 127.0.0.1), and the fixture joins them.
     result.stdout.fnmatch_lines(
-        ["*cannot connect to Postgres at 127.0.0.1:1*docker compose up -d --wait*"]
+        ["*cannot connect to Postgres at localhost:1*docker compose up -d --wait*"]
     )
 
 
@@ -51,4 +53,4 @@ def test_unreachable_database_fails_in_ci(
     result = session_using_database.runpytest()
 
     result.assert_outcomes(errors=1)
-    result.stdout.fnmatch_lines(["*cannot connect to Postgres at 127.0.0.1:1*"])
+    result.stdout.fnmatch_lines(["*cannot connect to Postgres at localhost:1*"])
