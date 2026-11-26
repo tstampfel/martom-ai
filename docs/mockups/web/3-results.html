@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="bs">
+<head>
+<meta charset="utf-8">
+<title>Martom savjetnik · web · preporuka</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.ph{background:repeating-linear-gradient(135deg,#DEDED9 0 14px,#E8E8E4 14px 28px);color:#4F5560;display:flex;align-items:flex-end;padding:12px;box-sizing:border-box;font-size:13px}
+.vp{min-height:40px;padding:0 14px;border-radius:8px;border:1px solid #C8C9C4;background:#FFFFFF;font-family:Inter,sans-serif;font-size:14px;color:#16181D}
+.q{width:36px;height:36px;border:0;background:transparent;font-size:18px;color:#FFFFFF;cursor:pointer}
+</style>
+</helmet>
+<div style="background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; min-height: 1200px">
+  <div style="height: 6px; background: #E30613"></div>
+  <header style="background: #FFFFFF; border-bottom: 1px solid #E2E2DE">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 14px 32px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap">
+      <a href="1-start.html" aria-label="Početna"><img src="../assets/martom-logo.png" alt="Željezarija Martom" style="height: 40px; width: auto; display: block"></a>
+      <span style="font-size: 14px; font-weight: 600; color: #4F5560; flex: 1">AI savjetnik</span>
+      <a href="#" style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #D5D6D1; display: flex; align-items: center; font-size: 14px; font-weight: 600">[telefon trgovine]</a>
+      <a href="4-cart-order.html" style="height: 44px; padding: 0 18px; border-radius: 22px; background: {{ cartBg }}; color: #FFFFFF; display: flex; align-items: center; font-size: 14px; font-weight: 700">Korpa · {{ cartCount }}</a>
+    </div>
+  </header>
+
+  <div style="max-width: 1280px; margin: 0 auto; padding: 32px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start">
+    <section aria-label="Razgovor" style="flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+      <div style="align-self: flex-end; background: #26292E; color: #FFFFFF; padding: 12px 16px; border-radius: 18px 18px 4px 18px; font-size: 15px">Antracit · stupovi u zemlju · bez kapije</div>
+      <div style="display: flex; flex-direction: column; gap: 10px; max-width: 760px">
+        <h1 style="margin: 0; font-family: Outfit, sans-serif; font-size: 30px; font-weight: 800; line-height: 1.15">Preporuka: 3D panelna ograda, 153 cm</h1>
+        <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #3B4049">Čvrsta i uredna, ne treba je zatezati, a paneli od 250 cm daju najmanje stupova. Ako želite jeftinije, mreža u roli je dobra alternativa, ali traži zateznu žicu i više rada.</p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 760px">
+        <article style="background: #FFFFFF; border: 2px solid #E30613; border-radius: 18px; overflow: hidden; display: flex; flex-direction: column">
+          <div class="ph" style="height: 170px; position: relative">[foto: panel 153 cm, antracit]<span style="position: absolute; top: 12px; left: 12px; background: #E30613; color: #FFFFFF; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 6px">Preporuka</span></div>
+          <div style="padding: 16px; display: flex; flex-direction: column; gap: 10px">
+            <strong style="font-size: 17px">Panelna ograda 3D (Nylofor)</strong>
+            <span style="font-size: 13px; color: #4F5560">Žica Ø 4,20/4,40 mm · plastificirana · antracit ili zelena</span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap"><button type="button" class="vp">103 × 250</button><button type="button" class="vp" style="border: 2px solid #26292E; font-weight: 700">153 × 250</button><button type="button" class="vp">153 × 200</button></div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-family: Outfit, sans-serif; font-size: 26px; font-weight: 800">53,00 KM <span style="font-family: Inter, sans-serif; font-size: 13px; font-weight: 500; color: #4F5560">/ panel</span></span><a href="#" style="font-size: 13px; font-weight: 600; border-bottom: 2px solid #E30613">OLX oglas</a></div>
+          </div>
+        </article>
+        <article style="background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 18px; overflow: hidden; display: flex; flex-direction: column">
+          <div class="ph" style="height: 170px; position: relative">[foto: Garden Light u roli]<span style="position: absolute; top: 12px; left: 12px; background: #26292E; color: #FFFFFF; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 6px">Jeftinije</span></div>
+          <div style="padding: 16px; display: flex; flex-direction: column; gap: 10px">
+            <strong style="font-size: 17px">Mreža u roli Garden Light</strong>
+            <span style="font-size: 13px; color: #4F5560">Plastificirana · okce 76 × 50 mm · rola 25 m · Betafence</span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap"><button type="button" class="vp">122 cm</button><button type="button" class="vp" style="border: 2px solid #26292E; font-weight: 700">150 cm</button><button type="button" class="vp">183 cm</button></div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-family: Outfit, sans-serif; font-size: 26px; font-weight: 800">7,50 KM <span style="font-family: Inter, sans-serif; font-size: 13px; font-weight: 500; color: #4F5560">/ m</span></span><a href="#" style="font-size: 13px; font-weight: 600; border-bottom: 2px solid #E30613">Usporedi</a></div>
+          </div>
+        </article>
+      </div>
+
+      <form style="display: flex; gap: 10px; align-items: center; background: #FFFFFF; border: 1px solid #C8C9C4; border-radius: 30px; padding: 6px 6px 6px 20px; max-width: 760px">
+        <label for="m" style="position: absolute; left: -9999px">Poruka</label>
+        <input id="m" placeholder="Pitajte dalje, npr. „a za 30 m sa kapijom?”" style="flex: 1; min-width: 0; border: 0; outline: none; font-family: Inter, sans-serif; font-size: 16px; height: 44px">
+        <button type="button" style="height: 44px; padding: 0 20px; border-radius: 22px; border: 0; background: #26292E; color: #FFFFFF; font-family: Inter, sans-serif; font-weight: 700; font-size: 15px">Pošalji</button>
+      </form>
+    </section>
+
+    <aside aria-label="Popis materijala" style="flex: 1 1 360px; background: #26292E; color: #FFFFFF; border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 6px">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #FF6B73">Popis materijala</span>
+      <span style="font-family: Outfit, sans-serif; font-size: 24px; font-weight: 800; margin-bottom: 8px">25 m · panel 153 cm · antracit</span>
+      <sc-for list="{{ lines }}" as="line" hint-placeholder-count="4">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid #3F444B">
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px"><span style="font-size: 14px; font-weight: 600">{{ line.name }}</span><span style="font-size: 12px; color: #B8BCC4">{{ line.detail }}</span></div>
+          <div style="display: flex; align-items: center; border: 1px solid #555B63; border-radius: 8px"><button type="button" class="q" aria-label="Manje" onClick="{{ line.dec }}">−</button><span style="min-width: 28px; text-align: center; font-weight: 700; font-size: 14px">{{ line.qty }}</span><button type="button" class="q" aria-label="Više" onClick="{{ line.inc }}">+</button></div>
+          <span style="width: 70px; text-align: right; font-weight: 700; font-size: 14px">{{ line.total }}</span>
+        </div>
+      </sc-for>
+      <div style="display: flex; justify-content: space-between; align-items: baseline; padding-top: 14px; border-top: 2px solid #FFFFFF; margin-top: 4px">
+        <span style="font-weight: 700">Okvirno</span>
+        <span style="font-family: Outfit, sans-serif; font-size: 30px; font-weight: 800">{{ sum }} KM</span>
+      </div>
+      <span style="font-size: 12px; color: #B8BCC4; text-align: right">+ stupovi i dostava · cijene informativne</span>
+      <button type="button" onClick="{{ addAll }}" style="margin-top: 14px; height: 52px; border-radius: 26px; border: 0; background: #E30613; color: #FFFFFF; font-family: Inter, sans-serif; font-weight: 700; font-size: 16px; cursor: pointer">{{ addLabel }}</button>
+      <a href="4-cart-order.html" style="height: 46px; border-radius: 23px; border: 1px solid #8A8F97; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; margin-top: 6px">Idi u korpu</a>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { q: { panel: 10, post: 11, clamp: 44, strip: 0 }, added: false }; }
+  renderVals() {
+    const q = this.state.q, fmt = (n) => n.toFixed(2).replace('.', ',');
+    const items = [
+      { key: 'panel', name: 'Panel 153 × 250 cm, antracit', detail: '53,00 KM / panel', price: 53 },
+      { key: 'post', name: 'Stup za panelnu ogradu, antracit', detail: '[profil i cijena: Toni]', price: null },
+      { key: 'clamp', name: 'Obujmica PVC 50 × 50 mm', detail: '1,50 KM / kom · [broj po stupu: Toni]', price: 1.5 },
+      { key: 'strip', name: 'PVC traka 19 cm × 35 m', detail: '73,00 KM / rola · neobavezno', price: 73 }
+    ];
+    const set = (k, d) => () => this.setState({ q: { ...q, [k]: Math.max(0, q[k] + d) }, added: false });
+    const lines = items.map((it) => ({ name: it.name, detail: it.detail, qty: q[it.key], total: it.price === null ? '—' : fmt(it.price * q[it.key]), dec: set(it.key, -1), inc: set(it.key, 1) }));
+    const sum = items.reduce((s, it) => s + (it.price === null ? 0 : it.price * q[it.key]), 0);
+    return { lines, sum: fmt(sum), addAll: () => this.setState({ added: true }), addLabel: this.state.added ? 'Dodano u korpu ✓' : 'Dodaj sve u korpu', cartCount: this.state.added ? 3 : 0, cartBg: this.state.added ? '#E30613' : '#26292E' };
+  }
+}
+</script>
+</body>
+</html>

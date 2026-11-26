@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="bs">
+<head>
+<meta charset="utf-8">
+<title>Martom savjetnik · web · pitanja</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.opt{min-height:44px;padding:0 18px;border-radius:22px;border:1px solid #C8C9C4;background:#FFFFFF;font-family:Inter,sans-serif;font-size:15px;font-weight:500;color:#16181D;cursor:pointer}
+.opt:hover{border-color:#26292E}
+.on{border:2px solid #26292E;background:#26292E;color:#FFFFFF;font-weight:600}
+.step{display:flex;gap:10px;align-items:center;font-size:13px;color:#3B4049}
+</style>
+</helmet>
+<div style="background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; min-height: 1000px; display: flex; flex-direction: column">
+  <div style="height: 6px; background: #E30613"></div>
+  <header style="background: #FFFFFF; border-bottom: 1px solid #E2E2DE">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 14px 32px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap">
+      <a href="1-start.html" aria-label="Početna"><img src="../assets/martom-logo.png" alt="Željezarija Martom" style="height: 40px; width: auto; display: block"></a>
+      <span style="font-size: 14px; font-weight: 600; color: #4F5560; flex: 1">AI savjetnik</span>
+      <a href="#" style="height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #D5D6D1; display: flex; align-items: center; font-size: 14px; font-weight: 600">[telefon trgovine]</a>
+      <a href="4-cart-order.html" style="height: 44px; padding: 0 18px; border-radius: 22px; background: #26292E; color: #FFFFFF; display: flex; align-items: center; font-size: 14px; font-weight: 700">Korpa · 0</a>
+    </div>
+  </header>
+
+  <div style="max-width: 1280px; width: 100%; margin: 0 auto; padding: 32px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start">
+    <section aria-label="Razgovor" style="flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+      <div style="align-self: flex-end; max-width: 70%; background: #26292E; color: #FFFFFF; padding: 14px 18px; border-radius: 18px 18px 4px 18px; font-size: 16px; line-height: 1.45">Treba mi 25 m ograde za dvorište, visina oko 1,5 m</div>
+
+      <div style="align-self: flex-start; background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 12px; padding: 10px 14px; display: flex; gap: 18px; flex-wrap: wrap">
+        <span class="step"><span style="color: #1F8A47; font-weight: 700">✓</span>Razumio: 25 m · dvorište · 150 cm</span>
+        <span class="step"><span style="color: #1F8A47; font-weight: 700">✓</span>Pregledao 39 ograda</span>
+        <span class="step"><span style="color: #C27A00; font-weight: 700">?</span>Trebam još 3 podatka</span>
+      </div>
+
+      <div style="background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 22px; max-width: 760px">
+        <p style="margin: 0; font-family: Outfit, sans-serif; font-size: 24px; font-weight: 700; line-height: 1.25">Odlično — za 25 m dvorišta imamo dobra rješenja. Još tri stvari:</p>
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 14px; font-weight: 700; color: #3B4049">1. Koja boja?</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button type="button" class="opt on">Antracit (RAL 7016)</button><button type="button" class="opt">Zelena (RAL 6005)</button><button type="button" class="opt">Svejedno</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 14px; font-weight: 700; color: #3B4049">2. Gdje idu stupovi?</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button type="button" class="opt on">U zemlju (betoniram)</button><button type="button" class="opt">Na beton, s pločicom</button><button type="button" class="opt">Ne znam</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <span style="font-size: 14px; font-weight: 700; color: #3B4049">3. Treba li kapija?</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button type="button" class="opt">Pješačka</button><button type="button" class="opt">Kolna</button><button type="button" class="opt on">Ne treba</button>
+          </div>
+        </div>
+        <a href="3-results.html" style="align-self: flex-start; height: 52px; padding: 0 28px; border-radius: 26px; background: #E30613; color: #FFFFFF; font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 10px">Prikaži prijedlog
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      </div>
+
+      <form style="display: flex; gap: 10px; align-items: center; background: #FFFFFF; border: 1px solid #C8C9C4; border-radius: 30px; padding: 6px 6px 6px 20px; max-width: 760px">
+        <label for="m" style="position: absolute; left: -9999px">Poruka</label>
+        <input id="m" placeholder="Ili napišite svojim riječima…" style="flex: 1; min-width: 0; border: 0; outline: none; font-family: Inter, sans-serif; font-size: 16px; height: 44px">
+        <button type="button" style="height: 44px; padding: 0 20px; border-radius: 22px; border: 0; background: #26292E; color: #FFFFFF; font-family: Inter, sans-serif; font-weight: 700; font-size: 15px">Pošalji</button>
+      </form>
+    </section>
+
+    <aside aria-label="Vaš projekt" style="flex: 1 1 320px; background: #26292E; color: #FFFFFF; border-radius: 20px; padding: 24px; display: flex; flex-direction: column; gap: 16px">
+      <span style="font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #FF6B73">Vaš projekt</span>
+      <span style="font-family: Outfit, sans-serif; font-size: 26px; font-weight: 800; line-height: 1.1">Ograda za dvorište</span>
+      <div style="display: flex; flex-direction: column">
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Dužina</span><strong>25 m</strong></div>
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Visina</span><strong>oko 150 cm</strong></div>
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Boja</span><strong>Antracit</strong></div>
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Stupovi</span><strong>U zemlju</strong></div>
+        <div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #3F444B; font-size: 15px"><span style="color: #B8BCC4">Kapija</span><strong>Ne</strong></div>
+      </div>
+      <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #B8BCC4">Promijenite bilo šta u razgovoru — popis materijala se ponovo izračuna.</p>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

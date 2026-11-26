@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="bs">
+<head>
+<meta charset="utf-8">
+<title>Martom savjetnik · mobilno · početak</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.chip{min-height:44px;box-sizing:border-box;padding:0 16px;border-radius:22px;border:1px solid rgba(255,255,255,.6);color:#FFFFFF;font-size:14px;font-weight:500;display:flex;align-items:center}
+.hex{width:40px;height:46px;flex:none;background:#E30613;color:#FFFFFF;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:15px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; display: flex; flex-direction: column; overflow: hidden">
+  <header style="background: #FFFFFF; border-top: 5px solid #E30613; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between">
+    <img src="../assets/martom-logo.png" alt="Željezarija Martom" style="height: 34px; width: auto; display: block">
+    <div style="display: flex; gap: 8px">
+      <a href="#" aria-label="Pozovi Martom" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #D5D6D1; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></a>
+      <a href="4-cart-order.html" aria-label="Korpa" style="width: 44px; height: 44px; border-radius: 22px; background: #26292E; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2.4 11h10.8l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg></a>
+    </div>
+  </header>
+
+  <section style="background: #E30613; color: #FFFFFF; border-radius: 0 0 56px 0; padding: 28px 20px 28px; display: flex; flex-direction: column; gap: 16px">
+    <span style="font-size: 12px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: .9">AI savjetnik</span>
+    <h1 style="margin: 0; font-family: Outfit, sans-serif; font-weight: 800; font-size: 34px; line-height: 1.02">Recite šta ograđujete. Mi složimo popis.</h1>
+    <label for="q" style="font-size: 13px; font-weight: 600">Vaše pitanje</label>
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 8px">
+      <textarea id="q" rows="2" placeholder="{{ placeholder }}" style="border: 0; outline: none; resize: none; font-family: Inter, sans-serif; font-size: 16px; line-height: 1.4; color: #16181D; background: transparent"></textarea>
+      <a href="2-clarify.html" style="align-self: flex-end; height: 44px; padding: 0 20px; border-radius: 22px; background: #26292E; color: #FFFFFF; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px">Pitaj
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px">
+      <a href="2-clarify.html" class="chip">Dvorište</a><a href="2-clarify.html" class="chip">Kokoši</a><a href="2-clarify.html" class="chip">Njiva i vinograd</a><a href="2-clarify.html" class="chip">Balkon</a><a href="#" class="chip">Alat i ostalo</a>
+    </div>
+  </section>
+
+  <section style="padding: 20px 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+    <div style="display: flex; gap: 10px; align-items: center"><div class="hex">30</div><span style="font-size: 12px; line-height: 1.4; color: #3B4049">Na tržištu od 1995.</span></div>
+    <div style="display: flex; gap: 10px; align-items: center"><div class="hex" style="font-size: 12px">10k+</div><span style="font-size: 12px; line-height: 1.4; color: #3B4049">Preko 10.000 artikala</span></div>
+  </section>
+
+  <section style="margin: 0 16px; background: #26292E; color: #FFFFFF; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; justify-content: space-between; font-size: 13px"><strong>Savjetnik radi</strong><span style="color: #7EE2A0">● uživo</span></div>
+    <span style="font-size: 12px; color: #C9CDD4"><span style="color: #34C46A; font-weight: 700">✓</span> Razumijem: 25 m · dvorište · 150 cm</span>
+    <span style="font-size: 12px; color: #C9CDD4"><span style="color: #34C46A; font-weight: 700">✓</span> Pregledao 39 ograda</span>
+    <span style="font-size: 12px; color: #C9CDD4"><span style="color: #F5A623; font-weight: 700">…</span> Računam panele i stupove</span>
+  </section>
+
+  <footer style="margin-top: auto; padding: 14px 16px 18px; font-size: 12px; color: #4F5560; display: flex; justify-content: space-between">
+    <span>Pon–pet 07–16 · sub 07–14</span><a href="#" style="font-weight: 700; color: #16181D">[telefon trgovine]</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { i: 0, n: 0 }; this.deleting = false; }
+  componentDidMount() { this.tick(); }
+  componentWillUnmount() { clearTimeout(this.t); }
+  examples() { return ['Treba mi 25 m ograde za dvorište, visina 1,5 m', 'Ograda za kokoši, 20 metara', 'Šta sve treba za panelnu ogradu?', 'Brusilica 125 mm za metal']; }
+  tick() {
+    const full = this.examples()[this.state.i];
+    let delay = 55;
+    if (!this.deleting && this.state.n < full.length) { this.setState({ n: this.state.n + 1 }); delay = 45 + Math.random() * 60; }
+    else if (!this.deleting) { this.deleting = true; delay = 1600; }
+    else if (this.state.n > 0) { this.setState({ n: this.state.n - 1 }); delay = 22; }
+    else { this.deleting = false; this.setState({ i: (this.state.i + 1) % this.examples().length }); delay = 350; }
+    this.t = setTimeout(() => this.tick(), delay);
+  }
+  renderVals() { return { placeholder: this.examples()[this.state.i].slice(0, this.state.n) + '|' }; }
+}
+</script>
+</body>
+</html>

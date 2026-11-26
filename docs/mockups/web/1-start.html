@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="bs">
+<head>
+<meta charset="utf-8">
+<title>Martom savjetnik · web · početna</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+.ph{background:repeating-linear-gradient(135deg,#DEDED9 0 14px,#E8E8E4 14px 28px);color:#4F5560;display:flex;align-items:flex-end;padding:14px;box-sizing:border-box;font-size:13px;font-family:Inter,sans-serif}
+.chip{min-height:44px;box-sizing:border-box;padding:0 18px;border-radius:22px;border:1px solid rgba(255,255,255,.55);color:#FFFFFF;font-size:15px;font-weight:500;display:flex;align-items:center;font-family:Inter,sans-serif}
+.chip:hover{background:rgba(255,255,255,.14)}
+.hex{width:64px;height:72px;flex:none;background:#E30613;color:#FFFFFF;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif;font-weight:800;font-size:24px}
+.tile{background:#FFFFFF;border:1px solid #E2E2DE;border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tile:hover{border-color:#26292E}
+</style>
+</helmet>
+<div style="background: #F2F2F0; font-family: Inter, system-ui, sans-serif; color: #16181D; min-height: 1700px">
+  <div style="background: #E30613; color: #FFFFFF; font-size: 13px">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 8px 32px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
+      <span>Dostava širom BiH · Lično preuzimanje u Međugorju</span>
+      <span>Pon–pet 07–16 · sub 07–14 · <a href="#" style="font-weight: 700">[telefon trgovine]</a></span>
+    </div>
+  </div>
+
+  <header style="background: #FFFFFF; border-bottom: 1px solid #E2E2DE">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 16px 32px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap">
+      <a href="#" aria-label="Željezarija Martom, početna" style="display: flex"><img src="../assets/martom-logo.png" alt="Željezarija Martom" style="height: 48px; width: auto; display: block"></a>
+      <nav aria-label="Kategorije" style="display: flex; gap: 24px; font-size: 15px; font-weight: 600; flex-wrap: wrap; flex: 1">
+        <a href="#">Ograde</a><a href="#">Mreže i žica</a><a href="#">Alat</a><a href="#">Vijčana roba</a><a href="#">Boje i lakovi</a><a href="#">Za kuću</a>
+      </nav>
+      <a href="4-cart-order.html" style="height: 44px; padding: 0 18px; border-radius: 22px; background: #26292E; color: #FFFFFF; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2.4 11h10.8l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>
+        Korpa · 0
+      </a>
+    </div>
+  </header>
+
+  <section style="max-width: 1280px; margin: 0 auto; padding: 32px 32px 0">
+    <div style="display: flex; flex-wrap: wrap; border-radius: 24px; overflow: hidden; background: #26292E">
+      <div style="flex: 999 1 560px; min-width: 0; background: #E30613; border-radius: 0 140px 140px 0; padding: 56px 72px 56px 56px; box-sizing: border-box; color: #FFFFFF; display: flex; flex-direction: column; gap: 24px">
+        <span style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: .9">AI savjetnik za ograde i alat</span>
+        <h1 style="margin: 0; font-family: Outfit, sans-serif; font-weight: 800; font-size: 56px; line-height: 1.02; letter-spacing: -1px">Recite šta ograđujete.<br>Mi složimo cijeli popis.</h1>
+        <p style="margin: 0; font-size: 18px; line-height: 1.5; max-width: 520px; opacity: .95">Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz 2.600+ artikala Martoma.</p>
+        <form style="display: flex; flex-direction: column; gap: 10px; max-width: 600px" onSubmit="{{ noop }}">
+          <label for="hq" style="font-size: 13px; font-weight: 600">Vaše pitanje</label>
+          <div style="display: flex; gap: 8px; background: #FFFFFF; border-radius: 32px; padding: 8px 8px 8px 22px; align-items: center">
+            <input id="hq" placeholder="{{ placeholder }}" style="flex: 1; min-width: 0; border: 0; outline: none; font-family: Inter, sans-serif; font-size: 17px; color: #16181D; height: 48px">
+            <a href="2-clarify.html" style="height: 48px; padding: 0 24px; border-radius: 24px; background: #26292E; color: #FFFFFF; font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px">Pitaj
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          </div>
+        </form>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <a href="2-clarify.html" class="chip">Dvorište</a><a href="2-clarify.html" class="chip">Kokoši i životinje</a><a href="2-clarify.html" class="chip">Njiva i vinograd</a><a href="2-clarify.html" class="chip">Balkon</a><a href="2-clarify.html" class="chip">Gabioni</a><a href="#" class="chip">Alat i ostalo</a>
+        </div>
+      </div>
+      <div style="flex: 1 1 380px; min-height: 460px; position: relative; padding: 32px; box-sizing: border-box; display: flex; align-items: center">
+        <div class="ph" style="position: absolute; inset: 0; background: repeating-linear-gradient(135deg,#3A3E44 0 14px,#33373C 14px 28px); color: #B8BCC4">[foto: montirana panelna ograda]</div>
+        <div style="position: relative; width: 100%; max-width: 380px; margin-left: auto; background: rgba(22,24,29,.92); border: 1px solid #4A4F57; border-radius: 18px; padding: 20px; color: #FFFFFF; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <span style="font-size: 14px; font-weight: 700">Savjetnik radi</span>
+            <span style="font-size: 12px; color: #7EE2A0; display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #34C46A"></span>uživo</span>
+          </div>
+          <span style="font-size: 13px; color: #C9CDD4; font-style: italic">„25 m ograde za dvorište, visina oko 1,5 m”</span>
+          <div style="display: flex; gap: 10px; align-items: center; background: #26292E; border-radius: 10px; padding: 10px 12px; font-size: 13px"><span style="color: #34C46A; font-weight: 700">✓</span>Razumijem: 25 m · dvorište · 150 cm</div>
+          <div style="display: flex; gap: 10px; align-items: center; background: #26292E; border-radius: 10px; padding: 10px 12px; font-size: 13px"><span style="color: #34C46A; font-weight: 700">✓</span>Pregledao 39 ograda i 12 vrsta stupova</div>
+          <div style="display: flex; gap: 10px; align-items: center; border: 1px dashed #5A5F68; border-radius: 10px; padding: 10px 12px; font-size: 13px; color: #C9CDD4"><span style="color: #F5A623; font-weight: 700">…</span>Računam panele, stupove i obujmice</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="O Martomu" style="max-width: 1280px; margin: 0 auto; padding: 40px 32px 0">
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px">
+      <div style="display: flex; gap: 14px; align-items: center"><div class="hex">2</div><span style="font-size: 14px; line-height: 1.45; color: #3B4049">Dvije prodavaonice okova, boja i lakova europskih i domaćih proizvođača</span></div>
+      <div style="display: flex; gap: 14px; align-items: center"><div class="hex">30</div><span style="font-size: 14px; line-height: 1.45; color: #3B4049">Na tržištu od 1995. godine, uz stalan rast i kvalitetu usluge</span></div>
+      <div style="display: flex; gap: 14px; align-items: center"><div class="hex" style="font-size: 17px">10k+</div><span style="font-size: 14px; line-height: 1.45; color: #3B4049">Preko 10.000 artikala po povoljnim cijenama</span></div>
+      <div style="display: flex; gap: 14px; align-items: center"><div class="hex" style="font-size: 15px">OLX</div><span style="font-size: 14px; line-height: 1.45; color: #3B4049">Online trgovina na OLX-u s aktualnim ponudama</span></div>
+    </div>
+  </section>
+
+  <section aria-label="Kategorije" style="max-width: 1280px; margin: 0 auto; padding: 56px 32px 0; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px">
+      <h2 style="margin: 0; font-family: Outfit, sans-serif; font-weight: 800; font-size: 32px">Ograde za svaku namjenu</h2>
+      <a href="#" style="font-weight: 600; font-size: 15px; border-bottom: 2px solid #E30613">Sve ograde</a>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+      <a href="2-clarify.html" class="tile"><div class="ph" style="height: 170px">[foto: 3D panel]</div><div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px"><strong style="font-size: 17px">Panelne ograde</strong><span style="font-size: 13px; color: #4F5560">Nylofor 3D · od 27 KM / panel</span></div></a>
+      <a href="2-clarify.html" class="tile"><div class="ph" style="height: 170px">[foto: mreža u roli]</div><div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px"><strong style="font-size: 17px">Mreže u roli</strong><span style="font-size: 13px; color: #4F5560">Garden, Pantanet · od 3,75 KM / m</span></div></a>
+      <a href="2-clarify.html" class="tile"><div class="ph" style="height: 170px">[foto: pletivo na njivi]</div><div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px"><strong style="font-size: 17px">Pletiva za njive</strong><span style="font-size: 13px; color: #4F5560">Farmer, Agritex · role 50 m</span></div></a>
+      <a href="2-clarify.html" class="tile"><div class="ph" style="height: 170px">[foto: gabion zid]</div><div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px"><strong style="font-size: 17px">Gabioni</strong><span style="font-size: 13px; color: #4F5560">Paneli i mreže · od 40 KM</span></div></a>
+    </div>
+  </section>
+
+  <section aria-label="Kako radi" style="max-width: 1280px; margin: 0 auto; padding: 56px 32px 64px">
+    <div style="background: #FFFFFF; border-radius: 24px; padding: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px">
+      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #E30613">01</span><strong style="font-size: 18px">Opišite šta trebate</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Dužina, visina i za šta je ograda. Savjetnik pita samo ono što fali.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #E30613">02</span><strong style="font-size: 18px">Dobijete popis materijala</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Paneli, stupovi i pribor s količinama i okvirnom cijenom.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px"><span style="font-family: Outfit, sans-serif; font-weight: 800; font-size: 40px; color: #E30613">03</span><strong style="font-size: 18px">Pošaljete jednim klikom</strong><span style="font-size: 15px; line-height: 1.5; color: #4F5560">Narudžba ide Martomu preko WhatsAppa; potvrda stanja, cijene i dostave obično isti dan.</span></div>
+    </div>
+  </section>
+
+  <footer style="background: #26292E; color: #C9CDD4; font-size: 13px">
+    <div style="max-width: 1280px; margin: 0 auto; padding: 24px 32px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
+      <span style="display: flex; align-items: center; gap: 16px"><img src="../assets/martom-logo-white.png" alt="Željezarija Martom" style="height: 32px; width: auto"><span>Krstine 106, Međugorje</span></span>
+      <span>zeljezarija@martom-bekaert.com · [telefon trgovine]</span>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1700}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { i: 0, n: 0 }; this.deleting = false; }
+  componentDidMount() { this.tick(); }
+  componentWillUnmount() { clearTimeout(this.t); }
+  tick() {
+    const ex = this.examples(), full = ex[this.state.i];
+    let delay = 55;
+    if (!this.deleting && this.state.n < full.length) { this.setState({ n: this.state.n + 1 }); delay = 45 + Math.random() * 60; }
+    else if (!this.deleting) { this.deleting = true; delay = 1600; }
+    else if (this.state.n > 0) { this.setState({ n: this.state.n - 1 }); delay = 22; }
+    else { this.deleting = false; this.setState({ i: (this.state.i + 1) % ex.length }); delay = 350; }
+    this.t = setTimeout(() => this.tick(), delay);
+  }
+  examples() { return ['Treba mi 25 m ograde za dvorište, visina 1,5 m', 'Ograda za kokoši, 20 metara', 'Šta sve treba za panelnu ogradu?', 'Brusilica 125 mm za metal']; }
+  renderVals() {
+    const full = this.examples()[this.state.i];
+    return { placeholder: full.slice(0, this.state.n) + '|', noop: (e) => e.preventDefault() };
+  }
+}
+</script>
+</body>
+</html>
