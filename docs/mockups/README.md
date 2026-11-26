@@ -26,7 +26,7 @@ The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina o
 
 | # | Web (`web/`, 1440 wide, fluid) | Mobile (`mobile/`, 390 × 844) | What it shows |
 | --- | --- | --- | --- |
-| 1 | `1-start.html` | `1-start.html` | Red curved hero, question box whose placeholder types an example, pauses, erases with backspace speed and types the next; white quick-start chips; "Kako savjetnik radi" card with a "primjer" badge whose three example steps appear one by one and restart (shown all at once with reduced motion); mobile header has a charcoal top border (web: a charcoal 6 px top strip), as on screens 2–5; hexagon badges (2 prodavaonice, 30 godina, 10.000+ artikala, OLX); web adds fence category tiles and "Kako radi" |
+| 1 | `1-start.html` | `1-start.html` | Red curved hero, question box whose placeholder types an example, pauses, erases with backspace speed and types the next; white quick-start chips; "Kako savjetnik radi" card with a "primjer" badge whose three example steps appear one by one and restart (shown all at once with reduced motion); mobile header has a charcoal top border, as on screens 2–5 (web start opens with the charcoal announcement bar instead of the 6 px strip); hexagon badges (2 prodavaonice, 30 godina, 10.000+ artikala, OLX); web adds fence category tiles and "Kako radi" |
 | 2 | `2-clarify.html` | `2-clarify.html` | The advisor's 3 questions as tappable chips: koliko ima kutova (0 · 1 · 2 · 3 · 4+ · Ne znam, plus "Ide okolo (zatvoreno)") with one length field per side, stupovi (base plate preselected, concrete "U zemlju (betoniram)" with the sub-line "po upitu · po narudžbi", Ne znam; web summary "U zemlju · po upitu"), boja; web adds the dark "Vaš projekt" panel (Dužina, Kutovi, Strane, …) that fills in as answers arrive. Rules: `docs/domain/fence-rules.md` |
 | 3 | `3-results.html` | `3-results.html` | Recommendation text, product cards with variant picker (panel = recommended, Garden Light = cheaper), materials list with working +/− quantity steppers, live total, "Dodaj sve u korpu" |
 | 4 | `4-cart-order.html` | `4-cart-order.html` | Own cart (korpa) and order form with the same fields as martomshop.ba; **one** red "Pošalji narudžbu" button that opens WhatsApp with the order pre-filled |
@@ -43,7 +43,7 @@ Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "St
 | Token | Value | Use |
 | --- | --- | --- |
 | Red (brand) | `#D71222` | Hero, primary buttons, hexagon badges, accents. The only red: it matches the solid red in the logo |
-| Charcoal | `#26292E` | Top announcement bar, top border (mobile, 5 px) and top strip (web, 6 px) on every screen, secondary buttons, dark panels ("Vaš projekt", materials list on web), footer, quick-start chip text |
+| Charcoal | `#26292E` | Top announcement bar, top border (mobile, 5 px, every screen) and top strip (web screens 2–5, 6 px), secondary buttons, dark panels ("Vaš projekt", materials list on web), footer, quick-start chip text |
 | Ink | `#16181D` | Body text |
 | Muted text | `#4F5560` / `#3B4049` | Secondary text (both pass 4.5:1 on the page background) |
 | Page background | `#F2F2F0` | |
