@@ -1,0 +1,89 @@
+"""FastAPI app factory.
+
+`create_app()` builds a fresh app instead of using a module-level global, so tests can
+build one with fake settings and fake health checks (like rendering a React component
+with test props). uvicorn calls it with no arguments: `uvicorn --factory
+martom.api.app:create_app`.
+"""
+
+import logging
+import re
+import time
+import uuid
+from collections.abc import Awaitable, Callable, Mapping
+from functools import partial
+
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+
+from martom.api.health import HealthCheck, check_postgres, check_redis
+from martom.api.health import router as health_router
+from martom.log import request_id_var
+from martom.settings import Settings
+
+logger = logging.getLogger(__name__)
+
+REQUEST_ID_HEADER = "X-Request-ID"
+# An incoming id (e.g. from CloudFront or a client) is kept only if it is short and plain,
+# so it can't inject odd characters into logs or response headers.
+VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+HEALTH_CHECK_TIMEOUT_SECONDS = 3.0
+
+
+def create_app(
+    settings: Settings | None = None,
+    health_checks: Mapping[str, HealthCheck] | None = None,
+    check_timeout: float = HEALTH_CHECK_TIMEOUT_SECONDS,
+) -> FastAPI:
+    settings = settings or Settings()
+    if health_checks is None:
+        # partial(f, x) is a new function that calls f(x), like `() => f(x)` in JS.
+        health_checks = {
+            "postgres": partial(check_postgres, settings.database_url),
+            "redis": partial(check_redis, settings.redis_url),
+        }
+
+    app = FastAPI(title="martom-ai")
+    # app.state is a place for app-wide objects that route handlers read via request.app.
+    app.state.settings = settings
+    app.state.health_checks = dict(health_checks)
+    app.state.health_check_timeout = check_timeout
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+        expose_headers=[REQUEST_ID_HEADER],
+    )
+
+    # Registered after CORS, so it wraps it: CORS preflight responses get an id too.
+    @app.middleware("http")
+    async def request_id_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        incoming = request.headers.get(REQUEST_ID_HEADER, "")
+        request_id = incoming if VALID_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex
+        token = request_id_var.set(request_id)
+        start = time.perf_counter()
+        status_code = 500  # stays 500 if the handler raises
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            response.headers[REQUEST_ID_HEADER] = request_id
+            return response
+        finally:
+            logger.info(
+                "request finished",
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status_code,
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+                },
+            )
+            request_id_var.reset(token)
+
+    app.include_router(health_router)
+    return app
