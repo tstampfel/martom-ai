@@ -80,6 +80,8 @@ npm --prefix web run build   # typecheck + production build into web/dist
 
 Before every push that touches `web/`: lint, typecheck, test and build. Design tokens live only in `web/src/styles/tokens.css` (values from `docs/mockups/README.md`, checked by `tokens.test.ts`); use the CSS variables, never raw hex values in components. All customer-facing Bosnian text lives in `web/src/copy.ts`, except the page `<title>` and meta description, which stay in `web/index.html` so they are in the static HTML that crawlers and link previews read. Fonts (Outfit, Inter) are self-hosted from `@fontsource` packages; don't load Google Fonts at runtime.
 
+Public runtime settings (only `VITE_*` values that are safe in the bundle, e.g. `VITE_SHOP_PHONE`) are read in `web/src/config.ts`; never put `ORDER_PHONE` or any secret there. Every way of starting a chat (question box, quick-start chips, header categories) goes through `startChat(text)` in `web/src/App.tsx`.
+
 ## Git
 
 - Commits use the GitHub noreply email (set in this repo's git config; pushes with a private email are rejected).
