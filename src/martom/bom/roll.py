@@ -15,7 +15,7 @@ asking for it raises RulesPendingError instead of applying the welded-roll rules
 # ruff: noqa: RUF001, RUF003
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -128,7 +128,7 @@ def roll_fence_bom(
     closed: bool = False,
     requested_spacing_m: Decimal | int | float | str | None = None,
     mesh: RollMesh | str = RollMesh.WELDED,
-    synced_prices: Mapping[PriceRef, Decimal] | None = None,
+    synced_products: Collection[PriceRef] | None = None,
 ) -> RollFenceBom:
     """Return the materials list for one welded roll fence.
 
@@ -147,10 +147,12 @@ def roll_fence_bom(
     - Foot-plate posts: 3 M8x70 anchors each.
     - Tension wire: only in `wire_addon`, never in `lines`.
 
-    `synced_prices` is the caller's price table for synced listings, keyed by the same
-    PriceRef a line's `price_from` points at. The BOM only checks which products exist in
-    it (the 100 cm T-post variant); it never copies a price into a line. Without it, the
-    100 cm brace line is "cijena na upit".
+    `synced_products` holds the products the sync has with a real price, as the same
+    PriceRef a line's `price_from` points at (sizes in the "<n> cm" form). The caller
+    includes a product only when its synced variant is active and priced. Only the 100 cm
+    brace is checked against it; the other T-post heights are listed variants
+    (fence-rules.md). Without the 100 cm T-post in it, that brace line is "cijena na upit".
+    The BOM never receives or copies a price.
 
     Raises RulesPendingError for chain link. Raises FenceTooLargeError (a ValueError) for
     a side over 300 m or a total over 1000 m, and ValueError for any other bad input.
@@ -202,7 +204,7 @@ def roll_fence_bom(
             )
         )
     if braces:
-        lines.append(_brace_line(post_height_cm, braces, synced_prices or {}))
+        lines.append(_brace_line(post_height_cm, braces, synced_products or ()))
     lines.append(BomLine(item=Item.TENSIONER, name="Zatezač (španer)", quantity=tensioners))
     if post_model == RollPostModel.FOOT_PLATE:
         lines.append(
@@ -222,7 +224,7 @@ def roll_fence_bom(
 
 
 def _brace_line(
-    braced_post_height_cm: int, braces: int, synced_prices: Mapping[PriceRef, Decimal]
+    braced_post_height_cm: int, braces: int, synced_products: Collection[PriceRef]
 ) -> BomLine:
     if braced_post_height_cm in T_POST_HEIGHTS_CM:
         # Braces are T-posts (OLX 59473597) as tall as the post they brace.
@@ -232,11 +234,11 @@ def _brace_line(
         brace_height_cm = SHORT_BRACE_HEIGHT_CM
     size = f"{brace_height_cm} cm"
     price_ref = PriceRef(item=Item.POST_T, size=size)
-    if brace_height_cm == SHORT_BRACE_HEIGHT_CM and price_ref not in synced_prices:
+    if brace_height_cm == SHORT_BRACE_HEIGHT_CM and price_ref not in synced_products:
         # The 100 cm variant isn't synced yet: count and size, no price.
         return BomLine(
             item=Item.BRACE_T_POST,
-            name=f"Potporni stup {size}",
+            name=f"Potporni T-stup {size}",
             quantity=braces,
             size=size,
             unit_price_on_request=True,

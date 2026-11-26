@@ -218,17 +218,16 @@ def test_foot_plate_fence_125cm_with_a_corner_gets_two_125cm_t_posts_as_braces()
     assert brace.price_from == PriceRef(item=Item.POST_T, size="125 cm")
 
 
-# The synced price table as the caller holds it: PriceRef -> unit price. The prices are
-# made up; the BOM only checks which products are there and never copies a price.
+# The products the sync has with a price, as the caller passes them: PriceRefs only.
 T_POST_100_CM = PriceRef(item=Item.POST_T, size="100 cm")
-SYNCED_WITHOUT_100_CM = {PriceRef(item=Item.POST_T, size="120 cm"): Decimal("9.99")}
-SYNCED_WITH_100_CM = {**SYNCED_WITHOUT_100_CM, T_POST_100_CM: Decimal("7.77")}
+SYNCED_WITHOUT_100_CM = frozenset({PriceRef(item=Item.POST_T, size="120 cm")})
+SYNCED_WITH_100_CM = SYNCED_WITHOUT_100_CM | {T_POST_100_CM}
 
 
 def short_foot_plate_brace(
-    roll_height_cm: int, synced_prices: dict[PriceRef, Decimal] | None = None
+    roll_height_cm: int, synced_products: frozenset[PriceRef] | None = None
 ) -> BomLine:
-    kwargs = {} if synced_prices is None else {"synced_prices": synced_prices}
+    kwargs = {} if synced_products is None else {"synced_products": synced_products}
     result = roll_fence_bom(
         sides_m=[10, 10], roll_height_cm=roll_height_cm, post_model=FOOT_PLATE, **kwargs
     )
@@ -236,16 +235,17 @@ def short_foot_plate_brace(
 
 
 @pytest.mark.parametrize("roll_height_cm", [60, 80, 100])
-@pytest.mark.parametrize("synced_prices", [None, {}, SYNCED_WITHOUT_100_CM])
+@pytest.mark.parametrize("synced_products", [None, frozenset(), SYNCED_WITHOUT_100_CM])
 def test_short_foot_plate_brace_is_100cm_on_request_until_the_variant_is_synced(
-    roll_height_cm: int, synced_prices: dict[PriceRef, Decimal] | None
+    roll_height_cm: int, synced_products: frozenset[PriceRef] | None
 ) -> None:
     # Foot-plate fence 80 cm, 1 corner -> "potporni stup 100 cm – cijena na upit",
     # 2 pieces, size 100 cm, no price (Toni 26 Nov 14:29; the variant isn't on OLX yet).
-    brace = short_foot_plate_brace(roll_height_cm, synced_prices)
+    brace = short_foot_plate_brace(roll_height_cm, synced_products)
     assert brace.quantity == 2
     assert brace.size == "100 cm"
-    assert brace.name == "Potporni stup 100 cm"
+    # Same name as once synced, so a cart sees one product; the label carries the status.
+    assert brace.name == "Potporni T-stup 100 cm"
     assert brace.label == "potporni stup 100 cm – cijena na upit"
     assert brace.unit_price_on_request
     assert brace.price_from is None
@@ -271,12 +271,12 @@ def test_short_foot_plate_brace_count_follows_corners_and_strainers() -> None:
     assert line_for(result, Item.BRACE_T_POST).quantity == 10
 
 
-def test_synced_prices_dont_change_tall_fence_braces() -> None:
+def test_synced_products_dont_change_tall_fence_braces() -> None:
     result = roll_fence_bom(
         sides_m=[10, 10],
         roll_height_cm=125,
         post_model=FOOT_PLATE,
-        synced_prices=SYNCED_WITH_100_CM,
+        synced_products=SYNCED_WITH_100_CM,
     )
     brace = line_for(result, Item.BRACE_T_POST)
     assert brace.price_from == PriceRef(item=Item.POST_T, size="125 cm")
@@ -284,19 +284,9 @@ def test_synced_prices_dont_change_tall_fence_braces() -> None:
 
 def test_t_post_fence_never_gets_a_100cm_brace() -> None:
     result = roll_fence_bom(
-        sides_m=[10, 10], roll_height_cm=80, post_model=T_POST, synced_prices=SYNCED_WITH_100_CM
+        sides_m=[10, 10], roll_height_cm=80, post_model=T_POST, synced_products=SYNCED_WITH_100_CM
     )
     assert line_for(result, Item.BRACE_T_POST).size == "120 cm"
-
-
-def test_no_line_quotes_a_price_from_the_synced_table() -> None:
-    # Grounding: BOM lines hold quantities and price references, never a unit price.
-    result = roll_fence_bom(
-        sides_m=[10, 10], roll_height_cm=80, post_model=FOOT_PLATE, synced_prices=SYNCED_WITH_100_CM
-    )
-    for line in (*result.lines, *result.wire_addon):
-        assert "7.77" not in repr(line)
-        assert "7,77" not in repr(line)
 
 
 # --- tensioners -------------------------------------------------------------------------
