@@ -1,0 +1,14 @@
+# Products Toni sells that have no OLX listing (docs/domain/fence-rules.md,
+# "Products without an OLX listing"). Every change here is reviewed in a PR.
+#
+# One table per product; the table name is the BOM item key (martom.bom.common.Item).
+#   name            customer-facing label
+#   price_km        unit price in KM, as a string so it stays an exact Decimal
+#   source          who confirmed the price and when
+#   last_confirmed  date of the last confirmation; after 90 days Toni reconfirms it
+
+[anchor_m8x70]
+name = "Anker M8×70"
+price_km = "0.80"
+source = "Toni 26.11.2026"
+last_confirmed = 2026-11-26
