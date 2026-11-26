@@ -6,9 +6,8 @@ wins. The functions return quantities only; prices are looked up from the databa
 the list is shown, so no KM amount lives in this module.
 """
 
-# The customer-facing labels (and the docs quoting them) use the real "×" and "–" signs,
-# as in fence-rules.md.
-# ruff: noqa: RUF001, RUF002, RUF003
+# The customer-facing labels use the real "×" and "–" signs, as in fence-rules.md.
+# ruff: noqa: RUF001, RUF003
 
 import math
 from collections.abc import Sequence
@@ -96,7 +95,6 @@ class Item(StrEnum):
     POST_CONCRETE = "post_concrete"
     PVC_CLIP = "pvc_clip"
     ANCHOR_M8X80 = "anchor_m8x80"
-    GATE = "gate"
 
 
 @dataclass(frozen=True)
@@ -113,7 +111,7 @@ class BomLine:
     name: str  # Bosnian label shown to the customer
     quantity: int
     size: str | None = None  # e.g. "153 × 250 cm"; None when the size isn't known
-    # True: never show a price, show "cijena na upit" (gates, unconfirmed "po narudžbi").
+    # True: never show a price, show "cijena na upit" (unconfirmed "po narudžbi" items).
     unit_price_on_request: bool = False
     # True: "po narudžbi"; the order message flags the line so Toni confirms it.
     made_to_order: bool = False
@@ -130,7 +128,6 @@ def panel_fence_bom(
     panel_height_cm: int,
     panel_width_cm: int = DEFAULT_PANEL_WIDTH_CM,
     closed: bool = False,
-    gate: bool = False,
     post_type: PostType | str = PostType.BASE_PLATE,
 ) -> list[BomLine]:
     """Return the materials list for one panel fence.
@@ -145,9 +142,6 @@ def panel_fence_bom(
     A corner is one post shared by two sides, so posts = Σ(panels per side + 1) - corners,
     which gives a closed loop as many posts as panels. Corner posts get double clips.
 
-    A gate is a separate "Kapija – cijena na upit" line: the side lengths are taken as
-    the fence itself, and no gate opening is subtracted from them.
-
     Concrete-in-soil posts are made to order and never come with anchors or concrete
     (Martom sells no concrete). Only the confirmed heights get a post size and a price
     reference; the others show "cijena na upit".
@@ -156,7 +150,9 @@ def panel_fence_bom(
     together are over MAX_TOTAL_M; exactly the limit is allowed. Raises ValueError for an
     empty or non-list `sides_m`, a side that isn't a positive finite number, a closed
     loop with fewer than 3 sides, a panel height or width Toni didn't confirm, an unknown
-    post type, or a `closed` or `gate` that isn't a bool.
+    post type, or a `closed` that isn't a bool.
+
+    Gates are out of scope (Toni, 26 Nov 2026): the BOM has no gate input or gate line.
     """
     sides_cm = _sides_in_cm(sides_m)
     total_m = sum(sides_cm, Decimal(0)) / 100
@@ -164,8 +160,6 @@ def panel_fence_bom(
         raise FenceTooLargeError(FenceLimit.TOTAL, total_m, MAX_TOTAL_M)
     if not isinstance(closed, bool):
         raise ValueError(f"closed must be True or False, got {closed!r}")
-    if not isinstance(gate, bool):
-        raise ValueError(f"gate must be True or False, got {gate!r}")
     if closed and len(sides_cm) < MIN_CLOSED_SIDES:
         raise ValueError(
             f"a closed fence needs at least {MIN_CLOSED_SIDES} sides, got {len(sides_cm)}"
@@ -218,17 +212,6 @@ def panel_fence_bom(
                 name="Anker M8×80",
                 quantity=posts * ANCHORS_PER_POST,
                 size="M8×80",
-            )
-        )
-
-    if gate:
-        # fence-rules.md, Gates: a separate product; never calculate a gate price.
-        lines.append(
-            BomLine(
-                item=Item.GATE,
-                name="Kapija – cijena na upit",
-                quantity=1,
-                unit_price_on_request=True,
             )
         )
 

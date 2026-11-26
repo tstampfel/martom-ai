@@ -47,7 +47,6 @@ def test_reference_case_25m_153cm_totals_905_10_km_with_recorded_olx_prices() ->
         panel_height_cm=given["panel_height_cm"],
         panel_width_cm=given["panel_width_cm"],
         closed=given["closed"],
-        gate=given["gate"],
         post_type=PostType(given["post_type"]),
     )
 
@@ -312,23 +311,20 @@ def test_post_type_given_as_a_plain_string_is_accepted() -> None:
     assert Item.POST_CONCRETE in quantities(concrete)
 
 
-# --- gate -------------------------------------------------------------------------------
+# --- gates are out of scope --------------------------------------------------------------
+# Toni, 26 Nov 2026: gates are not part of the BOM; the advisor sends gate questions to
+# Martom directly (M4-3).
 
 
-def test_a_gate_adds_one_price_on_request_line_and_changes_nothing_else() -> None:
-    without = panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153)
-    with_gate = panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153, gate=True)
-
-    gate = line_for(with_gate, Item.GATE)
-    assert gate.name == "Kapija – cijena na upit"
-    assert gate.quantity == 1
-    assert gate.unit_price_on_request is True
-    assert [line for line in with_gate if line.item != Item.GATE] == without
+def test_the_bom_takes_no_gate_input() -> None:
+    with pytest.raises(TypeError, match="gate"):
+        panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153, gate=True)  # type: ignore[call-arg]
 
 
-def test_no_gate_line_by_default() -> None:
+def test_no_bom_line_is_a_gate() -> None:
+    assert "gate" not in {item.value for item in Item}
     lines = panel_fence_bom(sides_m=[Decimal(25)], panel_height_cm=153)
-    assert Item.GATE not in quantities(lines)
+    assert all("kapij" not in line.name.lower() for line in lines)
 
 
 # --- length limits ----------------------------------------------------------------------
@@ -441,8 +437,6 @@ def test_exactly_1000m_in_total_gets_a_bom() -> None:
         ({"closed": "yes"}, "closed"),
         ({"sides_m": ["1e27"]}, "side"),
         ({"sides_m": [10**30]}, "side"),
-        ({"gate": "false"}, "gate"),
-        ({"gate": 1}, "gate"),
         ({"panel_height_cm": 100}, "height"),
         ({"panel_height_cm": 153.0}, "height"),
         ({"panel_height_cm": "153"}, "height"),
