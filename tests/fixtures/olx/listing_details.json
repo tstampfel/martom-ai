@@ -1,0 +1,245 @@
+{
+ "_about": "Recorded from the public OLX.ba API on 26 Nov 2026 (no token), trimmed for M1-3 tests. details: GET /listings/{id}, keeping only the fields detail.py reads. summary_row: one row of GET /users/martom/listings?category_id=881, unchanged. Toni's mobile number is replaced with the fake 060 000 000; the shop's public number 036 651 427 is kept.",
+ "summary_row": {
+  "score": null,
+  "id": 63996799,
+  "type": "single",
+  "title": "PANELNA OGRADA 83 103 123 I 153CM FI 4,20/4,40MM 200 I 250CM DUŽI",
+  "slug": "panelna-ograda-83-103-123-i-153cm-fi-420440mm-200-i-250cm-duzi-63996799",
+  "category_id": 881,
+  "top_category_id": "701",
+  "brand_id": null,
+  "city_id": 43,
+  "has_discount": false,
+  "original_price": null,
+  "discounted_price_float": 27,
+  "discounted_price": "27 KM",
+  "show_price": true,
+  "price": 27,
+  "display_price": "27 KM",
+  "price_max": 0,
+  "date": 1795683424,
+  "image": "https://d4n0y8dshd77z.cloudfront.net/listings/63996799/sm/img-1728046021-f60768950c74.jpg",
+  "images": [
+   "https://d4n0y8dshd77z.cloudfront.net/listings/63996799/sm/img-1728046021-f60768950c74.jpg"
+  ],
+  "sponsored": 1,
+  "available": false,
+  "visible": true,
+  "shipping": 0,
+  "card_payment": 0,
+  "user_type": "shop",
+  "user_id": 17193,
+  "state": "new",
+  "status": "active",
+  "olx_stories": false,
+  "location": null,
+  "labels": [],
+  "listing_type": "sell",
+  "premium_badges": [],
+  "ecommerce_tags": [],
+  "auction": null,
+  "job": null,
+  "service": null,
+  "special_labels": [
+   {
+    "value": "Vanjska ograda",
+    "label": "Vrsta ograde",
+    "unit": null
+   }
+  ],
+  "refresh_available": false
+ },
+ "details": {
+  "63996799": {
+   "id": 63996799,
+   "title": "PANELNA OGRADA 83 103 123 I 153CM FI 4,20/4,40MM 200 I 250CM DUŽI",
+   "slug": "panelna-ograda-83-103-123-i-153cm-fi-420440mm-200-i-250cm-duzi-63996799",
+   "short_description": null,
+   "additional": {
+    "description": "<h2>🏡 3D PANELNA OGRADA (ZELENA RAL 6005 I ANTRACIT RAL 7016) – KOMPLETAN PROGRAM: PANELI, STUPOVI, KOPČE I ANKERI</h2><p>Umorni ste od toga da Vam dvorište izgleda neuredno, da psi ili prolaznici bez problema ulaze, a susjedova djeca koriste Vaše dvorište kao igralište? Bez prave ograde nema ni sigurnosti ni privatnosti – a ni mira za Vašu porodicu. Naša <strong>3D panelna ograda (žica Ø 4,20/4,40 mm, PVC plastificirana)</strong> rješava sve te probleme u jednom potezu! Čvrsta, moderna i dugotrajna, ona štiti Vašu imovinu, daje uredan izgled prostoru i pokazuje da brinete o svom domu. Montaža je jednostavna, održavanje minimalno, a osjećaj sigurnosti neprocjenjiv. </p><h3>🛠️ <strong>KOMPLETAN CJENIK PANELA, STUPOVA I PRATEĆE OPREME</strong></h3><h3>🔲 <strong>1. 3D PANELI (DEBLJINA ŽICE FI 4,20 / 4,40 MM, PVC PLASTIFICIRANI)</strong></h3><p><br></p><ul><li>🟦 <strong>3D Panelna ograda 83 x 200 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>27,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 83 x 250 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>31,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 103 x 200 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>31,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 103 x 250 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>41,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 123 x 200 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>36,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 123 x 250 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>44,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 153 x 200 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>44,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 153 x 250 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>53,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 203 x 200 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>56,00 KM</strong> / panel 💵<br></li><li>🟦 <strong>3D Panelna ograda 203 x 250 cm</strong> (Ø 4,20/4,40 mm PVC): <strong>85,00 KM</strong> / panel 💵<br></li></ul><h3>🏗️ <strong>2. STUPOVI ZA PANELE (SA ANKER PLOČOM / STOPOM 3 MM I 4 RUPE ZA ANKERE)</strong></h3><ul><li>🟦 <strong>Stup H-85 cm sa stopom</strong> (za panele visine 83 cm): <strong>16,80 KM</strong> / kom 💵<br></li><li>🟦 <strong>Stup H-105 cm sa stopom</strong> (za panele visine 103 cm): <strong>19,00 KM</strong> / kom 💵<br></li><li>🟦 <strong>Stup H-125 cm sa stopom</strong> (za panele visine 123 cm): <strong>21,50 KM</strong> / kom 💵<br></li><li>🟦 <strong>Stup H-155 cm sa stopom</strong> (za panele visine 153 cm): <strong>24,90 KM</strong> / kom 💵<br></li><li>🟦 <strong>Stup H-205 cm sa stopom</strong> (za panele visine 203 cm): <strong>31,00 KM</strong> / kom 💵<br></li></ul><h3>🔩 <strong>3. PRATEĆI PRIBOR ZA MONTAŽU (KOPČE I ANKERI)</strong></h3><ul><li>🟦 <strong>PVC kopča sa samorezivim vijkom:</strong> <strong>1,00 KM</strong> / kom 💵<br></li><li>🟦 <strong>Tiplo anker FI 10 / M8 x 80 mm</strong> (za pričvršćivanje stope stupa u beton): <strong>1,30 KM</strong> / kom 💵 <em>(idu 4 komada po stupu)</em><br></li></ul><ul><li><em>Preporučeni broj kopči po stupu:</em><br></li></ul><ul><li>Za stupove visine <strong>85 cm, 105 cm i 125 cm</strong> → idu <strong>3 kopče</strong> po stupu<br></li><li>Za stupove visine <strong>155 cm</strong> → idu <strong>4 kopče</strong> po stupu<br></li><li>Za stupove visine <strong>205 cm</strong> → ide <strong>5 kopči</strong> po stupu<br></li></ul><h3>📐 <strong>TEHNIČKE SPECIFIKACIJE</strong></h3><ul><li><strong>Tip sustava:</strong> Modularni 3D panelni ogradni sustav s ojačavajućim \"V\" pregibima za maksimalnu krutost i stabilnost<br></li><li><strong>Debljina žice:</strong> <strong>Ø 4,20 / 4,40 mm</strong> (čvrsta pocinčana čelična žica s debelim slojem kvalitetne PVC plastifikacije)<br></li><li><strong>Dostupne boje (paneli, stupovi i kopče u istoj boji):</strong><br></li><li><strong>Konstrukcija stupova:</strong> Čelični pocinčani i plastificirani stupovi s tvornički zavarenom <strong>anker pločom (stopom) debljine 3 mm</strong> i <strong>4 otvora</strong> za brzu montažu na betonski parapet ili podlogu (uključena gornja PVC kapa stupa)<br></li><li><strong>Otpornost:</strong> Vrhunska dvostruka antikorozivna zaštita (cinčanje + UV stabilizirana PVC plastifikacija) otporna na kišu, snijeg, sunce i mraz – bez potrebe za ikakvim bojanjem i održavanjem<br></li><li><strong>Namjena:</strong> Ograđivanje obiteljskih kuća, dvorišta, vrtova, vikendica, apartmana, poslovnih objekata, skladišta, škola, igrališta i sportskih terena<br></li></ul><ul><li>🟢 <strong>Zelena (RAL 6005)</strong> – klasična vrtna i dvorišna boja koja se savršeno stapa s prirodom<br></li><li>⚫ <strong>Antracit siva (RAL 7016)</strong> – moderna arhitektonska nijansa idealna uz suvremene fasade i stolarije</li></ul><h3>✅ <strong>PREDNOSTI KOJE DOBIVATE</strong></h3><ul><li>Kompletan sustav na jednom mjestu (paneli, stupovi sa stopom 3 mm, kopče i ankeri) u bojama <strong>RAL 6005 (zelena)</strong> i <strong>RAL 7016 (antracit)</strong><br></li><li>Velik izbor visina (od <strong>83 cm do 203 cm</strong>) i širina (<strong>200 cm i 250 cm</strong>)<br></li><li>Dugotrajna zaštita bez održavanja i brza, jednostavna montaža<br></li><li>Novo i dostupno odmah na skladištu<br></li></ul><h3>📍 <strong>DOSTUPNO U ŽELJEZARIJI MARTOM (MEĐUGORJE)</strong></h3><p>📌 <strong>Adresa:</strong> Tromeđa BB (kružni tok), Međugorje</p><p>📍 <em>Praktična lokacija za kupce iz mjesta: Čitluk, Mostar, Ljubuški, Čapljina i okolica.</em></p><p>🏡 <strong>Osobno preuzimanje:</strong> Artikli su novi i dostupni odmah u našoj poslovnici.</p><p>📦 <strong>Dostava:</strong> 🛒 Naručite i preko PIKA – brza dostava po pristupačnim cijenama! Mogućnost dostave na kućnu adresu ili gradilište diljem BiH po dogovoru.</p><p>📞 <strong>Kontakt:</strong> 036 651 427 | 060 000 000 – Toni</p><p>✉️ <strong>E-mail:</strong> info@martom-bekaert.com</p><p><br></p><p><br></p>",
+    "created_at": 1728045899,
+    "updated_at": 1795690152
+   },
+   "price": 27.0,
+   "display_price": "27 KM",
+   "regular_price": null,
+   "has_discount": false,
+   "price_by_agreement": false,
+   "status": "active",
+   "available": false,
+   "state": "new",
+   "attributes": [
+    {
+     "name": "Vrsta ograde",
+     "value": "Vanjska ograda"
+    },
+    {
+     "name": "Ograde po mjeri",
+     "value": "false"
+    },
+    {
+     "name": "Materijal ograde",
+     "value": "Panelna"
+    }
+   ],
+   "category_id": 881,
+   "brand": null,
+   "date": 1795683424
+  },
+  "1199211": {
+   "id": 1199211,
+   "title": "Ograde, ograda panelna, panel paneli , panelne ograde",
+   "slug": "ograde-ograda-panelna-panel-paneli-panelne-ograde-1199211",
+   "short_description": "ograda panelna, ograde, stubovi, kapije",
+   "additional": {
+    "description": "<p><br></p><p><br></p><p><em>Ograda Nylofor je kompletan, profesionalni ogradni sustav koji pruža optimalmu zaštitu.</em></p><p><br></p><p><em>DOSTUPNE BOJE : MASLINASTO ZELENA RAL 6005; ANTRACIT 7016 I SIVA 7040</em></p><p><br></p><p><br></p><p><br></p><p>Nylofor paneli proizvedeni su od čelične, pravokutno punktirane žice, s 3-dimenzionalnim horizontalnim ˝V˝ ojačanjem koje panelu daje veću krutost. Bekaertova tehnologija zaštite od hrđe nudi osvjedočenu kvalitetu i garantira dugi vijek trajanja ograde. Specijalni sloj primjenjen je nakon pocinčavanja kako bi omogućio potpuno prianjanje završnog polyesterskog sloja minimalne debljine 100 mikrona s garancijom do 10 godina. Kompletan ogradni sustav sastoji se od panela različitih visina i odgovarajućih stupova (možete birati između kvadratnih stupova,)</p><p><br></p><p>Panelne ograde su svestran i praktičan izbor za stambene i poslovne objekte, nudeći spoj sigurnosti, estetike, čvrstoće i elegancije. Ove ograde pružaju robusnu barijeru koja povećava sigurnost, sprječava uljeze i osigurava sigurnost djece i kućnih ljubimaca unutar posjeda. Što se tiče estetike, panelne ograde dolaze u različitim dizajnom, bojama i materijalima, što im omogućuje da nadopune svaki arhitektonski stil i krajolik. Njihova čvrstoća i izdržljivost čine ih dugotrajnim rješenjem, sposobnim izdržati teške vremenske uvjete i trošenje tijekom vremena. Elegancija je još jedna ključna značajka, budući da se mogu prilagoditi zamršenim dizajnom ili elegantnim, modernim linijama kako bi se poboljšala vizualna privlačnost prostora. Osim toga, široka namjena panelnih ograda nadilazi puko označavanje granica; također mogu poslužiti kao barijere protiv buke, vjetrobrani ili čak kao pozadina za vrtne biljke. Općenito, panelne ograde su sveobuhvatno rješenje koje spaja funkcionalnost i stil.</p><p><br></p><p>Za panelnu ogradu nudimo i vrlo kvalitetene<a href=\"https://olx.ba/artikal/52127407\"> trake</a>  za zaštitu od pogleda</p><p><br></p><p><strong>“Pogledaj kompletnu ponudu </strong><a href=\"https://olx.ba/shops/Martom/aktivni?attr=&amp;attr_encoded=1&amp;q=ograde&amp;page=2\"><strong>ograda i mreža </strong></a><strong>za sve namjene u Željezariji Martom.  !!! </strong></p><p>﻿👉 Dostupno u <strong>Željezariji MARTOM d.o.o. </strong><a href=\"https://www.google.com/maps/place/%C5%BDeljezarija+Martom+doo+Me%C4%91ugorje/@43.2075853,17.6697742,15z/data=!4m6!3m5!1s0x134b6cd4c5673013:0x7a38c81c495252b4!8m2!3d43.2075853!4d17.6697742!16s%2Fg%2F1yg570vjk?entry=ttu&amp;g_ep=EgoyMDI0MTIwNC4wIKXMDSoASAFQAw%3D%3D\"><strong>Međugorje Tromeđa BB Kružni tok</strong></a></p><p>📞 <strong>036 651 427</strong> | <strong>060 000 000</strong></p><p>✉️ <strong>info@martom-bekaert.com</strong></p><p>🛒 Naručite i preko Pika – brza dostava po pristupačnoj cijeni!</p><p>📲 Zapratite nas na društvenim mrežama <a href=\"https://hr.qrcodechimp.com/page/so154sn4gf3g?v=chk1769076488&amp;s=url\"><strong>ovdje</strong></a></p><p><br></p><p><strong>ASORTIMAN NYLOFOR 3D - boja antracit i zelena </strong></p><p><br></p><p><br></p><p><br></p><p><br></p><p><br></p><p>Debljina žice 4,50mm  i 4.20mm </p><p><br></p><p><br></p><p><br></p><p>širina x visina (mm)        </p><p><br></p><p><br></p><p><br></p><p>2500x 830 mm</p><p><br></p><p><br></p><p>2500 x 1030 mm  </p><p><br></p><p><br></p><p>2500 x 1230  mm</p><p><br></p><p><br></p><p>2500 x 1530  mm</p><p><br></p><p><br></p><p>2500 x 1730  mm</p><p><br></p><p><br></p><p>2500 x 2030  mm        </p><p><br></p><p><br></p><p>        </p><p><br></p><p>širina x visina (mm)        </p><p><br></p><p><br></p><p><br></p><p>2000x 830 mm</p><p><br></p><p><br></p><p>2000 x 1030 mm  </p><p><br></p><p><br></p><p>2000 x 1230  mm</p><p><br></p><p><br></p><p>2000 x 1530  mm</p><p><br></p><p><br></p><p>2000 x 1730  mm</p><p><br></p><p><br></p><p>2000 x 2030  mm</p><p><br></p><p><br></p><p><br></p><p>Stupovi su od profila 50x50mm i sa 4 rupe na pluči     </p><p><br></p><p><br></p><p><br></p><p>830 mm</p><p><br></p><p><br></p><p>1030 mm  </p><p><br></p><p><br></p><p>1230  mm</p><p><br></p><p><br></p><p>1530  mm</p><p><br></p><p><br></p><p>1730  mm</p><p><br></p><p><br></p><p>2000  mm        </p><p><br></p><p><br></p><p><br></p><p>tel/fax 036 651 427 </p><p><br></p><p><br></p><p><br></p><p>Dostava po dogovoru</p><p><br></p><p><br></p><p><br></p><p>kontakt telefon 060 000 000 TONi</p><p><br></p><p><br></p><p><br></p><p><br></p><p>www.martom-bekaert.com</p><p><br></p><p><br></p><p><br></p><p><br></p><p>http://www.facebook.com/pages/%C5%BDeljezarija-Martom-Betafence-Bekaert-industrijske-i-dvori%C5%A1ne-ograde/132087646846187</p><p><br></p><p><br></p><p><br></p><p>NAŠE REFERENCE:</p><p><br></p><p><br></p><p><br></p><p><br></p><p>Međunarodni aerodrom Sarajevo</p><p><br></p><p><br></p><p><br></p><p><br></p><p>Etno selo i bazen Herceg - Međugorje</p><p><br></p><p><br></p><p><br></p><p><br></p><p>KONZUM – Prijedor i Sarajevo</p><p><br></p><p><br></p><p><br></p><p><br></p><p>Solarne elektrane MK Group i Maxima IST - STOLAC</p><p><br></p><p><br></p><p><br></p><p><br></p><p>Željeznički kolodvor - Radiona - Čapljina</p><p><br></p><p><br></p><p><br></p><p><br></p><p>Objekti OBI u Banjaluci i Mostaru, </p><p><br></p><p><br></p><p><br></p><p>Auto kuća Jajčević Banjaluka, </p><p><br></p><p><br></p><p><br></p><p>Zgrada Biskupije u Mostaru</p><p><br></p><p><br></p><p><br></p><p>Objekat Interex u Mostaru, </p><p><br></p><p><br></p><p><br></p><p>Benzinske crpke OMV u Mostaru i Širokom Brijegu, </p><p><br></p><p><br></p><p><br></p><p>Eurocompany 99 Ljubuški , (Put za Međugorje)</p><p><br></p><p><br></p><p><br></p><p>Objekat Toming d.o.o. (Put za Međugorje),</p><p><br></p><p><br></p><p><br></p><p>Objekt Karaka- Blizanci </p><p><br></p><p><br></p><p><br></p><p>Globtour Međugorje, </p><p><br></p><p><br></p><p><br></p><p>Auto Kuća BMW - Mostar, </p><p><br></p><p><br></p><p><br></p><p>FEAL d.o.o. Mostar, </p><p><br></p><p><br></p><p><br></p><p>Minipex Mostar, </p><p><br></p><p><br></p><p><br></p><p>Obiteljske kuće i </p><p><br></p><p><br></p><p><br></p><p><br></p><p> </p><p><br></p><p><br></p><p><br></p><p><br></p><p> </p>",
+    "created_at": 1657488394,
+    "updated_at": 1783162389
+   },
+   "price": 0.0,
+   "display_price": "Na upit",
+   "regular_price": null,
+   "has_discount": false,
+   "price_by_agreement": true,
+   "status": "active",
+   "available": true,
+   "state": "new",
+   "attributes": [
+    {
+     "name": "Vrsta ograde",
+     "value": "Vanjska ograda"
+    },
+    {
+     "name": "Materijal ograde",
+     "value": "Panelna"
+    },
+    {
+     "name": "Ograde po mjeri",
+     "value": "false"
+    }
+   ],
+   "category_id": 881,
+   "brand": null,
+   "date": 1795626224
+  },
+  "24449780": {
+   "id": 24449780,
+   "title": "FARMER PLETIVO OGRADA ZA ZEMLJIŠTA NJIVE ŠUME FARME",
+   "slug": "farmer-pletivo-ograda-za-zemljista-njive-sume-farme-24449780",
+   "short_description": "SMILJE, OGRADE, OGRADA, ZEMLJIŠTA, NJIVE, NJIVA",
+   "additional": {
+    "description": "<p>Farmer pletena ogradna mreža  za ograđivanje velikih površina pod zasadima(vinogradi pašnjaci, livade itd.</p><p><span style=\"color:rgb(0,0,0);\">prva brojka označava visinu mreže, druga broj žica po visini, a treća razmak između okomitih žica</span></p><p>100CM (100/8/15) -88,00KM/ROLA 50M</p><p>120CM - (120/9/15) 107,00 KM/ROLA 50M</p><p>150CM -( 150/12/15) - 130,00KM/ROLA 50M </p><p><br></p><p>100CM (100/8/30) -63,00KM/ROLA 50M</p><p><br></p><h3>🌾 FARMER PLETIVO – ograda za zemljišta, njive, šume i farme!</h3><p>Tražite pouzdanu ogradu koja će zaštititi vaše zemljište, vinograd, farmu ili šumu?</p><p>Naše <strong>Farmer pletivo</strong> izrađeno je od kvalitetnog materijala, otporno na vremenske uvjete i dugotrajno u upotrebi.</p><p>✔️ <strong>Mjera 100/8/15</strong> – idealno za manje parcele i vrtove.</p><p>✔️ <strong>Mjera 120/9/15</strong> – savršeno za poljoprivredna zemljišta i farme.</p><p>✔️ <strong>Mjera 150/12/15</strong> – maksimalna zaštita za šume i veće površine.</p><p>🔒 <strong>Prednosti:</strong></p><ul><li><strong>Čvrsta konstrukcija</strong> – otporno na deformacije i vanjske utjecaje.</li><li><strong>Dugotrajna zaštita</strong> – sprječava ulazak divljači i štiti usjeve.</li><li><strong>Jednostavna montaža</strong> – lako postavljanje uz stupove.</li><li><strong>Univerzalna primjena</strong> – poljoprivreda, šumarstvo, farme i privatna zemljišta.</li></ul><p>👉 Dostupno u <strong>Željezariji MARTOM d.o.o. </strong><a href=\"https://www.google.com/maps/place/%C5%BDeljezarija+Martom+doo+Me%C4%91ugorje/@43.2075853,17.6697742,15z/data=!4m6!3m5!1s0x134b6cd4c5673013:0x7a38c81c495252b4!8m2!3d43.2075853!4d17.6697742!16s%2Fg%2F1yg570vjk?entry=ttu&amp;g_ep=EgoyMDI0MTIwNC4wIKXMDSoASAFQAw%3D%3D\"><strong>Međugorje Tromeđa BB Kružni tok</strong></a>  </p><p>📞 <strong>036 651 427</strong> | <strong>060 000 000</strong>  </p><p>✉️ <strong>info@martom-bekaert.com</strong>  </p><p>🛒 Naručite i preko Pika – brza dostava po pristupačnoj cijeni!</p><p>📲 Zapratite nas na društvenim mrežama <a href=\"https://hr.qrcodechimp.com/page/so154sn4gf3g?v=chk1769076488&amp;s=url\">ovdje</a></p><p><br></p>",
+    "created_at": 1673370259,
+    "updated_at": 1783166225
+   },
+   "price": 63.0,
+   "display_price": "63 KM",
+   "regular_price": null,
+   "has_discount": false,
+   "price_by_agreement": false,
+   "status": "active",
+   "available": true,
+   "state": "new",
+   "attributes": [
+    {
+     "name": "Vrsta ograde",
+     "value": "Vanjska ograda"
+    },
+    {
+     "name": "Materijal ograde",
+     "value": "Kovana"
+    },
+    {
+     "name": "Ograde po mjeri",
+     "value": "false"
+    }
+   ],
+   "category_id": 881,
+   "brand": null,
+   "date": 1795625970
+  },
+  "36376333": {
+   "id": 36376333,
+   "title": "KATANAC DUGI 50,40 I 30MM IBFM",
+   "slug": "katanac-dugi-5040-i-30mm-ibfm-36376333",
+   "short_description": null,
+   "additional": {
+    "description": "<p>KATANAC DUGI </p><p>50MM - 18,00KM ,</p><p>40MM - 10,00KM I </p><p>30MM IBFM -  6,75KM</p><p><br></p><p>👉 Dostupno u <a href=\"https://www.google.com/maps/place/%C5%BDeljezarija+Martom+doo+Me%C4%91ugorje/@43.2075853,17.6697742,15z/data=!4m6!3m5!1s0x134b6cd4c5673013:0x7a38c81c495252b4!8m2!3d43.2076596!4d17.6696715!16s%2Fg%2F1yg570vjk?entry=ttu&amp;g_ep=EgoyMDI2MDYyOS4wIKXMDSoASAFQAw%3D%3D\">Željezariji MARTOM d.o.o. Međugorje Tromeđa BB Kružni tok</a>  </p><p>📞 036 651 427 | 060 000 000  </p><p>✉️ info@martom-bekaert.com</p><p>🛒 Naručite i preko <strong>Pika</strong> – brza dostava po pristupačnoj cijeni!</p><p>📲 Zapratite nas na društvenim mrežama <a href=\"https://hr.qrcodechimp.com/page/so154sn4gf3g?v=chk1769076488&amp;s=url&amp;utm_source=copilot.com\">ovdje</a></p><p>👉 Sve katance sa šifrom i bez šifre možete pogledati <a href=\"https://olx.ba/shops/Martom/aktivni?attr=&amp;attr_encoded=1&amp;page=1&amp;q=KATANAC\">ovdje</a>.</p><p><br></p><p><br></p><p>ARTIKAL JE KAO NA SLICI DOSTAVA BRZOM POŠTOM PO PRISTUPAČNOJ CJENI! TEL. 060 000 000</p><p> </p><p> </p>",
+    "created_at": 1657883259,
+    "updated_at": 1783350475
+   },
+   "price": 6.75,
+   "display_price": "6,75 KM",
+   "regular_price": null,
+   "has_discount": false,
+   "price_by_agreement": false,
+   "status": "active",
+   "available": false,
+   "state": "new",
+   "attributes": [],
+   "category_id": 813,
+   "brand": null,
+   "date": 1795625011
+  },
+  "54710841": {
+   "id": 54710841,
+   "title": "BODLJIKAVA ŽICA 100 I 250 M FI 1,80MM CINČANA",
+   "slug": "bodljikava-zica-100-i-250-m-fi-180mm-cincana-54710841",
+   "short_description": null,
+   "additional": {
+    "description": "<h2>🧱 CINČANA BODLJIKAVA ŽICA (100 M I 250 M / FI 1,80 MM) – OD 26,00 KM</h2><p>Trebate pouzdano, izdržljivo i efikasno rješenje za ograđivanje i zaštitu imanja, poljoprivrednih zemljišta, voćnjaka, pasnjaka ili industrijskih objekata?</p><p><br></p><p>U ponudi imamo visokoortpornu <strong>pocinčanu (cinčanu) bodljikavu žicu debljine $\\varnothing 1,80\\text{ mm}$</strong>, dostupnu u kolutovima od <strong>100 metara</strong> i <strong>250 metara</strong>. Kvalitetan sloj cinka pruža dugotrajnu zaštitu od hrđe i svih vremenskih utjecaja!</p><p><br></p><h3>🛠️ <strong>DOSTUPNA PAKIRANJA I CIJENE</strong></h3><ul><li>🟦 <strong>Bodljikava žica cinčana 100 m (fi 1,80mm):</strong> <strong>26,00 KM</strong> 💵</li><li><br></li><li>🟦 <strong>Bodljikava žica cinčana 250 m (fi 1,80mm):</strong> <strong>58,00 KM</strong> 💵</li><li><br></li></ul><h3>📐 <strong>TEHNIČKE SPECIFIKACIJE</strong></h3><ul><li><strong>Tip artikla:</strong> Pocinčana bodljikava žica za ograđivanje</li><li><br></li><li><strong>Debljina nosive žice:</strong> <span style=\"background-color:rgba(0,0,0,0);\">fi 1,80mm</span> (optimalna čvrstoća i savitljivost)</li><li><br></li><li><strong>Završna obrada:</strong> Vruće pocinčana (visoka otpornost na koroziju, kišu, snijeg i vlagu)</li><li><br></li><li><strong>Dostupne dužine koluta:</strong></li><li><br></li><li><span style=\"background-color:rgba(0,0,0,0);\">100m </span> (praktično pakiranje za manje zahvate i popravke ograda)</li><li><br></li><li>250m  (veliki kolut za komercijalno i poljoprivredno ograđivanje većih površina)</li><li><br></li><li><strong>Konstrukcija:</strong> Dvostruko pletena nosiva žica s oštrim četverokrakim bodljama na pravilnim razmacima</li><li><br></li><li><strong>Namjena:</strong> Nadvišenje mreža i ograda, ograđivanje stoke i pašnjaka, zaštita imanja od neovlaštenog ulaska i divljači</li><li><br></li></ul><h3>🔧 <strong>KOJE PROBLEME RJEŠAVA POCINČANA BODLJIKAVA ŽICA?</strong></h3><ul><li>🟩 <strong>Ulazak divljači i nepoželjnih gostiju:</strong> Oštre bodlje i čvrsta nosiva žica čine nepremostivu prepreku za štetočine i neovlaštene ulaske.</li><li><br></li><li>🟩 <strong>Brzo hrđanje i pucanje žice na otvorenom:</strong> Debeli sloj cinka sprječava rđanje i propadanje žice pod utjecajem sunca, kiše i snijega.</li><li><br></li><li>🟩 <strong>Bjegovi stoke s pašnjaka:</strong> Pruža sigurnu i jasnu fizičku granicu za stoku i domaću životinju.</li><li><br></li><li>✅ <strong>PREDNOSTI KOJE DOBIVATE</strong></li><li>Visoka zatezna čvrstoća i otpornost na kretanje životinja</li><li><br></li><li>Izvrsna antikorozivna zaštita cinkom za sve vremenske uvjete</li><li><br></li><li>Dva praktična pakiranja (100m i 250m ) za manje i veće terene</li><li><br></li><li>Jednostavno odmotavanje i montaža na drvene, betonske ili metalne stupove</li><li><br></li><li>Novo i dostupno odmah</li><li><br></li></ul><h3>📍 <a href=\"https://www.google.com/maps/place/%C5%BDeljezarija+Martom+doo+Me%C4%91ugorje/@43.2086122,17.6720249,14z/data=!4m6!3m5!1s0x134b6cd4c5673013:0x7a38c81c495252b4!8m2!3d43.2076596!4d17.6696715!16s%2Fg%2F1yg570vjk?entry=ttu&amp;g_ep=EgoyMDI2MDkxNi4wIKXMDSoASAFQAw%3D%3D\"><strong>DOSTUPNO U ŽELJEZARIJI MARTOM (MEĐUGORJE)</strong></a></h3><p>📌 <strong>Adresa:</strong> Tromeđa BB (kružni tok), Međugorje</p><p><br></p><p>📍 <em>Praktična lokacija za kupce iz mjesta: Čitluk, Mostar, Ljubuški, Čapljina i okolica.</em></p><p><br></p><p>🏡 <strong>Osobno preuzimanje:</strong></p><p><br></p><p>Artikli su novi i dostupni odmah u našoj poslovnici.</p><p><br></p><p>📦 <strong>Dostava:</strong></p><p><br></p><p>🛒 Naručite i preko PIKA – brza dostava po pristupačnim cijenama!</p><p><br></p><p>Šaljemo brzom poštom na kućnu adresu bilo gdje u BiH u roku 24/48h.</p><p><br></p><p>📞 <strong>Kontakt:</strong> 036 651 427 | 060 000 000 – Toni</p><p><br></p><p>✉️ <strong>E-mail:</strong> info@martom-bekaert.com</p><p><br></p><p>Zapratite nas na društvenim mrežama: <a href=\"https://hr.qrcodechimp.com/page/so154sn4gf3g?v=chk1769076488&amp;s=url#dmid=e5e6ebb2-88a8-4a08-a8e3-efeb3a982889\">Facebook</a> | <a href=\"https://hr.qrcodechimp.com/page/so154sn4gf3g?v=chk1769076488&amp;s=url#dmid=e5e6ebb2-88a8-4a08-a8e3-efeb3a982889\">Instagram</a> | <a href=\"https://hr.qrcodechimp.com/page/so154sn4gf3g?v=chk1769076488&amp;s=url#dmid=e5e6ebb2-88a8-4a08-a8e3-efeb3a982889\">YouTube</a></p><p><br></p><p>👉 Sve <a href=\"https://olx.ba/shops/Martom/aktivni\">artikle iz naše ponude potražite ovdje</a>.</p><p><br></p>",
+    "created_at": 1691668146,
+    "updated_at": 1792141430
+   },
+   "price": 26.0,
+   "display_price": "26 KM",
+   "regular_price": null,
+   "has_discount": false,
+   "price_by_agreement": false,
+   "status": "active",
+   "available": true,
+   "state": "new",
+   "attributes": [
+    {
+     "name": "Vrsta ograde",
+     "value": "Vanjska ograda"
+    },
+    {
+     "name": "Materijal ograde",
+     "value": "Ostalo"
+    },
+    {
+     "name": "Ograde po mjeri",
+     "value": "false"
+    }
+   ],
+   "category_id": 881,
+   "brand": null,
+   "date": 1795626194
+  },
+  "35990143": {
+   "id": 35990143,
+   "title": "KUĆA KUĆE KUĆICE ZA PSA PSE OD PANELA MALA SREDNJA I VELIKA",
+   "slug": "kuca-kuce-kucice-za-psa-pse-od-panela-mala-srednja-i-velika-35990143",
+   "short_description": null,
+   "additional": {
+    "description": "<p>Kućice za pse su važne za pružanje sigurnog i udobnog prostora za vaše ljubimce, posebno u hladnim ili vrućim vremenskim uvjetima. Međutim, neke kućice za pse mogu biti neadekvatne za zaštitu pasa od ekstremnih temperatura, vlage ili buke. Zato je dobro razmotriti korištenje panela sa izolacijom za izg okradnju ili poboljšanje kućica za pse.</p><p><br></p><p><br></p><p>\nPaneli sa izolacijom su vrsta građevinskog materijala koji se sastoji od dva sloja čvrste površine i srednjeg sloja izolacijskog materijala. Paneli sa izolacijom imaju mnoge prednosti u odnosu na druge vrste materijala, kao što su:</p><p><br></p><p><br></p><ul><li><b>Toplinska izolacija</b>: Paneli sa izolacijom mogu smanjiti gubitak topline ili hlađenja u kućici za pse, održav liajući ugodnu temperaturu za vašeg psa. To može pomoći u sprječavanju zdravstvenih problema kao što su hipotermija, pregrijavanje ili dehidracija.</li><li><b>Zvučna izolacija</b>: Paneli sa izolacijom mogu apsorbirati i reflektirati zvukove, smanjujući buku koju vaš pas čuje ili proizvodi. To može pomoći u smanjenju stresa, anksioznosti ili agresije kod vašeg psa.</li><li><b>Vodootpornost</b>: Paneli sa izolacijom su otporni na vlagu i plijesan, što znači da neće propuštati vodu ili stvarati gljivice u kućici za pse. To može pomoći u održavanju higijene i zdravlja vašeg psa.</li><li><b>Trajnost</b>: Paneli sa izolacijom su čvrsti i otporni na udarce, ogrebotine ili žvakanje. To znači da će kućica za pse biti dugotrajna i sigurna za vašeg psa.</li><li><b>Lakoća montaže</b>: Paneli sa izolacijom su lagani i jednostavni za montažu, što znači da možete brzo i lako izgraditi ili poboljšati kućicu za pse. Također možete prilagoditi veličinu, oblik i dizajn panela prema vašim potrebama i željama.</li></ul><p><br></p><p><br></p><p>\nKao što možete vidjeti, paneli sa izolacijom imaju mnoge prednosti koje mogu poboljšati kvalitetu života vašeg psa. Ako želite pružiti svom psu najbolju moguću kućicu, razmislite o korištenju panela sa izolacijom kao materijala za izgradnju ili poboljšanje. Vaš pas će vam biti zahvalan! 🐶</p><p><br></p><p><br></p><p><br></p><p><strong>KUĆICA ZA PSA MALA 43X50X59CM - 185,00KM </strong></p><p><strong>SLIKE 6 I 7</strong></p><p><br></p><p><br></p><p><strong>KUĆICA ZA PSA SREDNJA 57X70X75CM - 245,00KM </strong></p><p><strong>SLIKE 4 I 5</strong></p><p><br></p><p><br></p><p><strong>KUĆICA ZA PSA VELIKA 70X96X96 - 365,00KM </strong></p><p><strong>SLIKE 2 I 3</strong></p><p><br></p><p><br></p><p><br></p><p><strong>VRHUNSKA KVALITETA KUĆICA !!!</strong></p><p><br></p><p><br></p><p><br></p><p><br></p><p><br></p><p>\nARTIKAL KAO NA SLICI!!!!</p><p><br></p><p><br></p><p><br></p><p><br></p><p><br></p><p>\nUz kućice nudimo i veli izbor </p><p><br></p><p><br></p><p><a href=\"https://olx.ba/artikal/38114983\">kaveza za pse sa krovom i bez krova</a></p><p><br></p><p><br></p><p>\nkao i male </p><p><br></p><p><br></p><p><a href=\"https://olx.ba/shops/Martom/aktivni?attr=&amp;attr_encoded=1&amp;page=1&amp;q=kavez\">kaveze za ostale kućne ljubimce.</a></p><p><br></p><p><br></p><p><br></p><p><br></p><p><br></p><p>\nU ponudi imamo i velik izbor </p><p><br></p><p><br></p><p><a href=\"https://olx.ba/shops/Martom/aktivni?attr=&amp;attr_encoded=1&amp;page=1&amp;q=ogrlica\">kaiša</a></p><p><br></p><p><br></p><p>\ni </p><p><br></p><p><br></p><p><a href=\"https://olx.ba/shops/Martom/aktivni?attr=&amp;attr_encoded=1&amp;q=povodac&amp;page=1\">povodaca </a></p><p><br></p><p><br></p><p>\nza pse kao i </p><p><br></p><p><br></p><p><a href=\"https://olx.ba/artikal/25454001/\">brnjica</a></p><p><br></p><p><br></p><p>\nza različite pasmine pasa. </p><p><br></p><p><br></p><p><br></p><p><br></p><p><br></p><p>\nDOSTAVA BRZOM POŠTOM PO PRISTUPAČNOJ CJENI!!!! TEL. 060 000 000 TONI</p>",
+    "created_at": 1667639951,
+    "updated_at": 1759917333
+   },
+   "price": 185.0,
+   "display_price": "185 KM",
+   "regular_price": null,
+   "has_discount": false,
+   "price_by_agreement": false,
+   "status": "active",
+   "available": true,
+   "state": "new",
+   "attributes": [],
+   "category_id": 673,
+   "brand": null,
+   "date": 1795626405
+  }
+ }
+}
