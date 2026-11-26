@@ -71,32 +71,33 @@ export function usePageVisible(): boolean {
 /**
  * How many of the agent card's example steps to show. They appear one at a
  * time, pause when all are showing, clear and loop (see agentSteps.ts).
- * With reduced motion every step shows and no timer runs. While the tab is
- * hidden the loop stops; it carries on from where it stopped either way.
+ * With reduced motion every step shows and no timer runs; when motion is
+ * allowed again the loop restarts from an empty card. While the tab is
+ * hidden the loop stops and later carries on from where it stopped.
  */
 export function useAgentCardSteps(steps: readonly { text: string }[]): number {
   const reducedMotion = usePrefersReducedMotion()
   const pageVisible = usePageVisible()
   const paused = reducedMotion || !pageVisible
   const [shown, setShown] = useState(0)
-  // Same pattern as useTypingPlaceholder: the timer chain reads the latest
-  // count from a ref, so it resumes where it paused.
-  const shownRef = useRef(0)
 
+  // When reduced motion switches on, reset the count during render (React's
+  // "adjust state when an input changes" pattern, no effect needed). The
+  // full card shows meanwhile, and turning motion back on starts cleanly
+  // from an empty card instead of an old step count.
+  const [wasReduced, setWasReduced] = useState(reducedMotion)
+  if (wasReduced !== reducedMotion) {
+    setWasReduced(reducedMotion)
+    if (reducedMotion) setShown(0)
+  }
+
+  // One timer per step: each change of `shown` schedules the next one.
   useEffect(() => {
     if (paused) return
-    let timer: ReturnType<typeof setTimeout>
-    function scheduleNextStep() {
-      const { shown: next, delay } = nextAgentStep(shownRef.current, steps)
-      timer = setTimeout(() => {
-        shownRef.current = next
-        setShown(next)
-        scheduleNextStep()
-      }, delay)
-    }
-    scheduleNextStep()
+    const { shown: next, delay } = nextAgentStep(shown, steps)
+    const timer = setTimeout(() => setShown(next), delay)
     return () => clearTimeout(timer)
-  }, [steps, paused])
+  }, [steps, paused, shown])
 
   return reducedMotion ? steps.length : shown
 }

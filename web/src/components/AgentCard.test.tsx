@@ -42,6 +42,7 @@ function waitFor(shown: number) {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 describe('AgentCard animation', () => {
@@ -143,9 +144,12 @@ describe('AgentCard with prefers-reduced-motion', () => {
     expect(stepStates(container)).toEqual(['done', 'done', 'working'])
     expect(vi.getTimerCount()).toBe(0)
 
+    // Motion back on: the loop starts again from an empty card, not from
+    // the step it had reached before.
     setReduce(false)
-    waitFor(1)
-    expect(stepStates(container)).toEqual(['done', 'working', 'hidden'])
+    expect(stepStates(container)).toEqual(['hidden', 'hidden', 'hidden'])
+    waitFor(0)
+    expect(stepStates(container)).toEqual(['working', 'hidden', 'hidden'])
   })
 })
 
