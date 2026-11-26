@@ -4,8 +4,7 @@
     "sides_m": ["25"],
     "panel_height_cm": 153,
     "panel_width_cm": 250,
-    "closed": false,
-    "post_type": "base_plate"
+    "closed": false
   },
   "unit_prices_km": {
     "panel": "53.00",

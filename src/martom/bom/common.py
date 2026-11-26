@@ -47,7 +47,6 @@ class Item(StrEnum):
     # Panel fence
     PANEL = "panel"
     POST_BASE_PLATE = "post_base_plate"
-    POST_CONCRETE = "post_concrete"
     PVC_CLIP = "pvc_clip"
     ANCHOR_M8X80 = "anchor_m8x80"
     # Welded roll fence
@@ -77,12 +76,14 @@ class BomLine:
     size: str | None = None  # e.g. "153 × 250 cm"; None when the size isn't known
     # True: never show a price, show "cijena na upit" (unconfirmed items).
     unit_price_on_request: bool = False
-    # True: "po narudžbi"; the order message flags the line so Toni confirms it.
+    # True: "po narudžbi"; the order message flags the line so Toni confirms it. No BOM
+    # sets it today (concrete-in-soil posts left the BOM, Toni 26 Nov 2026 14:52); it is
+    # kept for the chat event and order message contract.
     made_to_order: bool = False
-    # Extra status shown with the line, e.g. "po narudžbi, 10–15 dana".
+    # Extra status shown with the line, e.g. "potporni stup 100 cm – cijena na upit".
     label: str | None = None
     # Look the price up from this product instead of the line's own item and size.
-    # E.g. a 125 cm concrete post costs the same as the 105 cm base-plate post.
+    # E.g. a support T-post 120 cm is priced as the T-post 120 cm (roll fence braces).
     price_from: PriceRef | None = None
 
 
