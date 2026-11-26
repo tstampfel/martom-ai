@@ -34,7 +34,7 @@ Use the `gh` CLI against this repo. Make every step idempotent: check what exist
 
 ## Step 2 — Set up the team
 
-The three agent definitions are already in `.claude/agents/` (`manager.md`, `employee.md`, `reviewer.md`); they carry the rules and stack below plus each role's brief. Check they match my Orca setup (convert the format if Orca needs another one), commit them in a PR (`[M0-0] Agent team setup`) and wait for my "go". The role briefs are repeated here for reference.
+The three agent definitions are already in `docs/agents/` (`manager.md`, `employee.md`, `reviewer.md`); they carry the rules and stack below plus each role's brief. Check they match my Orca setup (convert the format if Orca needs another one), commit them in a PR (`[M0-0] Agent team setup`) and wait for my "go". The role briefs are repeated here for reference.
 
 ### Manager (the only one I run)
 
