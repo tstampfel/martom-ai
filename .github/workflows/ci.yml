@@ -39,9 +39,21 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
+      # Same image as docker-compose.yml; the /health tests ping it.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       DATABASE_URL: postgresql://martom:martom@localhost:5432/martom
       TEST_DATABASE_URL: postgresql://martom:martom@localhost:5432/postgres
+      REDIS_URL: redis://localhost:6379/0
+      TEST_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,8 +86,8 @@ jobs:
             exit 1
           fi
 
-      # CI=true is set on GitHub runners, so the database tests fail instead of skipping
-      # if Postgres can't be reached (see tests/conftest.py).
+      # CI=true is set on GitHub runners, so the database and Redis tests fail instead of
+      # skipping if Postgres or Redis can't be reached (see tests/conftest.py).
       - name: Tests
         run: uv run pytest
 
