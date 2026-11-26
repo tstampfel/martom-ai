@@ -33,4 +33,13 @@ describe('copy', () => {
     expect(copy.hero.lead).toContain('iz cijelog Martomovog OLX kataloga')
     expect(copy.hero.lead).not.toMatch(/\d/)
   })
+
+  // The start page says "kopče", as the design canvas does (#76). BOM line
+  // names ("Obujmica PVC …") come from the products and are not start copy.
+  it('says "kopče", not "obujmice", on the start page', () => {
+    const startCopy = JSON.stringify([copy.hero, copy.start, copy.agentCard, copy.howItWorks])
+    expect(startCopy).not.toMatch(/obujmic/i)
+    expect(copy.hero.lead).toContain('Panele, stupove, kopče i žicu')
+    expect(copy.agentCard.steps[2].text).toBe('Računam panele, stupove i kopče')
+  })
 })

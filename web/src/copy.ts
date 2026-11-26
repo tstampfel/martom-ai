@@ -38,7 +38,7 @@ export const copy = {
     eyebrowShort: 'AI savjetnik',
     title: ['Recite šta ograđujete.', 'Mi složimo cijeli popis.'],
     titleShort: 'Recite šta ograđujete. Mi složimo popis.',
-    lead: 'Panele, stupove, obujmice i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.',
+    lead: 'Panele, stupove, kopče i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.',
   },
   start: {
     inputLabel: 'Vaše pitanje',
@@ -73,7 +73,7 @@ export const copy = {
     steps: [
       { text: 'Razumijem: 25 m · dvorište · 150 cm', short: 'Razumijem: 25 m · dvorište · 150 cm' },
       { text: 'Pregledao 39 ograda i 12 vrsta stupova', short: 'Pregledao 39 ograda' },
-      { text: 'Računam panele, stupove i obujmice', short: 'Računam panele i stupove' },
+      { text: 'Računam panele, stupove i kopče', short: 'Računam panele i stupove' },
     ],
   },
   howItWorks: {
