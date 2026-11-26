@@ -8,6 +8,10 @@ from pathlib import Path
 
 from martom.migrate import MigrationError, run_migrations
 
+# The local docker-compose database (fake credentials, same as .env.example), used when
+# DATABASE_URL is unset so `uv run martom migrate` works without an env prefix.
+LOCAL_DATABASE_URL = "postgresql://martom:martom@localhost:5432/martom"
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="martom")
@@ -24,10 +28,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
-        database_url = os.environ.get("DATABASE_URL")
-        if not database_url:
-            print("DATABASE_URL is not set", file=sys.stderr)
-            return 2
+        # `or` also covers DATABASE_URL set to an empty string.
+        database_url = os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
         try:
             applied = run_migrations(database_url, args.dir)
         except MigrationError as exc:

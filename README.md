@@ -25,14 +25,15 @@ Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/) (it 
 uv sync                     # create .venv and install dependencies
 cp .env.example .env        # local config; every value in the example is fake
 docker compose up -d --wait # Postgres 16 + pgvector and Redis, healthy
-set -a; . ./.env; set +a    # export the variables into this shell
 uv run martom migrate       # apply database migrations (safe to re-run)
-uv run pytest               # tests (database tests need TEST_DATABASE_URL)
+uv run pytest               # tests (database tests skip if Postgres can't be reached)
 uv run ruff check           # lint
 uv run ruff format --check  # formatting
 ```
 
-If ports 5432 or 6379 are already in use (e.g. a local Postgres), set `POSTGRES_PORT` / `REDIS_PORT` in `.env` and change the port in `DATABASE_URL`, `TEST_DATABASE_URL` and `REDIS_URL` to match.
+`martom migrate` and the database tests use `DATABASE_URL` / `TEST_DATABASE_URL` when they are set, and otherwise the local compose database on port 5432 (the fake values in `.env.example`). Every git worktree shares one compose stack (project name `martom`).
+
+If ports 5432 or 6379 are already in use (e.g. a local Postgres), start compose with the port inline, `POSTGRES_PORT=5433 docker compose up -d --wait`, and pass the matching URLs: `DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run martom migrate` and `TEST_DATABASE_URL=postgresql://martom:martom@localhost:5433/postgres uv run pytest`.
 
 The API and frontend arrive in later milestones (see the plan).
 
