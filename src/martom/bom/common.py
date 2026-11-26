@@ -9,7 +9,7 @@ its product (item and size) and the price is looked up when the list is shown.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, DecimalException, InvalidOperation
 from enum import StrEnum
 
 # A closed loop (around a yard) needs at least a triangle.
@@ -131,7 +131,9 @@ def _side_in_cm(side_m: Decimal | int | float | str) -> Decimal:
     try:
         # Whole centimetres, so float noise like 5.000000000000001 m can't add a panel.
         side_cm = (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
-    except InvalidOperation:  # more digits than Decimal's precision, e.g. 1e27 m
+    # InvalidOperation: more digits than Decimal's precision (1e27 m); Overflow: an
+    # exponent near Decimal's limit (9e999999 m). DecimalException covers both.
+    except DecimalException:
         # Round to whole metres instead: that can't overflow, and is whole cm too.
         whole_m = metres.to_integral_value(rounding=ROUND_HALF_UP)
         raise FenceTooLargeError(FenceLimit.SIDE, whole_m, MAX_SIDE_M) from None

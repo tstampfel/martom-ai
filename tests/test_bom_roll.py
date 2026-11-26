@@ -3,7 +3,7 @@
 Tests named `..._pending_toni` use a rule fence-rules.md marks as an assumption still
 waiting for Toni's confirmation; change them when he answers.
 
-Tension wire is a suggested add-on, not a BOM line (Tomislav, 26 Nov 2026, docs PR #58):
+Tension wire is a suggested add-on, not a BOM line (fence-rules.md, "Accessories"):
 the result carries it in `wire_addon`, outside `lines` and outside the BOM total.
 """
 
@@ -313,8 +313,11 @@ def test_foot_plate_fence_with_10_posts_needs_30_m8x70_anchors_at_0_80_km() -> N
     assert anchor.quantity == 30
     assert anchor.size == "M8×70"
     assert anchor.name == "Anker M8×70"
-    # The price comes from the reviewed manual_products config, keyed by the item value.
-    assert load_manual_products()[anchor.item.value].price_km == Decimal("0.80")
+    # Price and name come from the reviewed manual_products config, keyed by the item value;
+    # the line's label must not drift from it.
+    entry = load_manual_products()[anchor.item.value]
+    assert entry.price_km == Decimal("0.80")
+    assert anchor.name == entry.name
 
 
 def test_t_post_fence_has_no_anchors() -> None:
@@ -390,6 +393,16 @@ def test_spacing_request_of_2m_or_less_has_no_note(spacing: int | str | Decimal)
         sides_m=[25], roll_height_cm=100, post_model=T_POST, requested_spacing_m=spacing
     )
     assert result.spacing_note is None
+
+
+@pytest.mark.parametrize("spacing", ["9e999999", "1e9999999999"])
+def test_huge_spacing_request_still_gives_the_2m_bom_with_a_note(spacing: str) -> None:
+    # Must not crash with decimal.Overflow on the metres -> centimetres scaling.
+    result = roll_fence_bom(
+        sides_m=[25], roll_height_cm=100, post_model=T_POST, requested_spacing_m=spacing
+    )
+    assert result.lines == bom([25]).lines
+    assert result.spacing_note == SPACING_NOTE
 
 
 @pytest.mark.parametrize("spacing", [0, -1, "abc", float("nan"), True])

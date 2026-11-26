@@ -1,8 +1,8 @@
 """Welded roll fence (varena ograda u roli) materials list.
 
-Every rule here comes from docs/domain/fence-rules.md, "Welded roll fence", confirmed by
-Toni (Martom owner) on 26 Nov 2026, plus Tomislav's update of the same day (docs PR #58):
-tension wire is a suggested add-on, and braces for short foot-plate fences are "na upit".
+Every rule here comes from docs/domain/fence-rules.md, "Welded roll fence" (Toni, Martom
+owner, and Tomislav, 26 Nov 2026), including the suggested tension-wire add-on and the
+"na upit" braces for short foot-plate fences.
 If this file and fence-rules.md disagree, fence-rules.md wins. The functions return
 quantities only: prices come from the synced OLX data (or, for products without a
 listing, from manual_products.toml) when the list is shown.
@@ -83,8 +83,8 @@ STRAINER_SPACING_CM = 2500
 
 # fence-rules.md, "Bracing": 2 support T-posts per strainer and per corner post.
 BRACES_PER_STRAINER = 2
-# Docs PR #58: a foot-plate fence shorter than the shortest T-post gets a brace line with
-# the count only: no size, no price, never a guessed height.
+# fence-rules.md, "Bracing": a foot-plate fence shorter than the shortest T-post gets a
+# brace line with the count only: no size, no price, never a guessed height.
 BRACE_ON_REQUEST_LABEL = "potporni stupovi – na upit"
 
 # fence-rules.md, "Accessories": tensioners per side, 3 per started 25 m.
@@ -298,4 +298,5 @@ def _spacing_note(requested_m: Decimal | int | float | str | None) -> str | None
         ) from None
     if not metres.is_finite() or metres <= 0:
         raise ValueError(f"requested spacing must be a positive number, got {requested_m!r}")
-    return SPACING_NOTE if metres * 100 > POST_SPACING_CM else None
+    # Compare in metres: scaling a huge value (9e999999) to cm would overflow Decimal.
+    return SPACING_NOTE if metres > Decimal(POST_SPACING_CM) / 100 else None

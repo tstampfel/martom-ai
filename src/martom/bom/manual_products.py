@@ -13,6 +13,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from martom.bom.common import Item
+
 DEFAULT_PATH = Path(__file__).with_name("manual_products.toml")
 
 # fence-rules.md: "more than 90 days old" raises a review item.
@@ -32,6 +34,11 @@ def load_manual_products(path: Path = DEFAULT_PATH) -> dict[str, ManualProduct]:
     """Read the config file; raise ValueError naming the first bad entry and field."""
     with path.open("rb") as file:  # tomllib wants bytes
         data = tomllib.load(file)
+    item_keys = {item.value for item in Item}
+    for key in data:
+        # The table name is the BOM item key; a typo would leave the line without a price.
+        if key not in item_keys:
+            raise ValueError(f"manual product {key!r} is not a BOM item ({sorted(item_keys)})")
     return {key: _product(key, entry) for key, entry in data.items()}
 
 
@@ -39,6 +46,9 @@ def stale_manual_products(
     products: dict[str, ManualProduct], *, today: date
 ) -> list[ManualProduct]:
     """The entries whose last confirmation is more than MAX_AGE_DAYS before `today`."""
+    # A datetime is a date too, but datetime - date raises TypeError: keep the day only.
+    if isinstance(today, datetime):
+        today = today.date()
     return [p for p in products.values() if (today - p.last_confirmed).days > MAX_AGE_DAYS]
 
 
