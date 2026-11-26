@@ -34,10 +34,25 @@ Panels come from OLX listing 63996799.
 
 ### Concrete-in-soil posts (stupovi za betoniranje)
 
-- Martom does **not** stock posts without a base plate; customers rarely ask for them.
-- The advisor may offer them as **"po narudžbi"** (made to order): no price, shown as "cijena na upit" and clearly labelled.
+- Martom does **not** stock posts without a base plate; customers rarely ask for them. They are made to order, with a lead time of **10–15 days**.
+- The BOM line is labelled **"po narudžbi, 10–15 dana"**.
+- **Size and price (Toni, 26 Nov 2026):** the concrete post is **one size taller** than the base-plate post for the same panel height, and costs the **same as that base-plate post**. The price comes from the OLX sync at call time, never from code.
+
+  | Panel height | Base-plate post | Concrete post (no plate) | Price | Status |
+  | --- | --- | --- | --- | --- |
+  | 103 cm | 105 cm | **125 cm** | = base-plate post 105 cm (19,00 KM reference, OLX) | **confirmed** |
+  | 83, 123, 153, 203 cm | 85 / 125 / 155 / 205 cm | pending | "cijena na upit", no price | pending Toni |
+
+- For the pending heights, **don't extrapolate** the "one size taller" rule: the line shows no post size and no price ("cijena na upit") until Toni confirms each height.
+- Concrete posts get **no anchors** (there is no plate). Clips stay as for base-plate posts.
 - The WhatsApp order message flags every "po narudžbi" line so Toni confirms it.
 - Base-plate posts remain the default recommendation.
+
+### Concrete, installation and availability
+
+- **Martom does not sell concrete and does no construction work.** The advisor never suggests buying concrete from Martom and never adds concrete to the BOM. It may say the customer needs their own concrete for concrete-in-soil posts.
+- **Installation:** Martom installs fences **only on an existing concrete wall**. The advisor may mention it, with the price on request. How to present it is pending Toni's confirmation, so for now it is a mention only, never a BOM or cart line.
+- **Availability:** always show **"dostupno"** for stock products (Toni's decision). Never write "dostupnost potvrđujemo" or similar. "Po narudžbi" lines show their lead time instead.
 
 ### Gates (kapija)
 
@@ -123,7 +138,10 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | --- | --- |
 | 25 m straight fence, 153 cm panels, base-plate posts, OLX prices of 26 Nov 2026 | Total **905,10 KM** |
 | The same fence with 2 corners | **+8 clips** (each corner post goes from 4 to 8) |
-| Customer asks for posts to set in concrete | A "po narudžbi" post line with no price, flagged in the order message |
+| Panel fence, 103 cm panels, customer asks for posts to set in concrete | **125 cm** concrete posts (no plate) at **19,00 KM** each (= base-plate post 105 cm, OLX reference 26 Nov 2026), line "po narudžbi, 10–15 dana", **no anchors**, flagged in the order message |
+| Panel fence, 153 cm panels, posts to set in concrete | A "po narudžbi, 10–15 dana" post line with **no size and no price** ("cijena na upit"), no anchors, flagged in the order message |
+| Customer asks whether Martom sells concrete or builds the base | The advisor says Martom doesn't sell concrete or do construction work; it never adds concrete to the BOM |
+| Any stock product | Shown as "dostupno"; never "dostupnost potvrđujemo" |
 | Customer asks for a 100 cm Eurofence | The advisor says it doesn't exist and offers 80 cm or 125 cm |
 | Roll fence, 25 m straight | **14 posts** |
 | Roll fence, 10 m straight | **6 posts** |
@@ -159,7 +177,9 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 
 ## Still open (don't invent values)
 
-- **Gate sizes and prices.** Toni sends them later; until then gates are "cijena na upit".
+- **Gate sizes and prices.** Toni sends them separately; until then gates are "cijena na upit".
+- **Concrete-in-soil panel posts** for 83, 123, 153 and 203 cm panels: post size and price.
+- **Installation on an existing concrete wall:** how the advisor presents it.
 - **Roll fence, still missing** (blocks M4-2):
   - confirmation of the derived T-post heights for 60, 100, 125 and 150 cm rolls;
   - confirmation of the derived strainer-post count for runs over 25 m;
