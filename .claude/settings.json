@@ -11,8 +11,9 @@
       "Bash(git log:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git fetch:*)",
-      "Bash(git rebase origin/main:*)",
+      "Bash(git fetch origin)",
+      "Bash(git fetch origin main)",
+      "Bash(git rebase origin/main)",
       "Bash(git push -u origin HEAD)",
       "Bash(gh issue view:*)",
       "Bash(gh issue list:*)",
@@ -63,7 +64,25 @@
       "Bash(git commit * -n *)",
       "Bash(terraform apply:*)",
       "Bash(terraform destroy:*)",
-      "Bash(aws secretsmanager get-secret-value:*)"
+      "Bash(aws secretsmanager get-secret-value:*)",
+      "Bash(git rebase * --exec*)",
+      "Bash(git rebase * -x*)",
+      "Bash(git rebase * -i*)",
+      "Bash(git rebase -i*)",
+      "Bash(git rebase --interactive*)",
+      "Bash(git rebase * --interactive*)",
+      "Bash(git fetch *--upload-pack*)",
+      "Bash(git fetch * -u *)",
+      "Bash(git pull *--upload-pack*)",
+      "Bash(git diff *--output*)",
+      "Bash(git log *--output*)",
+      "Bash(git show *--output*)",
+      "Bash(git diff *--ext-diff*)",
+      "Bash(git log *--ext-diff*)",
+      "Bash(git show *--ext-diff*)",
+      "Bash(git diff *--no-index*)",
+      "Bash(git -c *)",
+      "Bash(git * -c *)"
     ]
   }
 }
