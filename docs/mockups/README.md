@@ -32,6 +32,7 @@ Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3
 | Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Savjetnik radi" card) |
 | Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
+| Agent card | `#4A4F57` (border), `#5A5F68` (dashed border), `#34C46A` (step done), `#F5A623` (step working) | "Savjetnik radi" card on charcoal |
 | Headings | Outfit 700/800 | |
 | Body | Inter 400–700 | |
 | Hexagon | `clip-path: polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)` | Badges and step numbers (echoes the hex nut in the logo) |

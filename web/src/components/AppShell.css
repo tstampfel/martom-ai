@@ -61,12 +61,25 @@
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 24px;
+  /* No row gap: each category is already 44 px tall. */
+  gap: 0 24px;
   font-size: 15px;
   font-weight: 600;
 }
 
-.site-header__nav a:hover {
+.site-header__category {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  /* 44 px tap height (docs/mockups/README.md). Where the six categories wrap
+     (about 768–1000 px wide), the header grows by one 44 px row. */
+  min-height: var(--touch-target);
+}
+
+.site-header__category:hover {
   color: var(--color-red);
 }
 
@@ -88,10 +101,6 @@
 .icon-button--outline {
   border: 1px solid var(--color-border-strong);
   color: var(--color-ink);
-}
-
-.site-header__call {
-  display: none;
 }
 
 .cart-button {
@@ -171,10 +180,6 @@
 
   .site-header__nav {
     display: none;
-  }
-
-  .site-header__call {
-    display: flex;
   }
 
   .cart-button {

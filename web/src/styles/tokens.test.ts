@@ -21,6 +21,10 @@ const expected: Record<string, string> = {
   '--color-on-brand': '#FFFFFF',
   '--color-success': '#157A3A',
   '--color-success-tint': '#DDF2E3',
+  '--color-dark-border': '#4A4F57',
+  '--color-dark-border-soft': '#5A5F68',
+  '--color-step-done': '#34C46A',
+  '--color-step-working': '#F5A623',
   '--hexagon': 'polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)',
 }
 
