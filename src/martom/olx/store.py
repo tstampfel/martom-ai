@@ -86,18 +86,18 @@ WHERE id = %(id)s
 """
 
 
-async def save_listings(
-    conn: psycopg.AsyncConnection,
-    rows: Mapping[int, Mapping[str, Any]],
-    details: Mapping[int, FetchedDetail],
+async def save_summaries(
+    conn: psycopg.AsyncConnection, rows: Mapping[int, Mapping[str, Any]]
 ) -> None:
-    """Upsert every seen listing-page row, then store the fetched details, in one transaction.
+    """Upsert every seen listing-page row in one transaction.
 
-    `rows` is listing id -> listing-page row (every listing seen this run); `details`
-    holds only the listings whose detail GET succeeded. A seen listing without a detail
-    keeps its old `summary_hash` (NULL for a new one), so the next run fetches it again.
-    A seen listing is (re)activated: it is on the shop's listing pages right now.
+    `rows` is listing id -> listing-page row (every listing seen this run). It doesn't
+    touch `summary_hash`, so a listing whose detail isn't saved yet (NULL for a new one)
+    is fetched again by the next run. A seen listing is (re)activated: it is on the
+    shop's listing pages right now.
     """
+    if not rows:
+        return
     async with conn.transaction(), conn.cursor() as cursor:
         await cursor.executemany(
             _UPSERT_SUMMARY,
@@ -113,6 +113,17 @@ async def save_listings(
                 for listing_id, row in rows.items()
             ],
         )
+
+
+async def save_details(conn: psycopg.AsyncConnection, details: Mapping[int, FetchedDetail]) -> None:
+    """Store fetched details with their summary hashes, in one transaction.
+
+    Only listings whose detail GET succeeded are here, so a failed fetch keeps its old
+    summary hash and is retried next run. The rows must exist (`save_summaries` first).
+    """
+    if not details:
+        return
+    async with conn.transaction(), conn.cursor() as cursor:
         await cursor.executemany(
             _UPDATE_DETAIL,
             [
@@ -151,16 +162,19 @@ async def count_active(conn: psycopg.AsyncConnection) -> int:
     return int(row[0])
 
 
-async def deactivate(conn: psycopg.AsyncConnection, listing_ids: Collection[int]) -> int:
-    """Mark these listings inactive (never deleted); return how many changed."""
+async def deactivate(conn: psycopg.AsyncConnection, listing_ids: Collection[int]) -> list[int]:
+    """Mark these listings inactive (never deleted); return the ids that actually changed.
+
+    Ids already inactive (or unknown) are left alone and not returned.
+    """
     if not listing_ids:
-        return 0
+        return []
     cursor = await conn.execute(
         "UPDATE olx_listing SET active = false, deactivated_at = now() "
-        "WHERE id = ANY(%s) AND active",
+        "WHERE id = ANY(%s) AND active RETURNING id",
         (sorted(listing_ids),),
     )
-    return cursor.rowcount
+    return sorted(row[0] for row in await cursor.fetchall())
 
 
 async def start_run(conn: psycopg.AsyncConnection, kind: str) -> int:

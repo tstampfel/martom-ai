@@ -7,8 +7,9 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
 3. Detail fetch (`olx.detail.fetch_changed_details`): GET /listings/{id} for listings whose
    summary hash is new or changed. A `full` run fetches every listing instead, so an edit
    to only the description is picked up too.
-4. Save every seen row and every fetched detail. A seen listing that was inactive is
-   reactivated. A failed detail keeps the old summary hash, so it is retried next run.
+4. Save every seen row, then the fetched details in batches of `DETAIL_BATCH_SIZE` as
+   they arrive. A seen listing that was inactive is reactivated. A failed detail keeps
+   the old summary hash, so it is retried next run.
 5. Deactivation, only when all of these hold (CLAUDE.md and Tomislav's decisions on #8):
    - the run covered 100% of the shop's reported total (`deactivation_candidates`);
    - the per-listing re-check (`recheck_listings`): GET /listings/{id} answers 404, a
@@ -40,6 +41,7 @@ once: what was fetched before it is saved, nothing is deactivated, the run is re
 same way; the next scheduled run tries again.
 """
 
+import itertools
 import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import asdict, dataclass, field
@@ -51,7 +53,7 @@ import psycopg
 from martom.olx import store
 from martom.olx.client import OlxApiError, OlxClient, OlxRateLimitAbortError
 from martom.olx.detail import DetailFetchAbortedError, DetailFetchResult, fetch_changed_details
-from martom.olx.sync import OlxResponseError, SyncResult, deactivation_candidates, sync_shop
+from martom.olx.sync import OlxResponseError, deactivation_candidates, sync_shop
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,8 @@ GoneReason = Literal["404", "inactive", "not_martom"]
 MAX_DEACTIVATION_PERCENT = 10
 # Applying skipped ids is called off when the re-check fails for more than this share.
 MAX_RECHECK_FAILURE_PERCENT = 20
+# Fetched details are saved every this many listings (about 4 minutes at 1.3 s each).
+DETAIL_BATCH_SIZE = 200
 
 
 @dataclass
@@ -145,6 +149,16 @@ def _error_type(exc: OlxApiError) -> str:
     return f"http_{exc.status_code}"
 
 
+def _as_int(value: object) -> int | None:
+    """`int(value)` for 17193 or "17193"; None for anything else (bools excluded)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return None
+
+
 async def shop_id(olx: OlxClient) -> int:
     """The shop's numeric OLX user id (to recognise listings that changed owner)."""
     profile = await olx.get_shop()
@@ -180,12 +194,14 @@ async def recheck_listings(olx: OlxClient, listing_ids: Collection[int], owner_i
                     exc,
                 )
             continue
-        if not isinstance(body, Mapping) or body.get("id") != listing_id:
+        # OLX mixes number and string ids (`top_category_id` comes as "701"), so compare
+        # them as ints, never as raw JSON.
+        if not isinstance(body, Mapping) or _as_int(body.get("id")) != listing_id:
             result.errors[listing_id] = "unexpected_body"
             logger.warning("listing %d: re-check got an unexpected body, stays active", listing_id)
             continue
         user = body.get("user")
-        owner = user.get("id") if isinstance(user, Mapping) else None
+        owner = _as_int(user.get("id")) if isinstance(user, Mapping) else None
         status = body.get("status")
         if owner is not None and owner != owner_id:
             result.gone[listing_id] = "not_martom"
@@ -207,8 +223,14 @@ async def _deactivate(
     *,
     trigger: str,
 ) -> None:
-    """Deactivate `gone`, logging each id with its reason and what triggered it."""
-    for listing_id, reason in sorted(gone.items()):
+    """Deactivate `gone`; log each id that actually changed, with its reason and trigger.
+
+    Ids that were already inactive (say, `--apply-skipped` run twice) are not logged or
+    counted.
+    """
+    changed = await store.deactivate(conn, gone.keys())
+    for listing_id in changed:
+        reason = gone[listing_id]
         logger.info(
             "listing %d deactivated: %s (%s)",
             listing_id,
@@ -216,7 +238,7 @@ async def _deactivate(
             trigger,
             extra={"event": "listing_deactivated", "listing_id": listing_id, "reason": reason},
         )
-    stats.deactivated += await store.deactivate(conn, gone.keys())
+    stats.deactivated += len(changed)
 
 
 def _flag_recheck_failure(stats: RunStats, recheck: Recheck, ids: Collection[int]) -> None:
@@ -320,12 +342,19 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
         if stats.kind == "full"
         else {i: s.summary_hash for i, s in stored.items() if s.summary_hash is not None}
     )
-    try:
-        details = await fetch_changed_details(olx, result.listings, stored_hashes)
-    except DetailFetchAbortedError as exc:
-        await _save(conn, result, exc.partial, stored, stats)
-        raise
-    await _save(conn, result, details, stored, stats)
+    # Summaries first, then details batch by batch, so a crash or a dropped connection
+    # an hour into a full run loses one batch, not every detail fetched so far.
+    await store.save_summaries(conn, result.listings)
+    stats.new = sum(1 for i in result.listings if i not in stored)
+    stats.reactivated = sum(1 for i in result.listings if i in stored and not stored[i].active)
+    for batch in itertools.batched(result.listings, DETAIL_BATCH_SIZE):
+        rows = {i: result.listings[i] for i in batch}
+        try:
+            details = await fetch_changed_details(olx, rows, stored_hashes)
+        except DetailFetchAbortedError as exc:
+            await _save_details(conn, exc.partial, stored, stats)
+            raise
+        await _save_details(conn, details, stored, stats)
 
     candidates = deactivation_candidates((i for i, s in stored.items() if s.active), result)
     stats.deactivation_candidates = len(candidates)
@@ -379,23 +408,23 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
             trigger = f"auto-apply of runs {previous_id} and {stats.run_id}"
             await _deactivate(conn, auto_gone, stats, trigger=trigger)
     # What is still skipped: the next run (or `--apply-skipped`) works from these ids.
-    stats.skipped_listing_ids = sorted(gone)
+    # None when the auto-apply took every confirmed id. The run stays 'skipped_guard'
+    # on purpose: the guard tripped and a mass deactivation went past it, which
+    # someone should look at.
+    stats.skipped_listing_ids = sorted(gone) or None
 
 
-async def _save(
+async def _save_details(
     conn: psycopg.AsyncConnection,
-    result: SyncResult,
     details: DetailFetchResult,
     stored: Mapping[int, store.StoredListing],
     stats: RunStats,
 ) -> None:
-    """Save the run's rows and details, and count new / changed / reactivated listings."""
-    await store.save_listings(conn, result.listings, details.fetched)
-    stats.fetched = len(details.fetched)
+    """Save one batch of fetched details and add it to the fetched / changed / error counts."""
+    await store.save_details(conn, details.fetched)
+    stats.fetched += len(details.fetched)
     stats.errors += len(details.failed)
-    stats.new = sum(1 for i in result.listings if i not in stored)
-    stats.reactivated = sum(1 for i in result.listings if i in stored and not stored[i].active)
-    stats.changed = sum(
+    stats.changed += sum(
         1
         for i, fetched in details.fetched.items()
         if i in stored and stored[i].detail_hash != fetched.detail.detail_hash

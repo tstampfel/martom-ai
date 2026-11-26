@@ -7,6 +7,7 @@ container.
 """
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -18,12 +19,14 @@ import pytest
 
 from martom import cli
 from martom.migrate import run_migrations
+from martom.olx import job
 from martom.olx.client import OlxClient
 from martom.olx.job import (
     RunStats,
     apply_skipped_run,
     deactivation_allowed,
     recheck_allowed,
+    recheck_listings,
     run_outcome,
     run_sync,
 )
@@ -31,6 +34,7 @@ from martom.olx.job import (
 pytestmark = pytest.mark.anyio
 
 REPO_MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+DETAIL_FIXTURE = Path(__file__).parent / "fixtures" / "olx" / "listing_details.json"
 SHOP_ID = 17193
 LEAF, TOP = 881, 701
 
@@ -64,6 +68,8 @@ class FakeShop:
     - `detail_errors`: id -> HTTP status to answer GET /listings/{id} with.
     - `detail_timeouts`: ids whose GET /listings/{id} times out.
     - `owners`: id -> another user's id for listings that changed owner.
+    - `string_ids`: detail bodies carry `id` and `user.id` as strings ("17193"), the way
+      OLX already sends `top_category_id`.
     - `abort_on`: path that answers 429 with `Retry-After: inf` (makes the client abort).
     """
 
@@ -74,6 +80,7 @@ class FakeShop:
         self.detail_errors: dict[int, int] = {}
         self.detail_timeouts: set[int] = set()
         self.owners: dict[int, int] = {}
+        self.string_ids = False  # send `id` and `user.id` as strings in detail bodies
         self.abort_on: str | None = None
         self.requests: list[httpx.Request] = []
 
@@ -93,8 +100,9 @@ class FakeShop:
 
     def detail(self, listing_id: int, status: str) -> dict[str, Any]:
         title = self.listed.get(listing_id, f"Old listing {listing_id}")
+        owner = self.owners.get(listing_id, SHOP_ID)
         return {
-            "id": listing_id,
+            "id": str(listing_id) if self.string_ids else listing_id,
             "title": title,
             "slug": f"listing-{listing_id}",
             "short_description": None,
@@ -108,7 +116,7 @@ class FakeShop:
             "category_id": LEAF,
             "brand": None,
             "attributes": [{"name": "Stanje", "value": "Novo"}],
-            "user": {"id": self.owners.get(listing_id, SHOP_ID), "username": "Martom"},
+            "user": {"id": str(owner) if self.string_ids else owner, "username": "Martom"},
         }
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -761,6 +769,122 @@ async def test_auto_apply_with_too_many_recheck_failures_applies_nothing(
     assert run["recheck_skipped"] is True
     assert run["deactivated"] == 0
     assert run["applied_run_ids"] is None
+
+
+async def test_string_ids_in_the_recheck_still_count_as_martoms_listing(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    del server.listed[10]
+    server.listed[11] = "New 11"
+    server.off_list = {10: "active"}  # missed by the pages, still for sale
+    server.string_ids = True
+
+    await sync(conn, server)
+
+    assert (await listings(conn))[10]["active"] is True
+    run = await last_run(conn)
+    assert (run["deactivated"], run["errors"]) == (0, 0)
+
+
+async def test_string_owner_id_of_another_user_is_not_martom(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    del server.listed[10]
+    server.off_list = {10: "active"}
+    server.owners = {10: 99999}
+    server.string_ids = True
+
+    await sync(conn, server)
+
+    assert (await listings(conn))[10]["active"] is False
+
+
+async def test_recorded_detail_body_is_recognised_as_martoms_active_listing() -> None:
+    # The real GET /listings/{id} body (fixture, `user` object trimmed to public fields).
+    recorded = json.loads(DETAIL_FIXTURE.read_text())["details"]["63996799"]
+    assert recorded["user"]["id"] == SHOP_ID
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=recorded)
+
+    clock = FakeClock()
+    async with OlxClient(
+        transport=httpx.MockTransport(answer), clock=clock.monotonic, sleep=clock.sleep
+    ) as olx:
+        result = await recheck_listings(olx, [63996799], SHOP_ID)
+
+    assert result.still_active == {63996799}
+    assert result.gone == {}
+    assert result.errors == {}
+
+
+async def test_applying_a_run_twice_logs_and_counts_nothing_the_second_time(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    skipped_run = await trip_guard(conn, server, {9, 10})
+    await apply_skipped(conn, server, skipped_run)
+    caplog.clear()
+
+    with caplog.at_level(logging.INFO, logger="martom.olx.job"):
+        await apply_skipped(conn, server, skipped_run)
+
+    assert not any("deactivated:" in r.getMessage() for r in caplog.records)
+    assert (await last_run(conn))["deactivated"] == 0
+
+
+async def test_details_are_saved_in_batches_so_a_crash_keeps_earlier_ones(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(job, "DETAIL_BATCH_SIZE", 1)
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+
+    def crash_at_two(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/listings/2":
+            raise RuntimeError("database or network gone")
+        return server(request)
+
+    clock = FakeClock()
+    async with OlxClient(
+        transport=httpx.MockTransport(crash_at_two),
+        clock=clock.monotonic,
+        sleep=clock.sleep,
+        max_attempts=1,
+    ) as olx:
+        with pytest.raises(RuntimeError):
+            await run_sync(conn, olx, kind="nightly")
+
+    stored = await listings(conn)
+    assert stored[1]["summary_hash"] is not None  # its batch was saved before the crash
+    assert stored[2]["summary_hash"] is None
+    assert stored[3]["summary_hash"] is None  # seen and stored, detail still to fetch
+    run = await last_run(conn)
+    assert run["status"] == "failed"
+    assert run["fetched"] == 1
+
+
+async def test_second_trip_that_applies_every_confirmed_id_leaves_nothing_skipped(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    await trip_guard(conn, server, {8, 9, 10})
+
+    second = await trip_guard(conn, server, {8, 9, 10})
+
+    stored = await listings(conn)
+    assert all(stored[i]["active"] is False for i in (8, 9, 10))
+    run = await last_run(conn)
+    assert run["id"] == second
+    assert run["deactivated"] == 3
+    # The guard did trip and a mass deactivation bypassed it, so it alerts on purpose.
+    assert run["status"] == "skipped_guard"
+    assert run["skipped_listing_ids"] is None
 
 
 async def test_listing_with_a_new_owner_is_deactivated_as_not_martom(

@@ -1,5 +1,5 @@
 {
- "_about": "Recorded from the public OLX.ba API on 26 Nov 2026 (no token), trimmed for M1-3 tests. details: GET /listings/{id}, keeping only the fields detail.py reads. summary_row: one row of GET /users/martom/listings?category_id=881, unchanged. Toni's mobile number is replaced with the fake 060 000 000; the shop's public number 036 651 427 is kept.",
+ "_about": "Recorded from the public OLX.ba API on 26 Nov 2026 (no token), trimmed for M1-3 tests. details: GET /listings/{id}, keeping only the fields detail.py reads. summary_row: one row of GET /users/martom/listings?category_id=881, unchanged. Toni's mobile number is replaced with the fake 060 000 000; the shop's public number 036 651 427 is kept. M1-4 added details.63996799.user: the owner object GET /listings/{id} sends, trimmed to its public id, type and username (recorded 26 Nov 2026).",
  "summary_row": {
   "score": null,
   "id": 63996799,
@@ -85,7 +85,12 @@
    ],
    "category_id": 881,
    "brand": null,
-   "date": 1795683424
+   "date": 1795683424,
+   "user": {
+    "id": 17193,
+    "type": "shop",
+    "username": "Martom"
+   }
   },
   "1199211": {
    "id": 1199211,

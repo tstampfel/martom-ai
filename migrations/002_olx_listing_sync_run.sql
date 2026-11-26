@@ -38,6 +38,9 @@ CREATE INDEX IF NOT EXISTS olx_listing_active_idx ON olx_listing (active);
 
 -- The listings a customer may see. Search (M3) and the BOM (M4) query this view, never
 -- the table, so a sold listing can't show up in an answer.
+-- Postgres expands `*` once, when the view is created: any later migration that adds
+-- columns to olx_listing must also re-create this view (DROP VIEW + CREATE VIEW), or
+-- the new columns won't show in it.
 CREATE OR REPLACE VIEW active_olx_listing AS
     SELECT * FROM olx_listing WHERE active;
 
