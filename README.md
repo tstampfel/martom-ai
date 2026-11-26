@@ -19,17 +19,22 @@ Python 3.12 with [uv](https://docs.astral.sh/uv/), FastAPI, LangGraph, Postgres 
 
 ## Run locally
 
-Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs Python 3.12 for you).
+Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs Python 3.12 for you) and Docker.
 
 ```sh
 uv sync                     # create .venv and install dependencies
 cp .env.example .env        # local config; every value in the example is fake
-uv run pytest               # tests
+docker compose up -d --wait # Postgres 16 + pgvector and Redis, healthy
+set -a; . ./.env; set +a    # export the variables into this shell
+uv run martom migrate       # apply database migrations (safe to re-run)
+uv run pytest               # tests (database tests need TEST_DATABASE_URL)
 uv run ruff check           # lint
 uv run ruff format --check  # formatting
 ```
 
-The database, API and frontend arrive in later milestones (see the plan).
+If ports 5432 or 6379 are already in use (e.g. a local Postgres), set `POSTGRES_PORT` / `REDIS_PORT` in `.env` and change the port in `DATABASE_URL`, `TEST_DATABASE_URL` and `REDIS_URL` to match.
+
+The API and frontend arrive in later milestones (see the plan).
 
 ## Licence
 
