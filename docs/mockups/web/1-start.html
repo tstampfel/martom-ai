@@ -45,8 +45,8 @@ a{color:inherit;text-decoration:none}
   </header>
 
   <section style="max-width: 1280px; margin: 0 auto; padding: 32px 32px 0">
-    <div style="display: flex; flex-wrap: wrap; border-radius: 24px; overflow: hidden; background: #26292E">
-      <div style="flex: 999 1 560px; min-width: 0; background: #D71222; border-radius: 0 140px 140px 0; padding: 56px 72px 56px 56px; box-sizing: border-box; color: #FFFFFF; display: flex; flex-direction: column; gap: 24px">
+    <div style="position: relative; display: flex; flex-wrap: wrap; border-radius: 24px; overflow: hidden; background: #26292E">
+      <div style="position: relative; z-index: 1; flex: 999 1 560px; min-width: 0; background: #D71222; border-radius: 0 140px 140px 0; padding: 56px 72px 56px 56px; box-sizing: border-box; color: #FFFFFF; display: flex; flex-direction: column; gap: 24px">
         <span style="font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; opacity: .9">AI savjetnik za ograde i alat</span>
         <h1 style="margin: 0; font-family: Outfit, sans-serif; font-weight: 800; font-size: 56px; line-height: 1.02; letter-spacing: -1px">Recite šta ograđujete.<br>Mi složimo cijeli popis.</h1>
         <p style="margin: 0; font-size: 18px; line-height: 1.5; max-width: 520px; opacity: .95">Panele, stupove, kopče i žicu — s količinama i okvirnom cijenom, iz cijelog Martomovog OLX kataloga.</p>
@@ -63,9 +63,9 @@ a{color:inherit;text-decoration:none}
         </div>
       </div>
       <div style="flex: 1 1 380px; min-height: 460px; position: relative; padding: 32px; box-sizing: border-box; display: flex; align-items: center">
-        <!-- Canvas shows OLX 63996799's photo here (object-fit: cover; object-position: center 40%) under the gradient below. Not approved by Toni yet (#64), so the repo keeps a placeholder. -->
-        <div class="ph" style="position: absolute; inset: 0; background: repeating-linear-gradient(135deg,#3A3E44 0 14px,#33373C 14px 28px); color: #B8BCC4">[foto: 3D panelna ograda u antracit boji, s kopčom na stupu · čeka odobrenje (#64)]</div>
-        <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(90deg, rgba(38,41,46,.55), rgba(38,41,46,.1))"></div>
+        <!-- Canvas shows OLX 63996799's photo here (object-fit: cover; object-position: center 40%), extended 150px left under the red block's curve, under the gradient below. Not approved by Toni yet (#64), so the repo keeps a placeholder with the same geometry. -->
+        <div class="ph" style="position: absolute; top: 0; bottom: 0; right: 0; left: -150px; padding-left: 164px; background: repeating-linear-gradient(135deg,#3A3E44 0 14px,#33373C 14px 28px); color: #B8BCC4">[foto: 3D panelna ograda u antracit boji, s kopčom na stupu · čeka odobrenje (#64)]</div>
+        <div aria-hidden="true" style="position: absolute; top: 0; bottom: 0; right: 0; left: -150px; background: linear-gradient(90deg, rgba(38,41,46,.55), rgba(38,41,46,.1))"></div>
         <div style="position: relative; width: 100%; max-width: 380px; margin-left: auto; background: rgba(22,24,29,.92); border: 1px solid #4A4F57; border-radius: 18px; padding: 20px; color: #FFFFFF; display: flex; flex-direction: column; gap: 12px">
           <div style="display: flex; justify-content: space-between; align-items: center">
             <span style="font-size: 14px; font-weight: 700">Kako savjetnik radi</span>
@@ -124,7 +124,7 @@ class Component extends DCLogic {
   componentDidMount() {
     this.tick();
     const still = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!still) { this.setState({ s: 0 }); this.st = setInterval(() => this.setState({ s: (this.state.s + 1) % 6 }), 1100); }
+    if (!still) { this.setState({ s: 0 }); this.st = setInterval(() => this.setState({ s: (this.state.s + 1) % 5 }), 1100); }
   }
   componentWillUnmount() { clearTimeout(this.t); clearInterval(this.st); }
   tick() {
@@ -139,7 +139,7 @@ class Component extends DCLogic {
   examples() { return ['Treba mi 25 m ograde za dvorište, visina 1,5 m', 'Ograda za kokoši, 20 metara', 'Šta sve treba za panelnu ogradu?', 'Brusilica 125 mm za metal']; }
   renderVals() {
     const full = this.examples()[this.state.i];
-    const s = this.state.s, on = (k) => s >= k && s < 5;
+    const s = this.state.s, on = (k) => s >= k;
     return { placeholder: full.slice(0, this.state.n) + '|', noop: (e) => e.preventDefault(),
       o1: on(1) ? 1 : 0, y1: on(1) ? 0 : 6, o2: on(2) ? 1 : 0, y2: on(2) ? 0 : 6, o3: on(3) ? 1 : 0, y3: on(3) ? 0 : 6 };
   }
