@@ -18,6 +18,13 @@ from martom.settings import Settings
 PAGES_DEV = "https://martom-savjetnik.pages.dev"
 
 
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Settings() reads the real environment; don't let a developer's exports change results.
+    for name in ["APP_ENV", "LOG_LEVEL", "CORS_ALLOWED_ORIGINS", "DATABASE_URL", "REDIS_URL"]:
+        monkeypatch.delenv(name, raising=False)
+
+
 async def healthy() -> None:
     return None
 
@@ -142,3 +149,26 @@ def test_health_with_the_real_checks(database_url: str, redis_url: str) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}
+
+
+def test_an_unhandled_error_is_a_500_with_a_request_id(caplog: pytest.LogCaptureFixture) -> None:
+    app = create_app(Settings(), health_checks={"postgres": healthy, "redis": healthy})
+
+    @app.get("/boom")
+    async def boom() -> None:
+        raise RuntimeError("secret detail from 10.0.0.5")
+
+    with caplog.at_level(logging.INFO, logger="martom.api"):
+        response = TestClient(app, raise_server_exceptions=False).get("/boom")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal Server Error"}
+    assert "10.0.0.5" not in response.text
+    request_id = response.headers["X-Request-ID"]
+    # The traceback is logged while the request id is still known.
+    failed = [r for r in caplog.records if r.getMessage() == "unhandled error"]
+    assert len(failed) == 1
+    assert failed[0].exc_info
+    assert json.loads(JsonFormatter().format(failed[0]))["request_id"] == request_id
+    finished = [r for r in caplog.records if r.getMessage() == "request finished"]
+    assert [getattr(r, "status_code", None) for r in finished] == [500]

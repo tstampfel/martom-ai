@@ -15,6 +15,7 @@ from functools import partial
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from martom.api.health import HealthCheck, check_postgres, check_redis
 from martom.api.health import router as health_router
@@ -24,8 +25,9 @@ from martom.settings import Settings
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
-# An incoming id (e.g. from CloudFront or a client) is kept only if it is short and plain,
-# so it can't inject odd characters into logs or response headers.
+# A client may send its own id (CloudFront doesn't; it sends X-Amz-Cf-Id). It is kept only
+# if it is short and plain, so it can't inject odd characters into logs or headers. Any
+# client can pick any id, so it helps correlate logs but is not proof of anything.
 VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 HEALTH_CHECK_TIMEOUT_SECONDS = 3.0
 
@@ -66,24 +68,26 @@ def create_app(
         request_id = incoming if VALID_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex
         token = request_id_var.set(request_id)
         start = time.perf_counter()
-        status_code = 500  # stays 500 if the handler raises
         try:
             response = await call_next(request)
-            status_code = response.status_code
-            response.headers[REQUEST_ID_HEADER] = request_id
-            return response
-        finally:
-            logger.info(
-                "request finished",
-                extra={
-                    "request_id": request_id,
-                    "method": request.method,
-                    "path": request.url.path,
-                    "status_code": status_code,
-                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
-                },
-            )
-            request_id_var.reset(token)
+        except Exception:
+            # Log the traceback here, while the request id is still set, and answer with a
+            # plain 500 that still carries the id (the details stay in the log).
+            logger.exception("unhandled error", extra={"request_id": request_id})
+            response = JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        logger.info(
+            "request finished",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+            },
+        )
+        request_id_var.reset(token)
+        return response
 
     app.include_router(health_router)
     return app

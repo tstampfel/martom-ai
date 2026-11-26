@@ -15,6 +15,7 @@ import os
 import uuid
 from collections.abc import Iterator
 from typing import NoReturn
+from urllib.parse import urlsplit
 
 import psycopg
 import pytest
@@ -71,8 +72,11 @@ def redis_url() -> str:
     try:
         client.ping()
     except redis.RedisError as exc:
+        # host:port only, like the Postgres fixture: the URL can hold a password.
+        parts = urlsplit(url)
+        where = f"{parts.hostname or 'localhost'}:{parts.port or 6379}"
         _skip_or_fail(
-            f"cannot connect to Redis at {url} ({exc})",
+            f"cannot connect to Redis at {where} ({exc})",
             "start it with `docker compose up -d --wait` "
             "or point TEST_REDIS_URL at a running server",
         )

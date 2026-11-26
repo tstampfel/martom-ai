@@ -56,7 +56,7 @@ def test_unreachable_database_fails_in_ci(
     result.stdout.fnmatch_lines(["*cannot connect to Postgres at localhost:1*"])
 
 
-UNREACHABLE_REDIS_URL = "redis://localhost:1/0"
+UNREACHABLE_REDIS_URL = "redis://:s3cret-pw@localhost:1/0"
 
 
 @pytest.fixture
@@ -80,7 +80,9 @@ def test_unreachable_redis_skips_locally(
     result = session_using_redis.runpytest("-rs")
 
     result.assert_outcomes(skipped=1)
-    result.stdout.fnmatch_lines(["*cannot connect to Redis at redis://localhost:1/0*"])
+    result.stdout.fnmatch_lines(["*cannot connect to Redis at localhost:1*"])
+    # Only host:port is printed, never a password from the URL (CI logs are public).
+    assert "s3cret-pw" not in result.stdout.str()
 
 
 def test_unreachable_redis_fails_in_ci(
@@ -92,4 +94,5 @@ def test_unreachable_redis_fails_in_ci(
     result = session_using_redis.runpytest()
 
     result.assert_outcomes(errors=1)
-    result.stdout.fnmatch_lines(["*cannot connect to Redis at redis://localhost:1/0*"])
+    result.stdout.fnmatch_lines(["*cannot connect to Redis at localhost:1*"])
+    assert "s3cret-pw" not in result.stdout.str()

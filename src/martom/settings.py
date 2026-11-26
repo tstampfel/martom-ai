@@ -20,7 +20,8 @@ LOCAL_ORIGIN = re.compile(r"http://(localhost|127\.0\.0\.1)(:\d{1,5})?")
 
 class Settings(BaseSettings):
     # env_file=None: never read a .env file, only real environment variables.
-    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+    # env_ignore_empty: VAR="" counts as unset (default used), like `martom migrate` does.
+    model_config = SettingsConfigDict(env_file=None, env_ignore_empty=True, extra="ignore")
 
     app_env: Literal["local", "test", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

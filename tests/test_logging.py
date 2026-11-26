@@ -62,14 +62,20 @@ def test_includes_the_exception_traceback() -> None:
 
 
 @pytest.fixture
-def restore_root_logger() -> Iterator[None]:
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
+def restore_loggers() -> Iterator[None]:
+    # configure_logging changes the root and uvicorn loggers process-wide; put them back
+    # so later tests don't depend on the order they run in.
+    loggers = [
+        logging.getLogger(name) for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access")
+    ]
+    saved = [(lg.handlers[:], lg.level, lg.propagate, lg.disabled) for lg in loggers]
     yield
-    root.handlers, root.level = handlers, level
+    for lg, (handlers, level, propagate, disabled) in zip(loggers, saved, strict=True):
+        lg.handlers, lg.propagate, lg.disabled = handlers, propagate, disabled
+        lg.setLevel(level)
 
 
-@pytest.mark.usefixtures("restore_root_logger")
+@pytest.mark.usefixtures("restore_loggers")
 def test_configure_logging_sets_level_and_json_handler(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -94,3 +100,22 @@ def test_drops_uvicorns_ansi_coloured_duplicate_message() -> None:
     record = make_record("Started server process", color_message="\x1b[36mStarted\x1b[0m")
 
     assert "color_message" not in json.loads(JsonFormatter().format(record))
+
+
+def test_extra_fields_cannot_overwrite_the_core_fields() -> None:
+    record = make_record("hi", level="fake", logger="fake", timestamp="fake")
+
+    entry = json.loads(JsonFormatter().format(record))
+
+    assert entry["level"] == "INFO"
+    assert entry["logger"] == "martom.test"
+    assert entry["timestamp"] != "fake"
+    assert entry["message"] == "hi"
+    # The clashing values are kept under a prefix instead of being lost.
+    assert entry["extra_level"] == "fake"
+
+
+def test_includes_the_stack_when_stack_info_is_requested() -> None:
+    record = make_record("where am I", stack_info="Stack (most recent call last):\n  here")
+
+    assert "most recent call last" in json.loads(JsonFormatter().format(record))["stack"]

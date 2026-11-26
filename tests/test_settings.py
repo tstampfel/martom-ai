@@ -86,3 +86,13 @@ def test_ignores_a_dotenv_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     monkeypatch.chdir(tmp_path)
 
     assert Settings().redis_url == "redis://localhost:6379/0"
+
+
+@pytest.mark.parametrize("name", ["DATABASE_URL", "REDIS_URL", "APP_ENV", "LOG_LEVEL"])
+def test_an_empty_variable_counts_as_unset(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    # Same as `martom migrate`, which treats DATABASE_URL="" as unset.
+    monkeypatch.setenv(name, "")
+
+    # model_construct() skips reading the environment, so it holds the plain defaults.
+    defaults = Settings.model_construct()
+    assert getattr(Settings(), name.lower()) == getattr(defaults, name.lower())

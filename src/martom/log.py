@@ -24,6 +24,9 @@ _STANDARD_ATTRS = set(vars(logging.LogRecord("", 0, "", 0, "", None, None))) | {
     "color_message",  # uvicorn adds a copy of the message with ANSI colour codes
 }
 
+# Fields the formatter itself writes; an `extra` key with one of these names is prefixed.
+_CORE_FIELDS = {"timestamp", "level", "logger", "message", "exception", "stack"}
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -32,13 +35,19 @@ class JsonFormatter(logging.Formatter):
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
-            "request_id": request_id_var.get(),
+            # An id passed explicitly via `extra` wins over the context (the request
+            # middleware does this, so its lines keep the id after the request ends).
+            "request_id": getattr(record, "request_id", None) or request_id_var.get(),
         }
         for key, value in vars(record).items():
-            if key not in _STANDARD_ATTRS and not key.startswith("_"):
-                entry[key] = value
+            if key in _STANDARD_ATTRS or key.startswith("_") or key == "request_id":
+                continue
+            # Never let an `extra` field replace a core one (CloudWatch filters on `level`).
+            entry[f"extra_{key}" if key in _CORE_FIELDS else key] = value
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            entry["stack"] = self.formatStack(record.stack_info)
         # default=str: values json can't encode (e.g. a UUID) are logged as their text.
         return json.dumps(entry, default=str, ensure_ascii=False)
 
