@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import App from './App'
-import { copy } from './copy'
+import { config } from './config'
+import { copy, telHref } from './copy'
 
 describe('App shell', () => {
   it('shows the delivery note and opening hours in the red top strip', () => {
@@ -24,10 +25,12 @@ describe('App shell', () => {
 
   it('lets the customer call the shop', () => {
     render(<App />)
-    const callLinks = screen.getAllByRole('link', { name: /036 651 427|Pozovi Martom/ })
+    const callLinks = screen.getAllByRole('link', {
+      name: (name) => name === config.shopPhone || name === copy.header.call,
+    })
     expect(callLinks.length).toBeGreaterThan(0)
     for (const link of callLinks) {
-      expect(link).toHaveAttribute('href', 'tel:+38736651427')
+      expect(link).toHaveAttribute('href', telHref(config.shopPhone))
     }
   })
 
@@ -72,6 +75,15 @@ describe('App shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Balkon' }))
     fireEvent.click(screen.getByRole('button', { name: copy.chat.back }))
     expect(screen.getByLabelText(copy.start.inputLabel)).toBeInTheDocument()
+  })
+
+  it('moves focus to the chat when it opens and to the question box when going back', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Balkon' }))
+    expect(screen.getByRole('region', { name: copy.chat.label })).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: copy.chat.back }))
+    expect(screen.getByLabelText(copy.start.inputLabel)).toHaveFocus()
   })
 
   it('shows the four hexagon badges about Martom', () => {

@@ -21,11 +21,15 @@ export function usePrefersReducedMotion(): boolean {
 }
 
 /**
- * Text of the animated placeholder: types each example, pauses, erases it and
- * types the next, forever. While `paused` (reduced motion, or the customer is
- * typing) the timer stops.
+ * The animated placeholder: types each example, pauses, erases it and types
+ * the next, forever. Returns the visible part (`text`) and the whole current
+ * example (`example`). While `paused` (reduced motion, focus, or the customer
+ * is typing) the timer stops and later resumes where it left off.
  */
-export function useTypingPlaceholder(examples: readonly string[], paused: boolean): string {
+export function useTypingPlaceholder(
+  examples: readonly string[],
+  paused: boolean,
+): { text: string; example: string } {
   const [state, setState] = useState(INITIAL_TYPING_STATE)
   // The timer chain reads the latest step from a ref, so it runs without
   // waiting for a re-render between steps and resumes where it paused.
@@ -46,5 +50,5 @@ export function useTypingPlaceholder(examples: readonly string[], paused: boolea
     return () => clearTimeout(timer)
   }, [examples, paused])
 
-  return typingText(state, examples)
+  return { text: typingText(state, examples), example: examples[state.index] ?? '' }
 }

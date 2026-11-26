@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { copy } from '../copy'
 import './ChatPlaceholder.css'
 
@@ -11,8 +12,16 @@ type ChatPlaceholderProps = {
  * no API call. M5-3 replaces it with the streaming chat.
  */
 export function ChatPlaceholder({ firstMessage, onBack }: ChatPlaceholderProps) {
+  const sectionRef = useRef<HTMLElement>(null)
+
+  // The control that opened the chat is gone, so move focus here; screen
+  // readers then announce the chat region instead of losing their place.
+  useEffect(() => {
+    sectionRef.current?.focus()
+  }, [])
+
   return (
-    <section className="chat" aria-label={copy.chat.label}>
+    <section ref={sectionRef} className="chat" aria-label={copy.chat.label} tabIndex={-1}>
       <div className="chat__message">
         <span className="chat__author">{copy.chat.you}</span>
         <p className="chat__text">{firstMessage}</p>

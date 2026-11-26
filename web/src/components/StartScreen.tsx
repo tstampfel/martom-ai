@@ -1,13 +1,13 @@
-import { useId, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { copy } from '../copy'
-import { usePrefersReducedMotion, useTypingPlaceholder } from '../hooks'
 import { Hexagon } from './Hexagon'
-import { ArrowIcon } from './Icons'
+import { QuestionForm } from './QuestionForm'
 import './StartScreen.css'
 
 type StartScreenProps = {
   /** Starts a chat with the customer's first message. */
   onStartChat: (text: string) => void
+  /** Focus the question box, e.g. when the customer comes back from the chat. */
+  focusQuestion?: boolean
 }
 
 /**
@@ -16,33 +16,7 @@ type StartScreenProps = {
  * and docs/mockups/mobile/1-start.html; both are rendered and CSS picks one
  * where they differ.
  */
-export function StartScreen({ onStartChat }: StartScreenProps) {
-  const inputId = useId()
-  const [question, setQuestion] = useState('')
-  const reducedMotion = usePrefersReducedMotion()
-  const typed = useTypingPlaceholder(copy.start.examples, reducedMotion || question !== '')
-  // The trailing bar stands in for a text cursor, as in the mockups.
-  const placeholder = reducedMotion ? copy.start.examples[0] : `${typed}|`
-
-  function submit() {
-    const text = question.trim()
-    if (text) onStartChat(text)
-  }
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    submit()
-  }
-
-  // Enter sends, Shift+Enter adds a new line (and Enter while an IME is
-  // composing a character does nothing).
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault()
-      submit()
-    }
-  }
-
+export function StartScreen({ onStartChat, focusQuestion = false }: StartScreenProps) {
   return (
     <>
       <section className="hero">
@@ -63,26 +37,7 @@ export function StartScreen({ onStartChat }: StartScreenProps) {
             </h1>
             <p className="hero__lead">{copy.hero.lead}</p>
 
-            <form className="ask" onSubmit={handleSubmit}>
-              <label className="ask__label" htmlFor={inputId}>
-                {copy.start.inputLabel}
-              </label>
-              <div className="ask__box">
-                <textarea
-                  id={inputId}
-                  className="ask__input"
-                  rows={2}
-                  value={question}
-                  placeholder={placeholder}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  onKeyDown={handleKeyDown}
-                />
-                <button className="ask__submit" type="submit">
-                  {copy.start.submit}
-                  <ArrowIcon />
-                </button>
-              </div>
-            </form>
+            <QuestionForm onSubmit={onStartChat} focusOnMount={focusQuestion} />
 
             <fieldset className="chips">
               <legend className="chips__legend">{copy.start.chipsLabel}</legend>

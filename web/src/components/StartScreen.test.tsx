@@ -88,6 +88,46 @@ describe('StartScreen with prefers-reduced-motion', () => {
   })
 })
 
+describe('StartScreen question box', () => {
+  beforeEach(() => {
+    stubReducedMotion(false)
+  })
+
+  it('stops animating and shows the whole example while focused, then carries on after blur', () => {
+    vi.useFakeTimers()
+    render(<StartScreen onStartChat={() => {}} />)
+    act(() => vi.advanceTimersByTime(TYPING_TIMING.type * 3))
+
+    act(() => questionBox().focus())
+    expect(questionBox()).toHaveAttribute('placeholder', firstExample)
+    act(() => vi.advanceTimersByTime(5_000))
+    expect(questionBox()).toHaveAttribute('placeholder', firstExample)
+
+    act(() => questionBox().blur())
+    act(() => vi.advanceTimersByTime(TYPING_TIMING.type))
+    expect(questionBox()).toHaveAttribute('placeholder', `${firstExample.slice(0, 4)}|`)
+  })
+
+  it('grows with the question so every line stays visible', () => {
+    render(<StartScreen onStartChat={() => {}} />)
+    const box = questionBox()
+    // jsdom has no layout, so pretend the text needs 120 px.
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 120 })
+    fireEvent.change(box, { target: { value: 'Treba mi 25 m ograde\ns vratima širine 1 m' } })
+    expect(box.style.height).toBe('120px')
+  })
+
+  it('can take focus when the customer comes back from the chat', () => {
+    render(<StartScreen onStartChat={() => {}} focusQuestion />)
+    expect(questionBox()).toHaveFocus()
+  })
+
+  it('does not take focus on the first visit', () => {
+    render(<StartScreen onStartChat={() => {}} />)
+    expect(questionBox()).not.toHaveFocus()
+  })
+})
+
 describe('StartScreen starting a chat', () => {
   beforeEach(() => {
     stubReducedMotion(true)
@@ -122,6 +162,14 @@ describe('StartScreen starting a chat', () => {
 
     fireEvent.keyDown(questionBox(), { key: 'Enter' })
     expect(onStartChat).toHaveBeenCalledExactlyOnceWith('Brusilica 125')
+  })
+
+  it('does not send on the Enter that ends an IME composition (Safari keyCode 229)', () => {
+    const onStartChat = vi.fn<(text: string) => void>()
+    render(<StartScreen onStartChat={onStartChat} />)
+    fireEvent.change(questionBox(), { target: { value: 'kokoš' } })
+    fireEvent.keyDown(questionBox(), { key: 'Enter', keyCode: 229 })
+    expect(onStartChat).not.toHaveBeenCalled()
   })
 
   it('does not start a chat with an empty question', () => {

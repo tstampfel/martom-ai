@@ -88,7 +88,8 @@
 
 .ask__box {
   display: flex;
-  align-items: center;
+  /* Pitaj stays on the last line when the question grows. */
+  align-items: flex-end;
   gap: 8px;
   background: var(--color-card);
   border-radius: 32px;
@@ -103,12 +104,15 @@
 .ask__input {
   flex: 1;
   min-width: 0;
-  height: 48px;
+  /* One line by default; QuestionForm sets the height from the content, and
+     past max-height the box scrolls, so no line is ever hidden. */
+  min-height: 48px;
+  max-height: 160px;
   padding: 13px 0;
   border: 0;
   outline: none;
   resize: none;
-  overflow: hidden;
+  overflow-y: auto;
   background: transparent;
   color: var(--color-ink);
   font-family: var(--font-body);
@@ -168,7 +172,7 @@
 .chip {
   min-height: var(--touch-target);
   padding: 0 18px;
-  border: 1px solid rgb(255 255 255 / 55%);
+  border: 1px solid color-mix(in srgb, var(--color-on-brand) 55%, transparent);
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--color-on-brand);
@@ -181,7 +185,7 @@
 }
 
 .chip:hover {
-  background: rgb(255 255 255 / 14%);
+  background: color-mix(in srgb, var(--color-on-brand) 14%, transparent);
 }
 
 /* ---- Example agent card ---- */
@@ -190,7 +194,7 @@
   width: 100%;
   max-width: 380px;
   margin-left: auto;
-  background: rgb(22 24 29 / 92%);
+  background: color-mix(in srgb, var(--color-ink) 92%, transparent);
   border: 1px solid var(--color-dark-border);
   border-radius: 18px;
   padding: 20px;
@@ -388,7 +392,10 @@
   }
 
   .ask__input {
-    height: auto;
+    /* In the column layout flex-basis would override the grown height. */
+    flex: none;
+    /* Two lines, as in the mobile mockup (16 px × 1.4 line height). */
+    min-height: 45px;
     padding: 0;
     font-size: 16px;
     line-height: 1.4;
@@ -409,7 +416,7 @@
   .chip {
     padding: 0 16px;
     font-size: 14px;
-    border-color: rgb(255 255 255 / 60%);
+    border-color: color-mix(in srgb, var(--color-on-brand) 60%, transparent);
   }
 
   .about {

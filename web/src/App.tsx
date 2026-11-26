@@ -11,15 +11,19 @@ import { StartScreen } from './components/StartScreen'
 export default function App() {
   // null = start screen; otherwise the customer's first message.
   const [firstMessage, setFirstMessage] = useState<string | null>(null)
+  // After the first chat, coming back focuses the question box. On the very
+  // first visit it doesn't, so phones don't pop up the keyboard on load.
+  const [hasChatted, setHasChatted] = useState(false)
 
   function startChat(text: string) {
     setFirstMessage(text)
+    setHasChatted(true)
   }
 
   return (
     <AppShell onStartChat={startChat}>
       {firstMessage === null ? (
-        <StartScreen onStartChat={startChat} />
+        <StartScreen onStartChat={startChat} focusQuestion={hasChatted} />
       ) : (
         <ChatPlaceholder firstMessage={firstMessage} onBack={() => setFirstMessage(null)} />
       )}

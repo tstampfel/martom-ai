@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { config } from './config'
 import { copy, telHref } from './copy'
 
 describe('telHref', () => {
@@ -16,8 +17,9 @@ describe('telHref', () => {
 })
 
 describe('copy', () => {
-  it('uses the public shop number from the mockups', () => {
-    expect(copy.shop.phone).toBe('036 651 427')
+  // The default (the public number) is checked in config.test.ts.
+  it('uses the shop number from config', () => {
+    expect(copy.shop.phone).toBe(config.shopPhone)
   })
 
   it('formats the cart label with the item count', () => {

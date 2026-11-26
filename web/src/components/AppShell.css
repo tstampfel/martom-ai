@@ -61,7 +61,8 @@
   flex: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 24px;
+  /* No row gap: each category is already 44 px tall. */
+  gap: 0 24px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -73,7 +74,8 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-  /* Keeps a 44 px tap height without changing the row's look. */
+  /* 44 px tap height (docs/mockups/README.md). Where the six categories wrap
+     (about 768–1000 px wide), the header grows by one 44 px row. */
   min-height: var(--touch-target);
 }
 
