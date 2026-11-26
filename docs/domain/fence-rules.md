@@ -55,11 +55,13 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 | Model | Listing | Profile | Heights | Mounting |
 | --- | --- | --- | --- | --- |
 | (a) T-post | OLX 59473597 | green plastified T 35 × 35 × 3,50 mm | 120 / 125 / 150 / 175 / 200 cm | into soil or set in concrete |
-| (b) Post with foot plate (stup sa stopom) | OLX 81645615 ("STUP STUPOVI KOCI ZA STOPOM 40X40MM 60, 80, 100, 125 I 150CM", category 876) | 40 × 40 mm | 60 / 80 / 100 / 125 / 150 cm | anchored onto a concrete wall or base |
+| (b) Post with foot plate (stup sa stopom) | OLX 81645615, [listing](https://martom.olx.ba/artikal/stup-stupovi-koci-za-stopom-40x40mm-60-80-100-125-i-150cm-81645615) (category 876) | 40 × 40 mm | 60 / 80 / 100 / 125 / 150 cm | anchored onto a concrete wall or base |
 
 - Prices per height always come from the OLX sync ("from 10,00 KM" for the T-post is a reference only).
+- **Foot-plate post (b), reference prices** (26 Nov 2026): 60 cm → 10,50 · 80 cm → 11,90 · 100 cm → 14,00 · 125 cm → 16,50 · 150 cm → 21,00 KM. Colours: green and anthracite.
+- **Anchors for (b):** the foot plate has 3 anchor holes, so the BOM assumes **3 anchors per post** until Toni confirms. The anchor type is still pending, so the anchor line stays "cijena na upit" with no price until then.
 - The clarify step for a roll fence asks where the posts go: **into soil or concrete → (a)**, **on a concrete wall or base → (b)**.
-- Listing (b) currently sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni has been asked to move it. Until that's confirmed, the sync picks it up through an explicit listing allowlist, never by syncing the whole joinery category (issue #45).
+- Listing (b) currently sits in the OLX category "Oprema/pribor za stolariju", not "Ograde". Toni has been asked to move it. Until that's confirmed, listing **81645615** is on an explicit sync allowlist, never picked up by syncing the whole joinery category (issue #45).
 
 ### Post spacing and count
 
@@ -115,6 +117,6 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 - **Roll fence, still missing** (blocks M4-2):
   - which post height goes with each fence height;
   - accessories (tension wire, tensioners, ties) and their quantities;
-  - anchors per foot-plate post (model b);
+  - anchors for the foot-plate post (model b): the anchor type, and confirmation of the assumed 3 per post;
   - whether Toni moved the foot-plate post (81645615) to "Ograde";
   - whether pletivo and chain link use the same posts and 2 m spacing.
