@@ -31,10 +31,23 @@
           "type": "array"
         },
         "total": {
-          "description": "Sum of the priced lines; 'na upit' lines excluded.",
-          "pattern": "^\\d+\\.\\d{2}$",
-          "title": "Total",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Sum of the priced lines; null when every line is 'na upit' (never a fake '0.00').",
+          "title": "Total"
+        },
+        "unpriced_count": {
+          "description": "How many lines are 'na upit'.",
+          "minimum": 0,
+          "title": "Unpriced Count",
+          "type": "integer"
         },
         "notes": {
           "description": "Extra notes in Bosnian.",
@@ -51,6 +64,7 @@
         "summary",
         "lines",
         "total",
+        "unpriced_count",
         "notes"
       ],
       "title": "BomEvent",
@@ -61,7 +75,9 @@
       "description": "One line of the materials list, as the BOM calculator made it, with its price.",
       "properties": {
         "item": {
-          "$ref": "#/$defs/Item"
+          "description": "BOM item key, e.g. 'panel'; use it as a key only.",
+          "title": "Item",
+          "type": "string"
         },
         "name": {
           "title": "Name",
@@ -87,7 +103,7 @@
         "unit_price": {
           "anyOf": [
             {
-              "pattern": "^\\d+\\.\\d{2}$",
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
               "type": "string"
             },
             {
@@ -99,7 +115,7 @@
         "line_total": {
           "anyOf": [
             {
-              "pattern": "^\\d+\\.\\d{2}$",
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
               "type": "string"
             },
             {
@@ -336,30 +352,11 @@
       "title": "ErrorEvent",
       "type": "object"
     },
-    "Item": {
-      "description": "What a BOM line is, so the caller can look up its product and price.",
-      "enum": [
-        "panel",
-        "post_base_plate",
-        "post_concrete",
-        "pvc_clip",
-        "anchor_m8x80",
-        "roll_welded",
-        "post_t",
-        "post_foot_plate",
-        "brace_t_post",
-        "tensioner",
-        "tension_wire",
-        "wire_holder",
-        "anchor_m8x70"
-      ],
-      "title": "Item",
-      "type": "string"
-    },
     "ProductCard": {
       "additionalProperties": false,
       "properties": {
         "listing_id": {
+          "minimum": 1,
           "title": "Listing Id",
           "type": "integer"
         },
@@ -418,7 +415,7 @@
         "price": {
           "anyOf": [
             {
-              "pattern": "^\\d+\\.\\d{2}$",
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
               "type": "string"
             },
             {
@@ -561,7 +558,7 @@
         "price": {
           "anyOf": [
             {
-              "pattern": "^\\d+\\.\\d{2}$",
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
               "type": "string"
             },
             {

@@ -3,12 +3,14 @@
 // events.test.ts checks every event against events.ts and the JSON Schema.
 
 import type { ChatEvent } from '../events'
-import { fenceBom, fenceClarify } from './fence'
+import { bomAllOnRequest, fenceBom, fenceClarify, rollFenceSomeOnRequest } from './fence'
 import { internalError, productQuestion, rateLimited } from './other'
 
 export const fixtures = {
   fenceClarify,
   fenceBom,
+  rollFenceSomeOnRequest,
+  bomAllOnRequest,
   productQuestion,
   internalError,
   rateLimited,

@@ -44,13 +44,14 @@ def panel_line(**overrides: Any) -> dict[str, Any]:
     return line
 
 
-def bom_event(lines: list[dict[str, Any]], total: str, **overrides: Any) -> dict[str, Any]:
+def bom_event(lines: list[dict[str, Any]], total: str | None, **overrides: Any) -> dict[str, Any]:
     event: dict[str, Any] = {
         "type": "bom",
         "title": "Popis materijala",
         "summary": "25 m · panel 153 cm · antracit",
         "lines": lines,
         "total": total,
+        "unpriced_count": 0,
         "notes": [],
     }
     event.update(overrides)
@@ -92,10 +93,20 @@ def test_price_rounds_half_up_to_cents() -> None:
     assert line.unit_price == "1.01"
 
 
-@pytest.mark.parametrize("bad", [53.0, "53", "53.0", "53,00", "-1.00", "1e2", True])
+# "٥٣.٠٠" is 53.00 in Arabic-Indic digits: Python's \d accepts it, the browser doesn't.
+@pytest.mark.parametrize(
+    "bad", [53.0, "53", "53.0", "53,00", "-1.00", "1e2", True, "\u0665\u0663.\u0660\u0660"]
+)
 def test_price_rejects_floats_and_badly_written_strings(bad: object) -> None:
     with pytest.raises(ValidationError):
         BomLineOut.model_validate(panel_line(quantity=1, unit_price=bad, line_total=bad))
+
+
+def test_price_too_large_to_round_is_a_validation_error() -> None:
+    with pytest.raises(ValidationError, match="too large"):
+        BomLineOut.model_validate(
+            panel_line(quantity=1, unit_price=Decimal("1e30"), line_total=Decimal("1e30"))
+        )
 
 
 # --- the union --------------------------------------------------------------------
@@ -118,7 +129,7 @@ def test_every_event_type_parses_by_its_type_field() -> None:
             ],
         },
         {"type": "product_cards", "cards": [card()]},
-        bom_event([panel_line()], "530.00"),
+        bom_event([panel_line()], "530.00", unpriced_count=0),
         {"type": "error", "kind": "internal", "retry_after_seconds": None},
         {"type": "done", "thread_id": "t-1"},
     ]
@@ -184,6 +195,12 @@ def test_product_card_slug_must_end_in_the_listing_id() -> None:
         ProductCard.model_validate(card(listing_id=12345))
 
 
+@pytest.mark.parametrize("listing_id", [0, -63996799])
+def test_product_card_listing_id_is_positive(listing_id: int) -> None:
+    with pytest.raises(ValidationError, match="listing_id"):
+        ProductCard.model_validate(card(listing_id=listing_id))
+
+
 def test_product_card_without_price_is_on_request() -> None:
     product = ProductCard.model_validate(card(price=None))
     assert product.price is None
@@ -207,43 +224,94 @@ def test_bom_line_without_price_must_be_on_request() -> None:
         BomLineOut.model_validate(panel_line(unit_price=None, line_total=None))
 
 
+def test_bom_line_item_must_be_a_bom_item() -> None:
+    with pytest.raises(ValidationError, match="not a BOM item"):
+        BomLineOut.model_validate(panel_line(item="gate"))
+
+
+def test_bom_item_is_a_plain_string_in_the_schema() -> None:
+    # Adding or removing a BOM item (e.g. #75) must not change the contract.
+    item = chat_event_schema()["$defs"]["BomLineOut"]["properties"]["item"]
+    assert item["type"] == "string"
+    assert "enum" not in item and "$ref" not in item
+
+
 def test_bom_quantity_is_at_least_one() -> None:
     with pytest.raises(ValidationError):
         BomLineOut.model_validate(panel_line(quantity=0, line_total="0.00"))
 
 
-def test_bom_total_is_the_sum_of_priced_lines() -> None:
-    on_request = panel_line(
-        item="post_concrete",
-        name="Stup za betoniranje 125 cm",
-        size="125 cm",
-        quantity=11,
+def brace_on_request() -> dict[str, Any]:
+    return panel_line(
+        item="brace_t_post",
+        name="Potporni stup 100 cm",
+        size="100 cm",
+        quantity=2,
         unit_price=None,
         line_total=None,
         price_on_request=True,
     )
-    event = BomEvent.model_validate(bom_event([panel_line(), on_request], "530.00"))
-    assert event.total == "530.00"
+
+
+def test_bom_with_every_line_priced_has_a_total_and_no_unpriced_lines() -> None:
+    event = BomEvent.model_validate(bom_event([panel_line()], "530.00", unpriced_count=0))
+    assert (event.total, event.unpriced_count) == ("530.00", 0)
+
+
+def test_bom_with_some_lines_on_request_totals_the_priced_lines() -> None:
+    lines = [panel_line(), brace_on_request()]
+    event = BomEvent.model_validate(bom_event(lines, "530.00", unpriced_count=1))
+    assert (event.total, event.unpriced_count) == ("530.00", 1)
+
+
+def test_bom_with_every_line_on_request_has_no_total() -> None:
+    # Never a fake "0.00" (Tomislav, 26 Nov 2026): the UI shows "cijena na upit".
+    event = BomEvent.model_validate(bom_event([brace_on_request()], None, unpriced_count=1))
+    assert (event.total, event.unpriced_count) == (None, 1)
+
+
+def test_bom_total_must_be_the_sum_of_priced_lines() -> None:
     with pytest.raises(ValidationError, match="total"):
-        BomEvent.model_validate(bom_event([panel_line()], "531.00"))
+        BomEvent.model_validate(bom_event([panel_line()], "531.00", unpriced_count=0))
+
+
+@pytest.mark.parametrize(
+    ("lines", "total", "unpriced_count"),
+    [
+        ([brace_on_request()], "0.00", 1),  # all na upit: total must be null
+        ([panel_line()], None, 0),  # something priced: total must be set
+    ],
+)
+def test_bom_total_is_null_exactly_when_every_line_is_on_request(
+    lines: list[dict[str, Any]], total: str | None, unpriced_count: int
+) -> None:
+    with pytest.raises(ValidationError, match="total"):
+        BomEvent.model_validate(bom_event(lines, total, unpriced_count=unpriced_count))
+
+
+@pytest.mark.parametrize("unpriced_count", [0, 2, -1])
+def test_bom_unpriced_count_is_the_number_of_on_request_lines(unpriced_count: int) -> None:
+    lines = [panel_line(), brace_on_request()]
+    with pytest.raises(ValidationError, match="unpriced_count"):
+        BomEvent.model_validate(bom_event(lines, "530.00", unpriced_count=unpriced_count))
 
 
 def test_bom_line_from_calculator_line_carries_its_fields() -> None:
     line = BomLine(
-        item=Item.POST_CONCRETE,
-        name="Stup za betoniranje 125 cm",
-        quantity=11,
-        size="125 cm",
+        item=Item.BRACE_T_POST,
+        name="Potporni stup 100 cm",
+        quantity=4,
+        size="100 cm",
         unit_price_on_request=True,
         made_to_order=True,
         label="po narudžbi, 10–15 dana",
     )
     out = BomLineOut.from_line(line, unit_price=None)
     assert out.model_dump(mode="json") == {
-        "item": "post_concrete",
-        "name": "Stup za betoniranje 125 cm",
-        "size": "125 cm",
-        "quantity": 11,
+        "item": "brace_t_post",
+        "name": "Potporni stup 100 cm",
+        "size": "100 cm",
+        "quantity": 4,
         "unit_price": None,
         "line_total": None,
         "price_on_request": True,
@@ -258,9 +326,16 @@ def test_bom_line_from_calculator_line_prices_it() -> None:
     assert (out.unit_price, out.line_total, out.price_on_request) == ("1.50", "66.00", False)
 
 
+def test_calculator_line_with_sub_cent_price_rounds_before_multiplying() -> None:
+    # A price read from OLX or computed per metre can carry more than two decimals.
+    line = BomLine(item=Item.PVC_CLIP, name="Obujmica PVC", quantity=2)
+    out = BomLineOut.from_line(line, unit_price=Decimal("1.005"))
+    assert (out.unit_price, out.line_total) == ("1.01", "2.02")
+
+
 def test_on_request_calculator_line_never_shows_a_price() -> None:
     # fence-rules.md: an unconfirmed item shows "cijena na upit", even if a price exists.
-    line = BomLine(item=Item.POST_CONCRETE, name="Stup", quantity=2, unit_price_on_request=True)
+    line = BomLine(item=Item.BRACE_T_POST, name="Stup", quantity=2, unit_price_on_request=True)
     out = BomLineOut.from_line(line, unit_price=Decimal("20"))
     assert (out.unit_price, out.line_total, out.price_on_request) == (None, None, True)
 

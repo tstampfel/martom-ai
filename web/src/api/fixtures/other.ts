@@ -1,29 +1,32 @@
 // Replies that are not a fence materials list: a plain product question, a
-// failed reply and a rate-limited one. Listing ids, slugs and prices are
-// illustrative, not live catalogue data.
+// failed reply and a rate-limited one. Listing 36376333 and its slug are
+// recorded (tests/fixtures/olx); its prices are illustrative.
 
 import type { ChatEvent } from '../events'
 
-/** Reply to "Imate li španer za žicu?" (a non-fence product question). */
+/** Reply to "Imate li dugi katanac?" (a non-fence product question). */
 export const productQuestion: ChatEvent[] = [
-  { type: 'step', id: 'parse', text: 'Razumio: španer za žicu', status: 'done' },
+  { type: 'step', id: 'parse', text: 'Razumio: dugi katanac', status: 'done' },
   { type: 'step', id: 'search', text: 'Pregledao 6 proizvoda', status: 'done' },
-  { type: 'token', text: 'Imamo španer za zateznu žicu, ' },
-  { type: 'token', text: 'pocinčani, za žicu do 3,1 mm.' },
+  { type: 'token', text: 'Imamo dugi katanac, ' },
+  { type: 'token', text: 'u dvije veličine.' },
   {
     type: 'product_cards',
     cards: [
       {
-        listing_id: 18129143,
-        url: 'https://martom.olx.ba/artikal/spaner-za-zicu-18129143',
-        title: 'Španer za žicu',
-        subtitle: 'Pocinčani · za žicu do 3,1 mm',
-        why: 'Zateže žicu na ogradi u roli; jedan po žici na svakom zateznom stupu.',
+        listing_id: 36376333,
+        url: 'https://martom.olx.ba/artikal/katanac-dugi-5040-i-30mm-ibfm-36376333',
+        title: 'Katanac dugi 50/40 i 30 mm',
+        subtitle: 'IBFM',
+        why: 'Dugi luk prolazi kroz kapiju i lanac.',
         badge: null,
         photo_url: null,
-        price: '2.50',
+        price: '12.00',
         price_unit: 'kom',
-        variants: [],
+        variants: [
+          { label: '30 mm', price: '8.00' },
+          { label: '50/40 mm', price: '12.00' },
+        ],
       },
     ],
   },

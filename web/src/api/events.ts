@@ -14,24 +14,10 @@ export type Price = string
 
 export const CHAT_EVENT_TYPES = ['token', 'step', 'chips', 'product_cards', 'bom', 'error', 'done'] as const
 
-/** What a BOM line is (src/martom/bom/common.py, Item). */
-export const BOM_ITEMS = [
-  'panel',
-  'post_base_plate',
-  'post_concrete',
-  'pvc_clip',
-  'anchor_m8x80',
-  'roll_welded',
-  'post_t',
-  'post_foot_plate',
-  'brace_t_post',
-  'tensioner',
-  'tension_wire',
-  'wire_holder',
-  'anchor_m8x70',
-] as const
-
-export type BomItem = (typeof BOM_ITEMS)[number]
+// The closed sets of values; events.test.ts compares each with the schema.
+export const STEP_STATUSES = ['working', 'done', 'needs_input'] as const
+export const CHIP_KINDS = ['single', 'side_lengths'] as const
+export const ERROR_KINDS = ['rate_limited', 'invalid_request', 'internal'] as const
 
 /** A piece of the answer text; append it to the current message. */
 export interface TokenEvent {
@@ -44,7 +30,7 @@ export interface StepEvent {
   type: 'step'
   id: string
   text: string
-  status: 'working' | 'done' | 'needs_input'
+  status: (typeof STEP_STATUSES)[number]
 }
 
 export interface ChipOption {
@@ -61,7 +47,7 @@ export interface ChipQuestion {
   id: string
   text: string
   /** single: pick one option. side_lengths: one input (m) per side, no options. */
-  kind: 'single' | 'side_lengths'
+  kind: (typeof CHIP_KINDS)[number]
   options: ChipOption[]
 }
 
@@ -101,7 +87,8 @@ export interface ProductCardsEvent {
 }
 
 export interface BomLine {
-  item: BomItem
+  /** BOM item key, e.g. "panel". Use it as a key only; the set of items can change. */
+  item: string
   name: string
   size: string | null
   quantity: number
@@ -123,15 +110,20 @@ export interface BomEvent {
   title: string
   summary: string
   lines: BomLine[]
-  /** Sum of the priced lines; lines "na upit" are left out. */
-  total: Price
+  /**
+   * Sum of the priced lines; lines "na upit" are left out. null when every
+   * line is "na upit" (never a fake "0.00"): show "Ukupno: cijena na upit".
+   */
+  total: Price | null
+  /** How many lines are "na upit"; > 0 with a total: "+ 2 stavke na upit". */
+  unpriced_count: number
   notes: string[]
 }
 
 /** The reply failed. Show the copy for `kind`; a done event follows. */
 export interface ErrorEvent {
   type: 'error'
-  kind: 'rate_limited' | 'invalid_request' | 'internal'
+  kind: (typeof ERROR_KINDS)[number]
   /** Only for rate_limited: seconds until the customer may try again. */
   retry_after_seconds: number | null
 }

@@ -71,21 +71,16 @@ is shown on the chip and `note` under the question once the option is picked.
 ```json
 {
   "type": "chips",
-  "intro": "Još tri stvari:",
+  "intro": "Još dvije stvari:",
   "questions": [
     {
-      "id": "posts",
-      "text": "Gdje idu stupovi?",
+      "id": "color",
+      "text": "Koja boja?",
       "kind": "single",
       "options": [
-        {"value": "plate", "label": "Na beton, s pločicom", "badge": null, "note": null},
-        {
-          "value": "concrete",
-          "label": "U zemlju (betoniram)",
-          "badge": "po narudžbi, 10–15 dana",
-          "note": "Stupovi za betoniranje su po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami."
-        },
-        {"value": "unknown", "label": "Ne znam", "badge": null, "note": null}
+        {"value": "antracit", "label": "Antracit (RAL 7016)", "badge": null, "note": null},
+        {"value": "zelena", "label": "Zelena (RAL 6005)", "badge": null, "note": null},
+        {"value": "any", "label": "Svejedno", "badge": null, "note": null}
       ]
     },
     {"id": "sides", "text": "Dužina svake strane (m)", "kind": "side_lengths", "options": []}
@@ -127,45 +122,72 @@ price of the shown variant per `price_unit`; each variant has its own price.
 
 The materials list. Each line is what the BOM calculator (`src/martom/bom/`) produced,
 with its price from the database: `item` and `size` identify the product, `name` is the
-customer label. A line with `price_on_request: true` has no `unit_price` and no
-`line_total` ("cijena na upit"); `made_to_order: true` marks a "po narudžbi" line that Toni
-confirms, and `label` holds its status text.
+customer label. `item` is a BOM item key such as `panel`; it is a plain string in the
+schema (the backend checks it against `martom.bom.common.Item`), so adding or removing a
+BOM item doesn't change the contract. Use it only as a key.
 
-The models check two rules the JSON Schema cannot express: `line_total` is
-`unit_price × quantity`, and `total` is the sum of the priced lines (lines "na upit" are
-left out).
+A line with `price_on_request: true` has no `unit_price` and no `line_total` ("cijena na
+upit"); `made_to_order: true` marks a "po narudžbi" line that Toni
+confirms, and `label` holds its status text. The example is a shortened roll fence: the
+100 cm support T-post has no price yet ("cijena na upit"). Prices are illustrative.
+
+`total` is never a fake `"0.00"`; `unpriced_count` says how many lines are "na upit":
+
+| Lines | `total` | `unpriced_count` | UI (copy lands in #74/#27) |
+| --- | --- | --- | --- |
+| All priced | sum of the lines | `0` | "Ukupno: 905,10 KM" |
+| Some "na upit" | sum of the priced lines | number of "na upit" lines | "Ukupno: 905,10 KM + 2 stavke na upit" |
+| All "na upit" | `null` | number of lines | "Ukupno: cijena na upit"; adding to the cart and ordering still work |
+
+The models check rules the JSON Schema cannot express: `line_total` is
+`unit_price × quantity`, `price_on_request` is true exactly when a line has no prices,
+`total` is the sum of the priced lines (or `null` when there are none), and
+`unpriced_count` equals the number of `price_on_request` lines. `web/src/api/events.test.ts`
+checks the same rules on the fixtures.
 
 ```json
 {
   "type": "bom",
   "title": "Popis materijala",
-  "summary": "25 m · panel 153 cm · antracit",
+  "summary": "25 m · mreža u roli 100 cm · stupovi sa stopom",
   "lines": [
     {
-      "item": "panel",
-      "name": "Panel 153 × 250 cm, antracit",
-      "size": "153 × 250 cm",
-      "quantity": 10,
-      "unit_price": "53.00",
-      "line_total": "530.00",
+      "item": "roll_welded",
+      "name": "Varena ograda u roli 100 cm (25 m)",
+      "size": "100 cm",
+      "quantity": 1,
+      "unit_price": "58.00",
+      "line_total": "58.00",
       "price_on_request": false,
       "made_to_order": false,
       "label": null
     },
     {
-      "item": "post_concrete",
-      "name": "Stup za betoniranje 125 cm",
-      "size": "125 cm",
-      "quantity": 11,
+      "item": "post_foot_plate",
+      "name": "Stup sa stopom 100 cm",
+      "size": "100 cm",
+      "quantity": 14,
+      "unit_price": "14.00",
+      "line_total": "196.00",
+      "price_on_request": false,
+      "made_to_order": false,
+      "label": null
+    },
+    {
+      "item": "brace_t_post",
+      "name": "Potporni stup 100 cm",
+      "size": "100 cm",
+      "quantity": 2,
       "unit_price": null,
       "line_total": null,
       "price_on_request": true,
-      "made_to_order": true,
-      "label": "po narudžbi, 10–15 dana"
+      "made_to_order": false,
+      "label": null
     }
   ],
-  "total": "530.00",
-  "notes": ["Beton ne prodajemo, nabavljate ga sami."]
+  "total": "254.00",
+  "unpriced_count": 1,
+  "notes": ["Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."]
 }
 ```
 

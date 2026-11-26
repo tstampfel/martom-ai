@@ -18,11 +18,12 @@ calculator), never from the model. The endpoint itself lands with #21 [M4-4].
 
 import json
 import sys
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -37,7 +38,8 @@ from martom.bom.common import BomLine, Item
 SCHEMA_PATH = Path(__file__).parents[3] / "docs" / "api" / "chat-events.schema.json"
 
 CENT = Decimal("0.01")
-PRICE_PATTERN = r"^\d+\.\d{2}$"
+# [0-9], not \d: Python's \d also matches non-ASCII digits, which the browser rejects.
+PRICE_PATTERN = r"^[0-9]+\.[0-9]{2}$"
 # Every listing link opens on the shop subdomain; olx.ba/artikal/{id} does not open.
 LISTING_URL_PATTERN = r"^https://martom\.olx\.ba/artikal/[a-z0-9-]+$"
 
@@ -46,7 +48,17 @@ def format_price(amount: Decimal) -> str:
     """A Decimal amount in KM as the wire format: "53.00" (rounded half up to cents)."""
     if not amount.is_finite() or amount < 0:
         raise ValueError(f"a price must be a non-negative amount, got {amount}")
-    return str(amount.quantize(CENT, rounding=ROUND_HALF_UP))
+    return str(round_to_cents(amount))
+
+
+def round_to_cents(amount: Decimal) -> Decimal:
+    """Round half up to whole cents; ValueError when the amount is too large to round."""
+    try:
+        return amount.quantize(CENT, rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        # More digits than Decimal's precision (e.g. 1e30). Not a ValueError by itself,
+        # so pydantic would let it escape instead of reporting a ValidationError.
+        raise ValueError(f"price {amount} is too large") from None
 
 
 def _to_price(value: object) -> object:
@@ -59,8 +71,17 @@ def _to_price(value: object) -> object:
     return value
 
 
+def _known_item(value: str) -> str:
+    if value not in {item.value for item in Item}:
+        raise ValueError(f"{value!r} is not a BOM item")
+    return value
+
+
 # `Annotated[str, ...]` is a str with extra rules attached, much like a branded type in TS.
 Price = Annotated[str, BeforeValidator(_to_price), StringConstraints(pattern=PRICE_PATTERN)]
+# A BOM item key (martom.bom.common.Item). A plain string in the schema on purpose: the
+# frontend only uses it as a key, so adding or removing a BOM item changes no contract.
+BomItemKey = Annotated[str, AfterValidator(_known_item)]
 
 
 class _Event(BaseModel):
@@ -136,7 +157,7 @@ class Variant(_Event):
 
 
 class ProductCard(_Event):
-    listing_id: int
+    listing_id: int = Field(ge=1)
     url: str = Field(
         pattern=LISTING_URL_PATTERN,
         description="https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id.",
@@ -168,7 +189,7 @@ class ProductCardsEvent(_Event):
 class BomLineOut(_Event):
     """One line of the materials list, as the BOM calculator made it, with its price."""
 
-    item: Item
+    item: BomItemKey = Field(description="BOM item key, e.g. 'panel'; use it as a key only.")
     name: str
     size: str | None = None
     quantity: int = Field(ge=1)
@@ -198,9 +219,12 @@ class BomLineOut(_Event):
         if line.unit_price_on_request or unit_price is None:
             prices: dict[str, Any] = {"unit_price": None, "line_total": None}
         else:
-            prices = {"unit_price": unit_price, "line_total": unit_price * line.quantity}
+            # Round the unit price first (as the BOM shows it), then multiply, so the
+            # total always equals the shown price × quantity.
+            unit = round_to_cents(unit_price)
+            prices = {"unit_price": unit, "line_total": unit * line.quantity}
         return cls(
-            item=line.item,
+            item=line.item.value,
             name=line.name,
             size=line.size,
             quantity=line.quantity,
@@ -218,15 +242,28 @@ class BomEvent(_Event):
     title: str
     summary: str = Field(description="e.g. '25 m · panel 153 cm · antracit'.")
     lines: list[BomLineOut] = Field(min_length=1)
-    total: Price = Field(description="Sum of the priced lines; 'na upit' lines excluded.")
+    total: Price | None = Field(
+        description="Sum of the priced lines; null when every line is 'na upit' "
+        "(never a fake '0.00')."
+    )
+    unpriced_count: int = Field(ge=0, description="How many lines are 'na upit'.")
     notes: list[str] = Field(default_factory=list, description="Extra notes in Bosnian.")
 
     @model_validator(mode="after")
-    def _total_is_sum(self) -> Self:
-        priced = (Decimal(line.line_total) for line in self.lines if line.line_total)
-        expected = format_price(sum(priced, Decimal(0)))
+    def _total_matches_lines(self) -> Self:
+        on_request = sum(1 for line in self.lines if line.price_on_request)
+        if self.unpriced_count != on_request:
+            raise ValueError(
+                f"unpriced_count {self.unpriced_count} must be the number of "
+                f"price_on_request lines, {on_request}"
+            )
+        priced = [Decimal(line.line_total) for line in self.lines if line.line_total]
+        expected = format_price(sum(priced, Decimal(0))) if priced else None
         if self.total != expected:
-            raise ValueError(f"total {self.total} must be the sum of line totals, {expected}")
+            raise ValueError(
+                f"total {self.total} must be {expected}: the sum of the priced lines, "
+                "or null when every line is price_on_request"
+            )
         return self
 
 
