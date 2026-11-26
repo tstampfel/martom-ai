@@ -154,7 +154,7 @@ def parse_retry_after(value: str | None, *, now: datetime) -> float | None:
 
 
 class OlxClient:
-    """Async client for the two OLX endpoints we use.
+    """Async client for the OLX endpoints we use.
 
     Use it as an async context manager so the connection pool is closed:
 
@@ -224,9 +224,21 @@ class OlxClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
+    async def get_shop(self) -> Any:
+        """GET /users/{shop}: the shop's public profile (its numeric id is `data.id`)."""
+        return await self._get(f"/users/{self._shop_username}")
+
     async def get_shop_listings(self, params: Mapping[str, str | int] | None = None) -> Any:
-        """GET /users/{shop}/listings with query params passed through (paging is M1-2)."""
+        """GET /users/{shop}/listings with query params passed through (paging: `olx.sync`)."""
         return await self._get(f"/users/{self._shop_username}/listings", params=params)
+
+    async def search_listings(self, params: Mapping[str, str | int] | None = None) -> Any:
+        """GET /search with query params passed through.
+
+        With `user_id` it returns `aggregations.categories`: the shop's categories and
+        their listing counts, which `olx.sync` uses for category discovery.
+        """
+        return await self._get("/search", params=params)
 
     async def get_listing(self, listing_id: int) -> Any:
         """GET /listings/{id}: one listing's details (parsing them is M1-3)."""

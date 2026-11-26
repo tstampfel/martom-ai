@@ -1,0 +1,1296 @@
+{
+ "_about": "Recorded from the public OLX.ba API on 26 Nov 2026 (no token), trimmed for M1-2 tests. Listing rows keep only id, category_id, top_category_id and pinned. plain_pagination: GET /users/martom/listings?per_page=20&page=N without category_id; the full run of 129 pages returned the totals in plain_pagination_full_run. search_aggregation: GET /search?user_id=<shop id>&per_page=1, aggregations.categories (sub_categories are capped at 20 per top category by OLX).",
+ "plain_pagination_full_run": {
+  "pages": 129,
+  "rows": 2585,
+  "unique_ids": 996,
+  "meta_total": 2578
+ },
+ "plain_pagination": {
+  "7": {
+   "meta": {
+    "total": 2578,
+    "last_page": 129,
+    "current_page": 7,
+    "per_page": 20,
+    "selected_category": 0
+   },
+   "data": [
+    {
+     "id": 34560428,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 47879894,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 25445604,
+     "category_id": 1128,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 25566667,
+     "category_id": 1837,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 40007464,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 32498542,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 46160106,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 47879423,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 32498533,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 32575593,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 76220690,
+     "category_id": 799,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 68281390,
+     "category_id": 834,
+     "top_category_id": "14",
+     "pinned": null
+    },
+    {
+     "id": 33276447,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 18940861,
+     "category_id": 834,
+     "top_category_id": "14",
+     "pinned": null
+    },
+    {
+     "id": 40007482,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 71537642,
+     "category_id": 1985,
+     "top_category_id": "14",
+     "pinned": null
+    },
+    {
+     "id": 32847695,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 38630030,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 51621859,
+     "category_id": 2011,
+     "top_category_id": "14",
+     "pinned": null
+    },
+    {
+     "id": 32569311,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    }
+   ]
+  },
+  "8": {
+   "meta": {
+    "total": 2578,
+    "last_page": 129,
+    "current_page": 8,
+    "per_page": 20,
+    "selected_category": 0
+   },
+   "data": [
+    {
+     "id": 32569311,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 32516705,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 47879896,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 27025870,
+     "category_id": 2359,
+     "top_category_id": "208",
+     "pinned": null
+    },
+    {
+     "id": 38918568,
+     "category_id": 1837,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 43992918,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 52850104,
+     "category_id": 1837,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 72354889,
+     "category_id": 881,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 34560068,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 25596134,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 53724439,
+     "category_id": 2359,
+     "top_category_id": "208",
+     "pinned": null
+    },
+    {
+     "id": 34002874,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 38922338,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 44985374,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 32527454,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 59510065,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 50043426,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 33715432,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 45367391,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 45212645,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    }
+   ]
+  },
+  "49": {
+   "meta": {
+    "total": 2578,
+    "last_page": 129,
+    "current_page": 49,
+    "per_page": 20,
+    "selected_category": 0
+   },
+   "data": [
+    {
+     "id": 27255965,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 41002357,
+     "category_id": 1126,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 31905909,
+     "category_id": 1128,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 36042897,
+     "category_id": 1103,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 45368044,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 77722380,
+     "category_id": 876,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 66972119,
+     "category_id": 1103,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 55066609,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 45366920,
+     "category_id": 1103,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 43992639,
+     "category_id": 1103,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 77636309,
+     "category_id": 1180,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 43992645,
+     "category_id": 1103,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 77574747,
+     "category_id": 876,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 77636103,
+     "category_id": 370,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 53420823,
+     "category_id": 2594,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 57724254,
+     "category_id": 783,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 77723561,
+     "category_id": 876,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 77723318,
+     "category_id": 876,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 30779415,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 30779387,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    }
+   ]
+  },
+  "50": {
+   "meta": {
+    "total": 2578,
+    "last_page": 129,
+    "current_page": 50,
+    "per_page": 20,
+    "selected_category": 0
+   },
+   "data": [
+    {
+     "id": 30779364,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 30779342,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 69294875,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 67301878,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 75498210,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 45212431,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80293503,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293396,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293541,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293602,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80287944,
+     "category_id": 656,
+     "top_category_id": "208",
+     "pinned": null
+    },
+    {
+     "id": 64143815,
+     "category_id": 1706,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80292723,
+     "category_id": 813,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80292834,
+     "category_id": 2405,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293112,
+     "category_id": 2137,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 48798137,
+     "category_id": 2464,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 19180994,
+     "category_id": 2464,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 79477960,
+     "category_id": 731,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 63997059,
+     "category_id": 752,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 64143691,
+     "category_id": 752,
+     "top_category_id": "701",
+     "pinned": null
+    }
+   ]
+  },
+  "51": {
+   "meta": {
+    "total": 2578,
+    "last_page": 129,
+    "current_page": 50,
+    "per_page": 20,
+    "selected_category": 0
+   },
+   "data": [
+    {
+     "id": 30779364,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 30779342,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 69294875,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 67301878,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 75498210,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 45212431,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80293503,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293396,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293541,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293602,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80287944,
+     "category_id": 656,
+     "top_category_id": "208",
+     "pinned": null
+    },
+    {
+     "id": 64143815,
+     "category_id": 1706,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80292723,
+     "category_id": 813,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80292834,
+     "category_id": 2405,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293112,
+     "category_id": 2137,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 48798137,
+     "category_id": 2464,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 19180994,
+     "category_id": 2464,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 79477960,
+     "category_id": 731,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 63997059,
+     "category_id": 752,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 64143691,
+     "category_id": 752,
+     "top_category_id": "701",
+     "pinned": null
+    }
+   ]
+  },
+  "129": {
+   "meta": {
+    "total": 2578,
+    "last_page": 129,
+    "current_page": 50,
+    "per_page": 20,
+    "selected_category": 0
+   },
+   "data": [
+    {
+     "id": 30779364,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 30779342,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 69294875,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 67301878,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 75498210,
+     "category_id": 803,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 45212431,
+     "category_id": 2399,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80293503,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293396,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293541,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293602,
+     "category_id": 2091,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80287944,
+     "category_id": 656,
+     "top_category_id": "208",
+     "pinned": null
+    },
+    {
+     "id": 64143815,
+     "category_id": 1706,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80292723,
+     "category_id": 813,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 80292834,
+     "category_id": 2405,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 80293112,
+     "category_id": 2137,
+     "top_category_id": "224",
+     "pinned": null
+    },
+    {
+     "id": 48798137,
+     "category_id": 2464,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 19180994,
+     "category_id": 2464,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 79477960,
+     "category_id": 731,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 63997059,
+     "category_id": 752,
+     "top_category_id": "701",
+     "pinned": null
+    },
+    {
+     "id": 64143691,
+     "category_id": 752,
+     "top_category_id": "701",
+     "pinned": null
+    }
+   ]
+  }
+ },
+ "search_aggregation": {
+  "meta": {
+   "total": 2578,
+   "last_page": 2578,
+   "current_page": 1,
+   "per_page": 1,
+   "selected_category": 0
+  },
+  "categories": [
+   {
+    "id": 224,
+    "name": "Biznis i Industrija",
+    "count": 1556,
+    "sub_categories": [
+     {
+      "id": 1126,
+      "name": "Građevinski ručni alati",
+      "count": 492
+     },
+     {
+      "id": 1103,
+      "name": "Ručni alati za poljoprivredu",
+      "count": 85
+     },
+     {
+      "id": 2091,
+      "name": "Kliješta",
+      "count": 75
+     },
+     {
+      "id": 1837,
+      "name": "Gedore i ključevi",
+      "count": 63
+     },
+     {
+      "id": 2137,
+      "name": "Dijelovi za mašine i alate",
+      "count": 56
+     },
+     {
+      "id": 2650,
+      "name": "Rezne i brusne ploče",
+      "count": 56
+     },
+     {
+      "id": 1577,
+      "name": "Bušilice",
+      "count": 47
+     },
+     {
+      "id": 1797,
+      "name": "Ekseri, šarafi i matice",
+      "count": 46
+     },
+     {
+      "id": 1953,
+      "name": "Boreri/Burgije",
+      "count": 37
+     },
+     {
+      "id": 1543,
+      "name": "Razni alati",
+      "count": 25
+     },
+     {
+      "id": 1188,
+      "name": "Ostalo",
+      "count": 24
+     },
+     {
+      "id": 1578,
+      "name": "Brusilice",
+      "count": 24
+     },
+     {
+      "id": 2533,
+      "name": "Šarafcigeri/Odvijači",
+      "count": 24
+     },
+     {
+      "id": 1128,
+      "name": "Ostala građevinska oprema",
+      "count": 23
+     },
+     {
+      "id": 1125,
+      "name": "Mjerni instrumenti",
+      "count": 20
+     },
+     {
+      "id": 1120,
+      "name": "Ostalo",
+      "count": 19
+     },
+     {
+      "id": 1919,
+      "name": "Oprema za zaštitu ruku",
+      "count": 18
+     },
+     {
+      "id": 1097,
+      "name": "Ostalo",
+      "count": 17
+     },
+     {
+      "id": 2534,
+      "name": "Pneumatski alati",
+      "count": 17
+     },
+     {
+      "id": 1179,
+      "name": "Za obradu keramike i stakla",
+      "count": 14
+     }
+    ]
+   },
+   {
+    "id": 701,
+    "name": "Moj dom",
+    "count": 856,
+    "sub_categories": [
+     {
+      "id": 876,
+      "name": "Oprema/pribor za stolariju",
+      "count": 160
+     },
+     {
+      "id": 813,
+      "name": "Sigurnosne brave",
+      "count": 100
+     },
+     {
+      "id": 2565,
+      "name": "Repromaterijal za namještaj",
+      "count": 93
+     },
+     {
+      "id": 1717,
+      "name": "Vodoinstalacije i oprema",
+      "count": 52
+     },
+     {
+      "id": 2464,
+      "name": "Oprema za grijanje i ventilaciju",
+      "count": 42
+     },
+     {
+      "id": 2597,
+      "name": "Kvake, štitovi, ručke",
+      "count": 41
+     },
+     {
+      "id": 881,
+      "name": "Ograde",
+      "count": 35
+     },
+     {
+      "id": 2594,
+      "name": "Poštanska sandučad",
+      "count": 31
+     },
+     {
+      "id": 803,
+      "name": "Pribor i alat za vrt",
+      "count": 28
+     },
+     {
+      "id": 802,
+      "name": "Sistemi za navodnjavanje",
+      "count": 24
+     },
+     {
+      "id": 2567,
+      "name": "Vješalice",
+      "count": 24
+     },
+     {
+      "id": 2399,
+      "name": "Česme za kuhinju",
+      "count": 23
+     },
+     {
+      "id": 791,
+      "name": "Metle",
+      "count": 13
+     },
+     {
+      "id": 2397,
+      "name": "Česme za kupatilo",
+      "count": 13
+     },
+     {
+      "id": 783,
+      "name": "Ostalo",
+      "count": 10
+     },
+     {
+      "id": 799,
+      "name": "Vrtni namještaj",
+      "count": 10
+     },
+     {
+      "id": 868,
+      "name": "Ostalo",
+      "count": 10
+     },
+     {
+      "id": 752,
+      "name": "Zidne dekoracije i tapete",
+      "count": 9
+     },
+     {
+      "id": 797,
+      "name": "Kosilice i Trimeri za vrt",
+      "count": 9
+     },
+     {
+      "id": 800,
+      "name": "Roštilji i ražnjevi",
+      "count": 9
+     }
+    ]
+   },
+   {
+    "id": 208,
+    "name": "Životinje",
+    "count": 93,
+    "sub_categories": [
+     {
+      "id": 673,
+      "name": "Oprema/pribor za pse",
+      "count": 48
+     },
+     {
+      "id": 656,
+      "name": "Hrana i oprema",
+      "count": 16
+     },
+     {
+      "id": 2359,
+      "name": "Košnice i oprema za pčelarstvo",
+      "count": 7
+     },
+     {
+      "id": 1727,
+      "name": "Zaštite od životinja",
+      "count": 6
+     },
+     {
+      "id": 388,
+      "name": "Ostalo",
+      "count": 5
+     },
+     {
+      "id": 671,
+      "name": "Kućice za pse",
+      "count": 5
+     },
+     {
+      "id": 674,
+      "name": "Igračke za pse",
+      "count": 2
+     },
+     {
+      "id": 645,
+      "name": "Ostalo",
+      "count": 1
+     },
+     {
+      "id": 670,
+      "name": "Hrana za pse",
+      "count": 1
+     },
+     {
+      "id": 679,
+      "name": "Oprema i pribor za mačke",
+      "count": 1
+     },
+     {
+      "id": 1739,
+      "name": "Kavezi za kokoške",
+      "count": 1
+     }
+    ]
+   },
+   {
+    "id": 14,
+    "name": "Tehnika",
+    "count": 46,
+    "sub_categories": [
+     {
+      "id": 1839,
+      "name": "Produžni strujni kablovi",
+      "count": 12
+     },
+     {
+      "id": 1979,
+      "name": "Vage",
+      "count": 6
+     },
+     {
+      "id": 2136,
+      "name": "Dijelovi za veš mašine i sušilice",
+      "count": 6
+     },
+     {
+      "id": 1988,
+      "name": "Pomična mjerila/Šubleri",
+      "count": 3
+     },
+     {
+      "id": 834,
+      "name": "Kuhala za vodu i filteri",
+      "count": 2
+     },
+     {
+      "id": 1985,
+      "name": "Manometri",
+      "count": 2
+     },
+     {
+      "id": 2011,
+      "name": "Termometri",
+      "count": 2
+     },
+     {
+      "id": 2135,
+      "name": "Dijelovi za kuhinjske aparate",
+      "count": 2
+     },
+     {
+      "id": 2556,
+      "name": "Lupe/povećala",
+      "count": 2
+     },
+     {
+      "id": 250,
+      "name": "Ostalo",
+      "count": 1
+     },
+     {
+      "id": 1840,
+      "name": "Utičnice i prekidači",
+      "count": 1
+     },
+     {
+      "id": 1841,
+      "name": "Utikači i razdjelnici",
+      "count": 1
+     },
+     {
+      "id": 1843,
+      "name": "Električni osigurači",
+      "count": 1
+     },
+     {
+      "id": 1984,
+      "name": "Multimetri",
+      "count": 1
+     },
+     {
+      "id": 1986,
+      "name": "Ispravljači/Pretvarači",
+      "count": 1
+     },
+     {
+      "id": 2575,
+      "name": "Baterije i punjači",
+      "count": 1
+     },
+     {
+      "id": 2621,
+      "name": "Bužiri i kanalice",
+      "count": 1
+     },
+     {
+      "id": 2637,
+      "name": "Redne stezaljke i stopice",
+      "count": 1
+     }
+    ]
+   },
+   {
+    "id": 171,
+    "name": "Sportska oprema",
+    "count": 15,
+    "sub_categories": [
+     {
+      "id": 1822,
+      "name": "Karabineri i zakačke",
+      "count": 3
+     },
+     {
+      "id": 1238,
+      "name": "Lovački noževi",
+      "count": 2
+     },
+     {
+      "id": 1278,
+      "name": "Ostala kamp oprema",
+      "count": 2
+     },
+     {
+      "id": 1293,
+      "name": "Vreće za boks",
+      "count": 2
+     },
+     {
+      "id": 348,
+      "name": "Oprema za ostale vanjske sportove",
+      "count": 1
+     },
+     {
+      "id": 1257,
+      "name": "Lampe za ribolov",
+      "count": 1
+     },
+     {
+      "id": 1272,
+      "name": "Lampe za kampovanje",
+      "count": 1
+     },
+     {
+      "id": 1829,
+      "name": "Planinarske hlače",
+      "count": 1
+     },
+     {
+      "id": 1834,
+      "name": "Airsoft odjeća/zaštita",
+      "count": 1
+     },
+     {
+      "id": 2521,
+      "name": "Kutije za ribolovni pribor",
+      "count": 1
+     }
+    ]
+   },
+   {
+    "id": 465,
+    "name": "Odjeća i obuća",
+    "count": 4,
+    "sub_categories": [
+     {
+      "id": 502,
+      "name": "Privjesci za ključeve",
+      "count": 2
+     },
+     {
+      "id": 500,
+      "name": "Kape, šeširi, kačketi",
+      "count": 1
+     },
+     {
+      "id": 628,
+      "name": "Odjeća",
+      "count": 1
+     }
+    ]
+   },
+   {
+    "id": 283,
+    "name": "Igre i igračke",
+    "count": 1,
+    "sub_categories": [
+     {
+      "id": 295,
+      "name": "Ostale igračke",
+      "count": 1
+     }
+    ]
+   },
+   {
+    "id": 328,
+    "name": "Sve ostalo",
+    "count": 1,
+    "sub_categories": [
+     {
+      "id": 369,
+      "name": "Ostalo",
+      "count": 1
+     }
+    ]
+   },
+   {
+    "id": 928,
+    "name": "Dijelovi za vozila",
+    "count": 1,
+    "sub_categories": [
+     {
+      "id": 1627,
+      "name": "Zaštita i Sigurnost za bicikle",
+      "count": 1
+     }
+    ]
+   }
+  ]
+ }
+}

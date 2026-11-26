@@ -120,6 +120,30 @@ async def test_get_listing_calls_the_detail_endpoint() -> None:
     assert server.requests[0].url.path == "/listings/63996799"
 
 
+async def test_get_shop_calls_the_shop_profile_endpoint() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [ok({"data": {"id": 17193, "username": "Martom"}})])
+
+    async with make_client(clock, server) as client:
+        body = await client.get_shop()
+
+    assert body == {"data": {"id": 17193, "username": "Martom"}}
+    assert server.requests[0].url.path == "/users/martom"
+
+
+async def test_search_listings_calls_the_search_endpoint_with_params() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [ok({"data": [], "meta": {"total": 0}, "aggregations": {}})])
+
+    async with make_client(clock, server) as client:
+        await client.search_listings({"user_id": 17193, "per_page": 1})
+
+    request = server.requests[0]
+    assert request.url.path == "/search"
+    assert request.url.params["user_id"] == "17193"
+    assert request.url.params["per_page"] == "1"
+
+
 async def test_base_url_and_shop_username_are_configurable() -> None:
     clock = FakeClock()
     server = Recorder(clock, [ok()])
