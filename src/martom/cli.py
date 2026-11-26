@@ -96,9 +96,11 @@ def make_olx_client(settings: Settings) -> OlxClient:
 
 
 def run_sync_command(*, full: bool = False, apply_skipped: int | None = None) -> int:
-    """`martom sync [--full | --apply-skipped RUN_ID]`: exit 0 on success, 1 on failure.
+    """`martom sync [--full | --apply-skipped RUN_ID]`.
 
-    A non-zero exit makes the scheduled task (M6-1) show as failed.
+    Exit 0 for a clean run ('succeeded'), 1 when it broke ('failed'), 2 when it worked but
+    was 'partial' or 'skipped_guard'. Any non-zero exit makes the scheduled task (M6-1)
+    show as failed; `sync_run.status` says which case it was.
     """
     try:
         settings = Settings()
@@ -122,7 +124,9 @@ def run_sync_command(*, full: bool = False, apply_skipped: int | None = None) ->
     except Exception:
         logger.exception("sync run (%s) crashed", kind)
         return 1
-    return 0 if stats.status == "succeeded" else 1
+    if stats.status == "succeeded":
+        return 0
+    return 1 if stats.status == "failed" else 2  # 2: partial or skipped_guard
 
 
 def run_api(host: str, port: int, *, reload: bool) -> int:

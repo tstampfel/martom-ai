@@ -24,6 +24,7 @@ from martom.olx.job import (
     apply_skipped_run,
     deactivation_allowed,
     recheck_allowed,
+    run_outcome,
     run_sync,
 )
 
@@ -381,7 +382,7 @@ async def test_incomplete_coverage_checks_and_deactivates_nothing(
     assert (await listings(conn))[10]["active"] is True
     assert 10 not in server.detail_requests()
     run = await last_run(conn)
-    assert run["status"] == "succeeded"
+    assert run["status"] == "partial"
     assert run["deactivation_candidates"] == 0
     assert float(run["coverage"]) < 1.0
 
@@ -456,13 +457,42 @@ async def test_more_than_ten_percent_deactivates_nothing_and_records_the_skip(
     assert stored[9]["active"] is True
     assert stored[10]["active"] is True
     run = await last_run(conn)
-    assert run["status"] == "succeeded"
+    assert run["status"] == "skipped_guard"
     assert run["deactivated"] == 0
     assert run["deactivation_skipped"] is True
     assert run["would_deactivate"] == 2
     assert run["skipped_listing_ids"] == [9, 10]
     assert stats.deactivation_skipped is True
     assert any("deactivation skipped" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    ("coverage", "deactivation_skipped", "recheck_skipped", "expected"),
+    [
+        (1.0, False, False, "succeeded"),
+        (1.2, False, False, "succeeded"),  # saw more than OLX reports: still complete
+        (0.99, False, False, "partial"),
+        (0.0, False, False, "partial"),  # OLX reported an empty shop
+        (1.0, True, False, "skipped_guard"),
+        (1.0, False, True, "skipped_guard"),
+        (None, False, False, "succeeded"),  # --apply-skipped has no coverage
+        (None, False, True, "skipped_guard"),
+        # Precedence: a guard skip outranks partial coverage (documented in migration 002).
+        (0.5, True, False, "skipped_guard"),
+        (0.5, False, True, "skipped_guard"),
+    ],
+)
+def test_run_outcome_and_its_precedence(
+    coverage: float | None, deactivation_skipped: bool, recheck_skipped: bool, expected: str
+) -> None:
+    stats = RunStats(
+        kind="nightly",
+        coverage=coverage,
+        deactivation_skipped=deactivation_skipped,
+        recheck_skipped=recheck_skipped,
+    )
+
+    assert run_outcome(stats) == expected
 
 
 # --- Rate-limit aborts ------------------------------------------------------------------
@@ -548,6 +578,7 @@ async def trip_guard(conn: psycopg.AsyncConnection, server: FakeShop, gone: set[
     await sync(conn, server)
     run = await last_run(conn)
     assert run["deactivation_skipped"] is True, run
+    assert run["status"] == "skipped_guard"
     return int(run["id"])
 
 
@@ -628,6 +659,7 @@ async def test_more_than_20_percent_recheck_failures_applies_nothing(
     stored = await listings(conn)
     assert all(stored[i]["active"] is True for i in (26, 27, 28, 29, 30))
     run = await last_run(conn)
+    assert run["status"] == "skipped_guard"
     assert run["deactivated"] == 0
     assert run["recheck_skipped"] is True
     assert any("re-check failed" in r.getMessage() for r in caplog.records)
@@ -664,6 +696,7 @@ async def test_auto_apply_after_two_consecutive_trips_uses_only_the_intersection
     assert {9, 10} <= set(server.detail_requests())  # re-checked with a GET first
     run = await last_run(conn)
     assert run["deactivated"] == 2
+    assert run["status"] == "skipped_guard"  # 6 and 7 tripped the 10% guard
     assert run["applied_run_ids"] == [second, first]
     assert run["deactivation_skipped"] is True
     assert run["skipped_listing_ids"] == [6, 7]
@@ -726,6 +759,7 @@ async def test_auto_apply_with_too_many_recheck_failures_applies_nothing(
     stored = await listings(conn)
     assert all(stored[i]["active"] is True for i in (8, 9, 10))
     run = await last_run(conn)
+    assert run["status"] == "skipped_guard"
     assert run["recheck_skipped"] is True
     assert run["deactivated"] == 0
 
@@ -778,3 +812,10 @@ def test_cli_sync_exits_non_zero_when_olx_aborts(cli_env: FakeShop, db: str) -> 
 def test_cli_apply_skipped_exits_non_zero_for_an_unknown_run(cli_env: FakeShop, db: str) -> None:
     assert cli.main(["sync", "--apply-skipped", "12345"]) == 1
     assert cli_runs(db) == [("apply_skipped", "failed")]
+
+
+def test_cli_sync_exits_two_for_a_partial_run(cli_env: FakeShop, db: str) -> None:
+    cli_env.hidden = 1  # coverage < 100%
+
+    assert cli.main(["sync"]) == 2
+    assert cli_runs(db) == [("nightly", "partial")]

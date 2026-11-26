@@ -17,7 +17,9 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
    - the confirmed ones are at most 10% of the active listings (`deactivation_allowed`).
      Above that the run deactivates none, logs an ERROR and records the skip, with the
      ids, in `sync_run` (`deactivation_skipped`, `skipped_listing_ids`).
-6. Write the stats and 'succeeded' to the `sync_run` row.
+6. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
+   'partial' below 100% coverage, 'skipped_guard' when a guard skipped deactivation
+   (`run_outcome`), 'failed' when the run broke.
 
 Getting a real large removal past the 10% guard:
 
@@ -25,7 +27,8 @@ Getting a real large removal past the 10% guard:
   guard, this run deactivates the ids flagged in both of them, if they are still
   candidates now and its own re-check confirms them, without the 10% guard. If the
   re-check fails for more than 20% of those ids, it applies none of them and flags the
-  run (`recheck_skipped`). The remaining confirmed ids go through the 10% guard as usual.
+  run (`recheck_skipped`, status 'skipped_guard'). The remaining confirmed ids go through
+  the 10% guard as usual.
 - **Manual:** `martom sync --apply-skipped <run id>` (`apply_skipped_run`) re-checks the
   ids stored for that skipped run and deactivates the confirmed ones, with the same
   per-listing rules and the same 20% re-check guard. It is its own `sync_run`
@@ -53,7 +56,7 @@ from martom.olx.sync import OlxResponseError, SyncResult, deactivation_candidate
 logger = logging.getLogger(__name__)
 
 RunKind = Literal["nightly", "full", "apply_skipped"]
-RunStatus = Literal["succeeded", "failed"]
+RunStatus = Literal["succeeded", "partial", "skipped_guard", "failed"]
 GoneReason = Literal["404", "inactive", "not_martom"]
 
 # At most this share of the active listings may be deactivated in one run (10% guard).
@@ -99,6 +102,19 @@ def deactivation_allowed(would_deactivate: int, active_count: int) -> bool:
     Integer math, so 1 of 10 is not lost to float rounding.
     """
     return would_deactivate * 100 <= active_count * MAX_DEACTIVATION_PERCENT
+
+
+def run_outcome(stats: "RunStats") -> RunStatus:
+    """The status of a run that didn't break (see the `sync_run.status` comment in 002).
+
+    Precedence: skipped_guard > partial > succeeded ('failed' is set by the caller when
+    the run breaks). `coverage` is None for `--apply-skipped`, which pages nothing.
+    """
+    if stats.deactivation_skipped or stats.recheck_skipped:
+        return "skipped_guard"
+    if stats.coverage is not None and stats.coverage < 1:
+        return "partial"
+    return "succeeded"
 
 
 def recheck_allowed(failures: int, total: int) -> bool:
@@ -242,7 +258,7 @@ async def apply_skipped_run(
 
     Only those ids, never a fresh list. Each is re-checked with GET /listings/{id}; only
     the confirmed ones are deactivated. More than 20% re-check failures apply nothing and
-    fail the run, so the CLI exits 1 and it can be tried again later.
+    end the run as 'skipped_guard', so it can be tried again later.
     """
 
     async def apply(stats: RunStats) -> None:
@@ -254,10 +270,8 @@ async def apply_skipped_run(
         recheck = await recheck_listings(olx, ids, await shop_id(olx))
         stats.errors = len(recheck.errors)
         if not recheck_allowed(len(recheck.errors), len(ids)):
-            _flag_recheck_failure(stats, recheck, ids)
-            raise _RunFailedError(
-                f"re-check failed for {len(recheck.errors)} of {len(ids)} listings; nothing applied"
-            )
+            _flag_recheck_failure(stats, recheck, ids)  # status becomes skipped_guard
+            return
         await _deactivate(conn, recheck.gone, stats, trigger=f"applying run {skipped_run_id}")
 
     return await _recorded(conn, "apply_skipped", apply)
@@ -278,7 +292,7 @@ async def _recorded(
     logger.info("sync run %d (%s) started", stats.run_id, kind)
     try:
         await body(stats)
-        stats.status = "succeeded"
+        stats.status = run_outcome(stats)
     except (OlxApiError, _RunFailedError) as exc:  # OLX errors include the rate-limit abort
         stats.status = "failed"
         stats.error = str(exc)
@@ -425,6 +439,7 @@ __all__ = [
     "deactivation_allowed",
     "recheck_allowed",
     "recheck_listings",
+    "run_outcome",
     "run_sync",
     "shop_id",
 ]

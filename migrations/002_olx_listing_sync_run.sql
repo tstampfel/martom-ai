@@ -45,8 +45,19 @@ CREATE TABLE IF NOT EXISTS sync_run (
     id                      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     kind                    text NOT NULL CONSTRAINT sync_run_kind_check
                                 CHECK (kind IN ('nightly', 'full', 'apply_skipped')),
+    -- How the run ended. The freshness alert (M6-3) fires on anything but 'succeeded'.
+    --   running       the run is in progress (or crashed hard: no finished_at)
+    --   succeeded     a clean run: 100% coverage, no guard tripped
+    --   partial       coverage < 100%, so nothing was deactivated
+    --   skipped_guard the 10% guard or the 20% re-check guard skipped deactivation
+    --   failed        the run broke (OLX rate-limit abort, OLX or database error)
+    -- Precedence when several apply: failed > skipped_guard > partial > succeeded.
+    -- (A guard needs deactivation candidates, which need 100% coverage, so a sync run
+    -- can't really be both partial and skipped_guard; the order is fixed anyway.)
     status                  text NOT NULL DEFAULT 'running' CONSTRAINT sync_run_status_check
-                                CHECK (status IN ('running', 'succeeded', 'failed')),
+                                CHECK (status IN (
+                                    'running', 'succeeded', 'partial', 'skipped_guard', 'failed'
+                                )),
     started_at              timestamptz NOT NULL DEFAULT now(),
     finished_at             timestamptz,
     shop_total              integer,                 -- listings OLX reports for the shop
