@@ -19,6 +19,7 @@ from martom.olx.client import (
     OlxApiError,
     OlxClient,
     OlxRateLimitAbortError,
+    OlxRunDeadlineError,
     RateLimiter,
     parse_retry_after,
 )
@@ -169,7 +170,7 @@ async def test_first_request_does_not_wait() -> None:
     assert clock.sleeps == []
 
 
-async def test_sequential_requests_start_at_least_1_3_seconds_apart() -> None:
+async def test_sequential_requests_start_2_seconds_apart_by_default() -> None:
     clock = FakeClock()
     server = Recorder(clock, [ok()])
 
@@ -177,7 +178,8 @@ async def test_sequential_requests_start_at_least_1_3_seconds_apart() -> None:
         for listing_id in range(4):
             await client.get_listing(listing_id)
 
-    assert gaps(server.starts) == [1.3, 1.3, 1.3]
+    assert gaps(server.starts) == [2.0, 2.0, 2.0]
+    assert client.request_interval == 2.0
 
 
 async def test_concurrent_callers_share_the_limit() -> None:
@@ -188,7 +190,7 @@ async def test_concurrent_callers_share_the_limit() -> None:
         await asyncio.gather(*(client.get_listing(i) for i in range(5)))
 
     assert len(server.starts) == 5
-    assert gaps(server.starts) == [1.3, 1.3, 1.3, 1.3]
+    assert gaps(server.starts) == [2.0, 2.0, 2.0, 2.0]
 
 
 async def test_no_wait_when_enough_time_already_passed() -> None:
@@ -254,6 +256,75 @@ async def test_two_clients_can_share_one_limiter() -> None:
     assert gaps(server.starts) == [1.3]
 
 
+# --- Adaptive interval and run deadline -------------------------------------------------
+
+
+async def test_each_429_raises_the_interval_by_half_up_to_6_seconds(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    too_many = httpx.Response(429, headers={"Retry-After": "0"})
+    server = Recorder(clock, [too_many, ok(), too_many, ok(), too_many, ok(), too_many, ok()])
+    intervals = []
+
+    async with make_client(clock, server) as client:
+        for listing_id in range(4):
+            await client.get_listing(listing_id)
+            intervals.append(client.request_interval)
+
+    assert intervals == [3.0, 4.5, 6.0, 6.0]
+    assert "request interval raised to 3.0 s" in caplog.text
+
+
+async def test_5xx_does_not_raise_the_interval() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(503), ok()])
+
+    async with make_client(clock, server) as client:
+        await client.get_listing(1)
+
+    assert client.request_interval == 2.0
+
+
+async def test_retry_after_up_to_an_hour_is_waited_by_default() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "2298"}), ok({"id": 1})])
+
+    async with make_client(clock, server) as client:
+        body = await client.get_listing(1)
+
+    assert body == {"id": 1}
+    assert gaps(server.starts) == [2298.0]
+
+
+async def test_run_deadline_stops_before_a_wait_that_would_pass_it() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "600"}), ok()])
+
+    async with make_client(clock, server, run_deadline_seconds=300.0) as client:
+        with pytest.raises(OlxRunDeadlineError) as caught:
+            await client.get_listing(1)
+        with pytest.raises(OlxRateLimitAbortError):
+            await client.get_listing(2)  # stopped for good, no request sent
+
+    assert isinstance(caught.value, OlxRateLimitAbortError)
+    assert len(server.starts) == 1
+    assert clock.now < 1000.0 + 300.0  # it never slept towards the deadline
+
+
+async def test_run_deadline_also_stops_plain_pacing() -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [ok()])
+
+    async with make_client(clock, server, run_deadline_seconds=5.0) as client:
+        for listing_id in range(3):  # starts at 0, 2 and 4 s
+            await client.get_listing(listing_id)
+        with pytest.raises(OlxRunDeadlineError):
+            await client.get_listing(3)  # would start at 6 s, past the 5 s deadline
+
+    assert len(server.starts) == 3
+
+
 # --- 429 and Retry-After ---------------------------------------------------------------
 
 
@@ -297,7 +368,7 @@ async def test_short_retry_after_never_breaks_the_minimum_interval() -> None:
     async with make_client(clock, server) as client:
         await client.get_listing(1)
 
-    assert gaps(server.starts) == [1.3]
+    assert gaps(server.starts) == [2.0]
 
 
 async def test_429_pauses_other_concurrent_callers_too() -> None:
@@ -540,7 +611,7 @@ async def test_over_cap_error_keeps_the_original_error_as_its_cause() -> None:
     clock = FakeClock()
     server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "3600"})])
 
-    async with make_client(clock, server) as client:
+    async with make_client(clock, server, max_retry_after_seconds=300.0) as client:
         with pytest.raises(OlxApiError) as caught:
             await client.get_listing(1)
 

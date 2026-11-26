@@ -1,17 +1,22 @@
 """Async client for the public OLX.ba API, with the politeness rules from docs/PLAN.md.
 
-- At most one request start every 1.3 s, shared by every caller of one `RateLimiter`.
+- One request start every 2.0 s by default (never faster than the 1.3 s floor), shared
+  by every caller of one `RateLimiter`. After any 429 the interval grows by 50% for the
+  rest of the run (2.0 -> 3.0 -> 4.5 -> 6.0 s, never above 6 s).
 - HTTP 429 and 5xx are retried with exponential backoff, honouring `Retry-After`.
 - Timeouts, connection errors and decoding errors are retried the same way; other 4xx
   and 2xx bodies that are not JSON are not retried.
 - Every retry still goes through the limiter, so retries never break the 1.3 s rule.
 - Two limits on Retry-After:
-  - `max_retry_after_seconds` (default 300 s) is how long one call is willing to wait.
-    Above it the call gives up with `OlxApiError`, but the shared limiter still pauses
-    for the full Retry-After, so nobody contacts OLX before it allows.
+  - `max_retry_after_seconds` (default 3600 s, the same hour) is how long one call is
+    willing to wait. Above it the call gives up with `OlxApiError`, but the shared
+    limiter still pauses for the full Retry-After, so nobody contacts OLX before it allows.
   - `max_limiter_pause_seconds` (default 3600 s) is the hard ceiling. A Retry-After above
     it, or one that is non-finite or unparseable, raises `OlxRateLimitAbortError` and stops
     the limiter for good: every later call on it refuses without contacting OLX.
+- An optional run deadline (`run_deadline_seconds`, 3 h for `martom sync`): when the next
+  request could only start after it (a long Retry-After, or plain pacing at a raised
+  interval), the limiter stops with `OlxRunDeadlineError` instead of waiting.
 
 The clock, sleep and "now" functions are constructor arguments so tests can replace them
 with fakes and never wait for real.
@@ -31,11 +36,16 @@ from martom import __version__
 
 logger = logging.getLogger(__name__)
 
-# Defaults match .env.example (OLX_API_BASE_URL, OLX_SHOP_USERNAME,
-# OLX_MIN_REQUEST_INTERVAL_SECONDS). Settings wiring arrives with M0-4.
+# Defaults match .env.example (OLX_API_BASE_URL, OLX_SHOP_USERNAME, OLX_REQUEST_INTERVAL);
+# `martom sync` passes the values from Settings.
 DEFAULT_BASE_URL = "https://api.olx.ba"
 DEFAULT_SHOP_USERNAME = "martom"
-DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 1.3
+DEFAULT_REQUEST_INTERVAL_SECONDS = 2.0
+# Never configure the interval below this (Settings enforces it): the politeness rule.
+MIN_REQUEST_INTERVAL_SECONDS = 1.3
+# Adaptive backoff: each 429 multiplies the interval by this, up to the maximum.
+INTERVAL_GROWTH_AFTER_429 = 1.5
+MAX_ADAPTIVE_INTERVAL_SECONDS = 6.0
 
 Clock = Callable[[], float]
 Sleep = Callable[[float], Awaitable[None]]
@@ -73,6 +83,14 @@ class OlxRateLimitAbortError(OlxApiError):
     """
 
 
+class OlxRunDeadlineError(OlxRateLimitAbortError):
+    """The next request could only start after the run deadline, so the run stops now.
+
+    A subclass of `OlxRateLimitAbortError`: the limiter is stopped the same way, and the
+    sync job treats both as "end this run as partial, pick up the rest next time".
+    """
+
+
 class RateLimiter:
     """Keeps request starts at least `min_interval_seconds` apart, across concurrent callers.
 
@@ -83,10 +101,11 @@ class RateLimiter:
 
     def __init__(
         self,
-        min_interval_seconds: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
+        min_interval_seconds: float = DEFAULT_REQUEST_INTERVAL_SECONDS,
         *,
         clock: Clock = time.monotonic,
         sleep: Sleep = asyncio.sleep,
+        deadline_seconds: float | None = None,
     ) -> None:
         self._min_interval = min_interval_seconds
         self._clock = clock
@@ -94,6 +113,23 @@ class RateLimiter:
         self._lock = asyncio.Lock()
         self._next_start: float | None = None  # earliest moment the next request may start
         self._abort_reason: str | None = None  # set by `abort()`; never cleared
+        # Absolute clock time after which no request may start (None: no deadline).
+        self._deadline = None if deadline_seconds is None else clock() + deadline_seconds
+
+    @property
+    def interval(self) -> float:
+        """The current minimum gap between request starts, in seconds."""
+        return self._min_interval
+
+    def slow_down(self) -> float:
+        """After a 429: grow the interval by 50%, up to 6 s; return the new interval.
+
+        It never shrinks again on this limiter (one limiter per run), and an interval
+        configured above 6 s is left as it is.
+        """
+        grown = min(self._min_interval * INTERVAL_GROWTH_AFTER_429, MAX_ADAPTIVE_INTERVAL_SECONDS)
+        self._min_interval = max(self._min_interval, grown)
+        return self._min_interval
 
     async def wait(self) -> None:
         """Sleep until the next request may start, then claim that slot.
@@ -104,9 +140,21 @@ class RateLimiter:
             self._raise_if_aborted()
             # A loop, not an `if`: `pause()` can push `_next_start` later while we sleep.
             while self._next_start is not None and (now := self._clock()) < self._next_start:
+                self._check_deadline(self._next_start)
                 await self._sleep(self._next_start - now)
                 self._raise_if_aborted()
+            self._check_deadline(self._clock())
             self._next_start = self._clock() + self._min_interval
+
+    def _check_deadline(self, start_at: float) -> None:
+        """Stop for good (`OlxRunDeadlineError`) if a request would start after the deadline."""
+        if self._deadline is not None and start_at > self._deadline:
+            reason = (
+                f"the next request could start only {start_at - self._deadline:.0f} s "
+                "after the run deadline"
+            )
+            self.abort(reason)
+            raise OlxRunDeadlineError(f"OLX requests stopped for this run: {reason}")
 
     def abort(self, reason: str) -> None:
         """Stop this limiter for good: every later `wait()` raises `OlxRateLimitAbortError`."""
@@ -179,13 +227,14 @@ class OlxClient:
         *,
         base_url: str = DEFAULT_BASE_URL,
         shop_username: str = DEFAULT_SHOP_USERNAME,
-        min_request_interval_seconds: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS,
+        min_request_interval_seconds: float = DEFAULT_REQUEST_INTERVAL_SECONDS,
         timeout_seconds: float = 10.0,
         max_attempts: int = 5,
         backoff_base_seconds: float = 2.0,
         max_backoff_seconds: float = 60.0,
-        max_retry_after_seconds: float = 300.0,
+        max_retry_after_seconds: float = 3600.0,
         max_limiter_pause_seconds: float = 3600.0,
+        run_deadline_seconds: float | None = None,
         rate_limiter: RateLimiter | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         clock: Clock = time.monotonic,
@@ -204,7 +253,10 @@ class OlxClient:
         # Calls that succeeded only after at least one retry (sync_run.retried_count).
         self.recovered_requests = 0
         self._limiter = rate_limiter or RateLimiter(
-            min_request_interval_seconds, clock=clock, sleep=sleep
+            min_request_interval_seconds,
+            clock=clock,
+            sleep=sleep,
+            deadline_seconds=run_deadline_seconds,
         )
         self._http = httpx.AsyncClient(
             base_url=base_url,
@@ -225,6 +277,11 @@ class OlxClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    @property
+    def request_interval(self) -> float:
+        """The current gap between request starts (grows after each 429)."""
+        return self._limiter.interval
 
     async def get_shop(self) -> Any:
         """GET /users/{shop}: the shop's public profile (its numeric id is `data.id`)."""
@@ -271,6 +328,9 @@ class OlxClient:
                 failure = OlxApiError(f"GET {path} returned HTTP {status}", status_code=status)
                 if status != 429 and status < 500:
                     raise failure  # other 4xx: retrying won't help
+                if status == 429:
+                    interval = self._limiter.slow_down()
+                    logger.warning("OLX sent 429: request interval raised to %.1f s", interval)
                 # Raises OlxRateLimitAbortError for an absurd or unparseable header.
                 retry_after = self._checked_retry_after(response, failure)
 
