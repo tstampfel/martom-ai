@@ -127,11 +127,13 @@ def panel_fence_bom(
 
     Raises ValueError for an empty or non-list `sides_m`, a side that isn't a positive
     finite number, a closed loop with fewer than 3 sides, a panel height or width Toni
-    didn't confirm, or an unknown post type.
+    didn't confirm, an unknown post type, or a `closed` or `gate` that isn't a bool.
     """
     sides_cm = _sides_in_cm(sides_m)
     if not isinstance(closed, bool):
         raise ValueError(f"closed must be True or False, got {closed!r}")
+    if not isinstance(gate, bool):
+        raise ValueError(f"gate must be True or False, got {gate!r}")
     if closed and len(sides_cm) < MIN_CLOSED_SIDES:
         raise ValueError(
             f"a closed fence needs at least {MIN_CLOSED_SIDES} sides, got {len(sides_cm)}"
@@ -258,7 +260,11 @@ def _side_in_cm(side_m: Decimal | int | float | str) -> Decimal:
         raise ValueError(f"side length must be a number of metres, got {side_m!r}") from None
     if not metres.is_finite() or metres <= 0:
         raise ValueError(f"side length must be a positive number of metres, got {side_m!r}")
-    side_cm = (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    try:
+        # Whole centimetres, so float noise like 5.000000000000001 m can't add a panel.
+        side_cm = (metres * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+    except InvalidOperation:  # more digits than Decimal's precision, e.g. 1e27 m
+        raise ValueError(f"side length is too large, got {side_m!r} m") from None
     if side_cm <= 0:
         raise ValueError(f"side length must be at least 1 cm, got {side_m!r} m")
     return side_cm

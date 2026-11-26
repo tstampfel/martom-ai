@@ -111,13 +111,21 @@ def test_a_partial_panel_rounds_up_to_a_whole_panel(
     assert line_for(lines, Item.POST_BASE_PLATE).quantity == expected_panels + 1
 
 
-def test_float_lengths_do_not_add_a_panel_through_rounding_error() -> None:
-    # 0.1 + 0.2 is 0.30000000000000004 as a float; 7.5 m must still be exactly 3 panels.
-    lines = panel_fence_bom(sides_m=[7.5], panel_height_cm=153)
-    assert line_for(lines, Item.PANEL).quantity == 3
+@pytest.mark.parametrize(
+    ("side_m", "expected_panels"),
+    [
+        (5.000000000000001, 2),  # float noise just above 2 whole panels
+        (1.1 * 50, 22),  # computes to 55.00000000000001, not 55.0
+    ],
+)
+def test_float_noise_does_not_add_a_panel(side_m: float, expected_panels: int) -> None:
+    # The side is rounded to whole centimetres before the panels are counted.
+    assert side_m != expected_panels * 2.5  # the input really carries float noise
 
-    lines = panel_fence_bom(sides_m=[0.1 + 0.2 + 4.7], panel_height_cm=153)  # "5.0" m
-    assert line_for(lines, Item.PANEL).quantity == 2
+    lines = panel_fence_bom(sides_m=[side_m], panel_height_cm=153)
+
+    assert line_for(lines, Item.PANEL).quantity == expected_panels
+    assert line_for(lines, Item.POST_BASE_PLATE).quantity == expected_panels + 1
 
 
 # --- clips and posts per height ---------------------------------------------------------
@@ -339,6 +347,10 @@ def test_no_gate_line_by_default() -> None:
         ({"sides_m": None}, "side"),
         ({"sides_m": [Decimal(10)] * 2, "closed": True}, "closed"),
         ({"closed": "yes"}, "closed"),
+        ({"sides_m": ["1e27"]}, "side"),
+        ({"sides_m": [10**30]}, "side"),
+        ({"gate": "false"}, "gate"),
+        ({"gate": 1}, "gate"),
         ({"panel_height_cm": 100}, "height"),
         ({"panel_height_cm": 153.0}, "height"),
         ({"panel_height_cm": "153"}, "height"),
