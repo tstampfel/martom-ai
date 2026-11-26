@@ -63,7 +63,8 @@ Toni confirmed the posts and spacing on 26 Nov 2026. Whether pletivo and chain l
 
 ### Post spacing and count
 
-- Posts every **2 m**.
+- The BOM **always** calculates with posts every **2 m** (Toni's instruction).
+- Up to 3 m is possible depending on the terrain. The advisor may mention it as a note, "razmak do 3 m ovisno o terenu – potvrdite s Martomom", but **never uses 3 m in the BOM**, even when the customer asks. If the customer asks for wider spacing, the BOM stays at 2 m and the note goes into the order message for Toni to confirm.
 - Posts per straight run = **ceil(length / 2) + 1**.
 - Adjacent runs share the corner post, so each corner removes one post from the sum of the runs.
 
@@ -90,6 +91,7 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | Roll fence, 25 m straight | **14 posts** |
 | Roll fence, 10 m straight | **6 posts** |
 | Roll fence, two 10 m sides with 1 corner | **11 posts** (6 + 6 − 1 shared corner post) |
+| Roll fence, customer asks for 3 m spacing | BOM still at 2 m, plus the "razmak do 3 m" note in the answer and in the order message |
 
 Fixtures record the OLX prices they use next to the expected total, so a later price change on OLX never breaks the test silently and never leaks into runtime code.
 
