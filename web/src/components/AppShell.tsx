@@ -12,6 +12,13 @@ type AppShellProps = {
   /** Starts a chat about a category picked in the header. */
   onStartChat: (text: string) => void
   cartCount?: number
+  /** Shows the 90-day chat notice in the footer (start screen only, as on the canvas). */
+  showPrivacyNotice?: boolean
+  /**
+   * The privacy page. Until it exists (#129) the notice has no "Privatnost"
+   * link, so it never leads to a broken page; #129 passes its route here.
+   */
+  privacyHref?: string
 }
 
 /**
@@ -20,7 +27,23 @@ type AppShellProps = {
  * and the shop hours and phone number move to the footer, as in
  * docs/mockups/mobile/.
  */
-export function AppShell({ children, onStartChat, cartCount = 0 }: AppShellProps) {
+export function AppShell({ children, onStartChat, cartCount = 0, showPrivacyNotice = false, privacyHref }: AppShellProps) {
+  function privacyNotice(text: string, variant: 'wide' | 'narrow') {
+    return (
+      <p className={`privacy-notice privacy-notice--${variant}`}>
+        {text}
+        {privacyHref && (
+          <>
+            {' · '}
+            <a className="privacy-notice__link" href={privacyHref}>
+              {copy.privacy.link}
+            </a>
+          </>
+        )}
+      </p>
+    )
+  }
+
   return (
     <div className="shell">
       <div className="top-strip" data-testid="top-strip">
@@ -65,7 +88,7 @@ export function AppShell({ children, onStartChat, cartCount = 0 }: AppShellProps
 
       <main className="shell__main">{children}</main>
 
-      <footer className="site-footer">
+      <footer className={showPrivacyNotice ? 'site-footer site-footer--notice' : 'site-footer'}>
         <div className="site-footer__inner site-footer__inner--wide">
           <span className="site-footer__brand">
             <img src={logoWhite} alt={copy.shop.name} width={992} height={308} />
@@ -81,6 +104,12 @@ export function AppShell({ children, onStartChat, cartCount = 0 }: AppShellProps
             {copy.shop.phone}
           </a>
         </div>
+        {showPrivacyNotice && (
+          <>
+            {privacyNotice(copy.privacy.chatNotice, 'wide')}
+            {privacyNotice(copy.privacy.chatNoticeShort, 'narrow')}
+          </>
+        )}
       </footer>
     </div>
   )

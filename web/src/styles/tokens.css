@@ -10,6 +10,8 @@
   --color-border: #e2e2de;
   --color-border-strong: #d5d6d1;
   --color-on-dark: #c9cdd4;
+  /* Small print on charcoal: the web start-screen privacy notice. */
+  --color-on-dark-muted: #a9aeb6;
   --color-on-brand: #ffffff;
   --color-success: #157a3a;
   --color-success-tint: #ddf2e3;

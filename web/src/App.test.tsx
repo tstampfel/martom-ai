@@ -41,6 +41,15 @@ describe('App shell', () => {
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Krstine 106, Međugorje')
   })
 
+  it('shows the 90-day chat notice on the start screen only', () => {
+    render(<App />)
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).toHaveTextContent(copy.privacy.chatNotice)
+    fireEvent.click(screen.getByRole('button', { name: 'Dvorište' }))
+    expect(screen.getByRole('contentinfo')).not.toHaveTextContent(copy.privacy.chatNotice)
+    expect(screen.getByRole('contentinfo')).not.toHaveTextContent(copy.privacy.chatNoticeShort)
+  })
+
   it('has the web and the phone wording of the hero heading', () => {
     render(<App />)
     const heading = screen.getByRole('heading', { level: 1 })

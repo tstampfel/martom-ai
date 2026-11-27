@@ -27,3 +27,46 @@ describe('AppShell call button', () => {
     expect(call).toHaveAttribute('href', telHref(config.shopPhone))
   })
 })
+
+describe('AppShell privacy notice (M5-8)', () => {
+  it('shows the web and the phone wording from copy.ts when asked', () => {
+    render(
+      <AppShell onStartChat={() => {}} showPrivacyNotice>
+        content
+      </AppShell>,
+    )
+    const footer = screen.getByRole('contentinfo')
+    expect(within(footer).getByText(copy.privacy.chatNotice, { exact: false })).toHaveClass('privacy-notice--wide')
+    expect(within(footer).getByText(copy.privacy.chatNoticeShort, { exact: false })).toHaveClass(
+      'privacy-notice--narrow',
+    )
+  })
+
+  it('is hidden unless asked', () => {
+    render(<AppShell onStartChat={() => {}}>content</AppShell>)
+    expect(screen.queryByText(copy.privacy.chatNotice, { exact: false })).not.toBeInTheDocument()
+    expect(screen.queryByText(copy.privacy.chatNoticeShort, { exact: false })).not.toBeInTheDocument()
+  })
+
+  it('has no Privatnost link until a privacy page exists (#129)', () => {
+    render(
+      <AppShell onStartChat={() => {}} showPrivacyNotice>
+        content
+      </AppShell>,
+    )
+    expect(screen.queryByRole('link', { name: copy.privacy.link })).not.toBeInTheDocument()
+  })
+
+  it('links Privatnost to the privacy page once one is given', () => {
+    render(
+      <AppShell onStartChat={() => {}} showPrivacyNotice privacyHref="/privatnost">
+        content
+      </AppShell>,
+    )
+    const links = screen.getAllByRole('link', { name: copy.privacy.link })
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/privatnost')
+    }
+  })
+})
