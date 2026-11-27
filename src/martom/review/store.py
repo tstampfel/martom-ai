@@ -14,11 +14,12 @@ from martom.extract.store import VariantRow
 from martom.review.checks import CheckListing, CheckProduct, ReviewIssue
 
 # The photo count comes from the listing-page row OLX sent (`summary`): its `images` list,
-# or the single `image` when the list is missing.
+# or the single `image` when the list is missing or empty.
 _LISTINGS = """
 SELECT l.id, l.slug, l.title, l.description_text, l.price, l.display_price,
        l.price_by_agreement, l.state, l.attributes,
        CASE WHEN jsonb_typeof(l.summary -> 'images') = 'array'
+                 AND jsonb_array_length(l.summary -> 'images') > 0
             THEN jsonb_array_length(l.summary -> 'images')
             WHEN coalesce(l.summary ->> 'image', '') <> '' THEN 1
             ELSE 0 END,
@@ -99,20 +100,29 @@ ON CONFLICT (fingerprint) DO UPDATE SET
 RETURNING (xmax = 0)
 """
 
-# Open issues this run didn't find are fixed (or their listing is gone).
+# Open issues this run didn't find: fixed on OLX ('not_found'), or their listing is no
+# longer active ('listing_inactive'). The reason goes into details.resolved_because, so the
+# report (M2-3) can tell the two apart; a reopened issue gets fresh details without it.
 _RESOLVE = """
-UPDATE review_issue SET status = 'resolved', resolved_at = now()
-WHERE status = 'open' AND NOT (fingerprint = ANY(%s))
+UPDATE review_issue AS r SET
+    status = 'resolved',
+    resolved_at = now(),
+    details = r.details || jsonb_build_object(
+        'resolved_because',
+        CASE WHEN r.listing_id IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM active_olx_listing AS l WHERE l.id = r.listing_id)
+             THEN 'listing_inactive' ELSE 'not_found' END)
+WHERE r.status = 'open' AND NOT (r.fingerprint = ANY(%s))
 """
 
 
 async def save_issues(
     conn: psycopg.AsyncConnection, issues: Sequence[ReviewIssue]
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """Upsert every issue and resolve the open ones not in `issues`, in one transaction.
 
     `issues` must be the result of a run over the whole catalogue: anything open that isn't
-    in it is marked resolved. Returns (new issues, resolved issues).
+    in it is marked resolved. Returns (rows written, new issues, resolved issues).
     """
     # Two checks could, in theory, produce the same fingerprint; keep the last one.
     unique = {issue.fingerprint: issue for issue in issues}
@@ -134,4 +144,4 @@ async def save_issues(
             new += bool(row and row[0])
         await cursor.execute(_RESOLVE, (list(unique),))
         resolved = cursor.rowcount
-    return new, resolved
+    return len(unique), new, resolved

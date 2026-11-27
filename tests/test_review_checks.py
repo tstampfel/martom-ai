@@ -467,3 +467,112 @@ def test_messages_are_bosnian_and_name_the_listing() -> None:
     issue = check_used_state(listing(state="used"))[0]
     assert "Korišteno" in issue.message
     assert issue.message.startswith("Oglas 1")
+
+
+# --- review round 1 ----------------------------------------------------------------------------
+
+# R1-1: a unit counts only when it sits right next to the number (optional space) and is not
+# the start of a longer word; a bare number takes its unit only from the label's same number.
+SIZE_CASES = [
+    ("153", "Panel 153 maslinasto zelena", Decimal(153)),  # "m" of a colour word
+    ("153 mat", "", Decimal(153)),
+    ("153 metalni", "", Decimal(153)),
+    ("5", "Rola 25 m, visina 5", Decimal(5)),  # "5" is not the "5" in "25"
+    ("153", "Panel 153 + stup 60x40mm", Decimal(153)),  # mm belongs to another number
+    ("1.530 mm", "", Decimal(153)),  # thousands dot, like parse_price_km
+    ("1.250,5 cm", "", Decimal("1250.5")),
+    ("4,20 m", "", Decimal(420)),
+    ("4.20 m", "", Decimal(420)),
+    ("2500", "2500 x 1030 mm", Decimal(250)),  # "A x B unit"
+    ("153", "PANEL 153 X 2500CM", Decimal(153)),
+    ("83", "3D Panelna ograda 83 x 200 cm (Ø 4,20/4,40 mm PVC)", Decimal(83)),
+    ("ROLA 50M", "", Decimal(5000)),
+    ("20METARA", "", Decimal(2000)),
+    ("1530MM", "", Decimal(153)),
+    ("H-85 cm", "", Decimal(85)),
+    ("2500CM", "", Decimal(2500)),
+]
+
+
+def test_size_parser_reads_only_adjacent_units() -> None:
+    from martom.review.checks import size_in_cm
+
+    for text, label, expected in SIZE_CASES:
+        assert size_in_cm(text, label) == expected, (text, label)
+    assert size_in_cm("visoka") is None
+    assert size_in_cm(None) is None
+
+
+def test_colour_word_after_the_height_is_not_metres() -> None:
+    issues = check_implausible_dimensions(
+        listing(variants=[variant("Panel 153 maslinasto zelena", height="153", length="250")])
+    )
+    assert issues == []
+
+
+def test_panel_gates_are_not_held_to_fence_panel_ranges() -> None:
+    gate = listing(
+        product_type="panelna kapija",
+        variants=[variant("Kapija 153 x 400 cm", height="153", length="400 cm")],
+    )
+    assert check_implausible_dimensions(gate) == []
+
+
+# R1-2: prices for different units are not a conflict.
+def test_roll_and_per_metre_prices_are_not_a_conflict() -> None:
+    issues = check_price_conflicts(
+        listing(
+            product_type="mreža",
+            variants=[
+                variant(height="150 cm", unit="rola", price=Decimal("100")),
+                variant(height="150 cm", unit="m", price=Decimal("4")),
+            ],
+        )
+    )
+    assert issues == []
+
+
+def test_same_unit_written_differently_still_conflicts() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant(height="153", length="250 cm", unit="Panel", price=Decimal("53")),
+                variant(height="153", length="250CM", unit=" panel ", price=Decimal("55")),
+            ]
+        )
+    )
+    assert kinds(issues) == ["price_conflict"]
+
+
+# R1-3: fingerprints are stable when the model rewords a label.
+def test_fingerprints_survive_a_reworded_label() -> None:
+    def all_fingerprints(label: str) -> set[str]:
+        reworded = listing(
+            variants=[
+                variant(f"{label} A", height="153", length="250 cm"),
+                variant(f"{label} B", height="153", length="250 CM", price=Decimal("12")),
+                variant(f"{label} C", height="173", length="2500CM", price_text=None, price=None),
+                variant(f"{label} D", height="203", price_text="27 / 31 KM", price=None),
+            ]
+        )
+        return {issue.fingerprint for issue in check_listing(reworded)}
+
+    first = all_fingerprints("3D Panelna ograda: 53,00 KM / panel")
+    assert len(first) >= 4
+    assert first == all_fingerprints("Panel (Ø 4,20 mm PVC)")
+
+
+def test_duplicate_fingerprint_survives_a_third_listing_and_a_new_lowest_id() -> None:
+    a = listing(id=5, title="PANEL 153")
+    b = listing(id=3, title="Panel 153")
+    c = listing(id=1, title="PANEL  153!")
+    pair = check_duplicate_listings([a, b])[0]
+    group = check_duplicate_listings([a, b, c])[0]
+    assert pair.fingerprint == group.fingerprint
+    assert group.details["listing_ids"] == [1, 3, 5]
+
+
+# R1-4: doubled words only within one line of the title or the description.
+def test_doubled_word_across_title_and_description_is_not_a_typo() -> None:
+    assert check_typos(listing(title="PANEL ZA OGRADU", description_text="Ogradu nudimo.")) == []
+    assert check_typos(listing(description_text="za ogradu\nogradu nudimo")) == []

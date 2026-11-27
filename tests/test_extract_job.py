@@ -54,14 +54,14 @@ async def add_listing(
     )
 
 
-def product(price: str | None = "10,00 KM") -> ExtractedProduct:
+def product(price: str | None = "10,00 KM", label: str = "Stup") -> ExtractedProduct:
     return ExtractedProduct(
         product_type="stup za ogradu", brand=None, material="pocinčani", wire_thickness=None,
         mesh=None, colours=["zelena"], uses=["ograda"], compatible_with=[], synonyms=[],
         variants=[
-            ExtractedVariant(label="Stup H-100 cm: 10,00 KM", height="H-100 cm", length=None,
+            ExtractedVariant(label=f"{label} H-100 cm: 10,00 KM", height="H-100 cm", length=None,
                              colour=None, size=None, price=price, unit="kom"),
-            ExtractedVariant(label="Stup H-150 cm", height="H-150 cm", length=None,
+            ExtractedVariant(label=f"{label} H-150 cm", height="H-150 cm", length=None,
                              colour=None, size=None, price=None, unit=None),
         ],
     )  # fmt: skip
@@ -70,7 +70,10 @@ def product(price: str | None = "10,00 KM") -> ExtractedProduct:
 class FakeModel:
     """Records which listings it was asked about; can be told to fail some."""
 
-    def __init__(self, failing: set[int] | None = None, price: str = "10,00 KM") -> None:
+    def __init__(
+        self, failing: set[int] | None = None, price: str = "10,00 KM", label: str = "Stup"
+    ) -> None:
+        self.label = label
         self.asked: list[int] = []
         self.failing = failing or set()
         self.price = price
@@ -82,7 +85,7 @@ class FakeModel:
         self.asked.append(listing_id)
         if listing_id in self.failing:
             raise RuntimeError("model unavailable")
-        return product(self.price)
+        return product(self.price, self.label)
 
 
 def extractor(model: FakeModel) -> Extractor:
@@ -314,3 +317,74 @@ async def test_a_review_check_error_makes_the_run_partial(
     [(status, error)] = await fetch(conn, "SELECT status, error FROM sync_run")
     assert status == "partial"
     assert "review checks" in error and "checks broke" in error
+
+
+async def open_issue_listings(conn: psycopg.AsyncConnection) -> list[tuple]:
+    return await fetch(
+        conn,
+        "SELECT listing_id, status FROM review_issue WHERE kind = 'height_without_price'"
+        " ORDER BY listing_id",
+    )
+
+
+async def test_ignored_issue_stays_ignored_after_re_extraction_with_a_reworded_label(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await add_listing(conn, 1)
+    await run_extraction(conn, extractor(FakeModel(label="Stup")))
+    await conn.execute("UPDATE review_issue SET status = 'ignored'")
+    before = await fetch(conn, "SELECT id, kind, status FROM review_issue ORDER BY id")
+
+    # The listing changes on OLX; the model words its labels differently this time.
+    await conn.execute("UPDATE olx_listing SET detail_hash = 'hash-2'")
+    stats = await run_extraction(conn, extractor(FakeModel(label="Metalni stub")))
+
+    assert stats.extracted == 1
+    [(label,)] = await fetch(conn, "SELECT label FROM product_variant WHERE position = 1")
+    assert label == "Metalni stub H-150 cm"
+    assert await fetch(conn, "SELECT id, kind, status FROM review_issue ORDER BY id") == before
+    assert stats.review is not None and stats.review.new == 0
+
+
+async def test_a_limit_run_keeps_the_issues_of_listings_it_did_not_extract(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await add_listing(conn, 1)
+    await add_listing(conn, 2)
+    await run_extraction(conn, extractor(FakeModel()))
+    assert await open_issue_listings(conn) == [(1, "open"), (2, "open")]
+
+    await conn.execute("UPDATE olx_listing SET detail_hash = 'hash-2'")
+    model = FakeModel()
+    await run_extraction(conn, extractor(model), limit=1)
+
+    assert model.asked == [1]
+    assert await open_issue_listings(conn) == [(1, "open"), (2, "open")]
+
+
+async def test_a_partial_run_keeps_the_issues_of_listings_that_failed(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await add_listing(conn, 1)
+    await add_listing(conn, 2)
+    await run_extraction(conn, extractor(FakeModel()))
+
+    await conn.execute("UPDATE olx_listing SET detail_hash = 'hash-2'")
+    stats = await run_extraction(conn, extractor(FakeModel(failing={2})))
+
+    assert stats.status == "partial"
+    # Listing 2 kept its old product, so its problem is still found and stays open.
+    assert await open_issue_listings(conn) == [(1, "open"), (2, "open")]
+
+
+async def test_a_failed_run_leaves_the_review_queue_alone(conn: psycopg.AsyncConnection) -> None:
+    await add_listing(conn, 1)
+    await run_extraction(conn, extractor(FakeModel()))
+    before = await fetch(conn, "SELECT id, status, last_seen_at FROM review_issue ORDER BY id")
+
+    await conn.execute("UPDATE olx_listing SET detail_hash = 'hash-2'")
+    stats = await run_extraction(conn, extractor(FakeModel(failing={1})))
+
+    assert stats.status == "failed" and stats.review is None
+    after = await fetch(conn, "SELECT id, status, last_seen_at FROM review_issue ORDER BY id")
+    assert after == before

@@ -5,7 +5,8 @@
 
 CREATE TABLE IF NOT EXISTS review_issue (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    -- sha256 of (kind, listing id, what makes the issue distinct, e.g. the variant label).
+    -- sha256 of (kind, listing id, what makes the issue distinct: the variant's sizes and
+    -- colour, the misspelt word, the shared title of duplicates; never model-written text).
     -- The checks upsert on it, so rerunning them never adds a second row for one problem.
     fingerprint   text NOT NULL CONSTRAINT review_issue_fingerprint_key UNIQUE,
     kind          text NOT NULL,                -- the check, e.g. 'implausible_dimension'
@@ -17,7 +18,8 @@ CREATE TABLE IF NOT EXISTS review_issue (
     message       text NOT NULL,                -- for Toni, in Bosnian
     details       jsonb NOT NULL DEFAULT '{}',  -- the values the check looked at
     --   open      the latest check run still finds the problem
-    --   resolved  a later run no longer found it (fixed on OLX, or the listing is gone);
+    --   resolved  a later run no longer found it; details.resolved_because says why:
+    --             'not_found' (fixed on OLX) or 'listing_inactive' (the listing is gone);
     --             it goes back to open if the problem comes back
     --   ignored   Toni decided it isn't a problem; reruns leave it ignored
     status        text NOT NULL DEFAULT 'open' CONSTRAINT review_issue_status_check

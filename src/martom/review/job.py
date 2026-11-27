@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ReviewStats:
     checked: int  # active listings checked
-    raised: int  # issues found this run (new or seen before)
+    raised: int  # problems found this run (new or seen before), one per fingerprint
     new: int  # of those, first seen this run
     resolved: int  # open issues this run no longer found
 
@@ -38,8 +38,8 @@ async def run_review_checks(
     manual_products = load_manual_products(manual_products_path)
     listings = await load_check_listings(conn)
     issues = run_all_checks(listings, manual_products, today=today or date.today())
-    new, resolved = await save_issues(conn, issues)
-    stats = ReviewStats(checked=len(listings), raised=len(issues), new=new, resolved=resolved)
+    raised, new, resolved = await save_issues(conn, issues)
+    stats = ReviewStats(checked=len(listings), raised=raised, new=new, resolved=resolved)
     logger.info(
         "review checks finished",
         extra={

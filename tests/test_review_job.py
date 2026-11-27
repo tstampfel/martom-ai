@@ -213,3 +213,57 @@ async def test_shipped_manual_products_file_is_read_by_default(
     assert await issues(conn) == []
     await run_review_checks(conn, today=date(2027, 2, 25))
     assert await issues(conn) == [("manual_product_stale", None, "high", "open")]
+
+
+async def test_issue_of_a_listing_that_goes_inactive_is_resolved_with_the_reason(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_listing(conn, 1, state="used", title="PANEL A")
+    await add_listing(conn, 2, state="used", title="PANEL B")
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    await conn.execute("UPDATE olx_listing SET active = false WHERE id = 1")
+    await conn.execute("UPDATE olx_listing SET state = 'new' WHERE id = 2")
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    cursor = await conn.execute(
+        "SELECT listing_id, status, details ->> 'resolved_because' FROM review_issue"
+        " ORDER BY listing_id"
+    )
+    assert await cursor.fetchall() == [
+        (1, "resolved", "listing_inactive"),
+        (2, "resolved", "not_found"),
+    ]
+
+    # Back again: open, and the reason is gone.
+    await conn.execute("UPDATE olx_listing SET active = true WHERE id = 1")
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    cursor = await conn.execute(
+        "SELECT status, details ? 'resolved_because' FROM review_issue WHERE listing_id = 1"
+    )
+    assert await cursor.fetchone() == ("open", False)
+
+
+async def test_single_image_counts_when_the_image_list_is_empty(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await conn.execute(
+        "INSERT INTO olx_listing (id, slug, title, summary, state) VALUES"
+        " (7, 'x-7', 'BRUSILICA', '{\"image\": \"https://example.test/a.jpg\", \"images\": []}',"
+        " 'new')"
+    )
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    assert await issues(conn) == []
+
+
+async def test_raised_counts_each_problem_once(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    # Two variants with the same size and no price: one problem, one row.
+    same = [("Panel 153 x 250 cm", "153", "250 cm", "53,00")] + [
+        (f"Panel 173 x 250 cm ({n})", "173", "250 cm", None) for n in (1, 2)
+    ]
+    await add_listing(conn, 1, variants=same, images=["a"])
+    stats = await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    cursor = await conn.execute("SELECT count(*) FROM review_issue")
+    assert stats.raised == (await cursor.fetchone())[0]  # type: ignore[index]
