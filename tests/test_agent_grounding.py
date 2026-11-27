@@ -3,7 +3,14 @@ from decimal import Decimal
 import pytest
 
 # ruff: noqa: RUF001
-from martom.agent.grounding import Facts, check_grounding, facts_from_output, parse_km
+from martom.agent.grounding import (
+    Facts,
+    check_grounding,
+    facts_from_output,
+    numbers_in,
+    parse_km,
+    word_numbers,
+)
 
 BOM_OUTPUT = {
     "type": "bom",
@@ -163,3 +170,60 @@ def test_phone_number_is_not_a_listing_id() -> None:
 
 def test_empty_facts_reject_any_price() -> None:
     assert not check_grounding("Cijena je 10 KM.", Facts()).ok
+
+
+# R2-2: prices and counts written as Bosnian number words.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Panel košta pedeset maraka.",
+        "Panel košta pedeset četiri KM.",
+        "Cijena je četrdeset i devet KM.",
+        "Cijena je KM pedeset.",
+        "Panel je dvadeset eura.",
+        "Trebate dvanaest stubova.",
+        "Trebate dvadeset jedan panel.",
+        "Uzmite dvije hiljade kopči.",
+    ],
+)
+def test_number_words_are_checked_like_digits(text: str) -> None:
+    assert not check_grounding(text, facts()).ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Panel košta pedeset tri KM.",
+        "Trebate deset panela i jedanaest stubova.",
+        "Uzmite jedan panel za probu.",
+        "Ukupno osamsto tri KM.",
+    ],
+)
+def test_grounded_number_words_pass(text: str) -> None:
+    found = facts().merge(Facts(prices=["803"]))
+    assert check_grounding(text, found).ok, check_grounding(text, found).problems
+
+
+def test_word_numbers_values() -> None:
+    text = "četrdeset i devet, dvije hiljade, dva tri, sto dvadeset, sto se tice"
+    assert [n.value for n in word_numbers(text)] == [49, 2000, 2, 3, 20]
+
+
+def test_customer_number_words_are_known() -> None:
+    assert Decimal(25) in numbers_in("Ograda od dvadeset pet metara")
+
+
+# R2-3: a numbered recommendation list is not a set of quantities.
+def test_numbered_list_passes() -> None:
+    text = "Imam dva prijedloga:\n1. PANEL 3D OGRADA\n2. Stup s pločom\n3. PVC kopče"
+    assert check_grounding(text, facts()).ok, check_grounding(text, facts()).problems
+
+
+def test_numbered_list_still_checks_the_numbers_inside() -> None:
+    text = "1. Panel za 49 KM\n2. Trebate 12 stubova"
+    problems = check_grounding(text, facts()).problems
+    assert len(problems) == 2
+
+
+def test_suggestion_count_over_ten_is_checked() -> None:
+    assert not check_grounding("Imam 12 prijedloga.", facts()).ok

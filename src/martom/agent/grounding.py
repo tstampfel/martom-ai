@@ -11,6 +11,9 @@ answer and asks where it came from:
   or the ",-" of a whole amount) must equal a price a tool returned (`price`,
   `unit_price`, `line_total`, `total`). A euro amount always fails: Martom prices in KM.
 - A listing id (7–9 digits) must be one a tool or the Retrieve step returned.
+- Bosnian number words ("pedeset tri KM", "dvanaest stubova") are read as numbers and
+  checked the same way; a lone "jedan/jedna" (the article) and numbered-list markers are
+  not claims.
 - Any other number must appear in a tool output (a quantity, a size in a title, a BOM
   line), in what the customer wrote, in the fence spec built from it, or in the advisor's
   fixed copy (agent/copy.py: Martom's phone, "10–15 dana", RAL colours).
@@ -67,6 +70,60 @@ NEVER_PRICED = (
     "betoniranj",
 )
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
+# A numbered list marker at the start of a line ("1. PANEL", "2) Stup"): not a claim (R2-3).
+_LIST_MARKER = re.compile(r"^(\s*)\d{1,2}[.)](?=\s)", re.MULTILINE)
+# "2 prijedloga", "dva prijedloga": how many suggestions the answer makes, not a quantity.
+_SUGGESTION_NOUN = re.compile(
+    r"\s+(?:prijedlog\w*|opcij\w*|varijant\w*|rješenj\w*|rjesenj\w*|mogućnost\w*|"
+    r"mogucnost\w*|načina|nacina)\b",
+    re.IGNORECASE,
+)
+MAX_SUGGESTIONS = 10
+
+# Bosnian number words (R2-2), with and without diacritics. "sto" alone is left out: without
+# diacritics it is also "što" ("sto se tice ..."); "stotinu" and "dvjesto" ... are kept.
+_WORD_VALUES: dict[str, int] = {
+    **dict.fromkeys(["jedan", "jedna", "jedno", "jednu", "jednog", "jednom", "jednoj"], 1),
+    **dict.fromkeys(["dva", "dvije", "dvoje", "dvaju"], 2),
+    **dict.fromkeys(["tri", "troje"], 3),
+    **dict.fromkeys(["četiri", "cetiri"], 4),
+    "pet": 5,
+    **dict.fromkeys(["šest", "sest"], 6),
+    "sedam": 7,
+    "osam": 8,
+    "devet": 9,
+    "deset": 10,
+    "jedanaest": 11,
+    "dvanaest": 12,
+    "trinaest": 13,
+    **dict.fromkeys(["četrnaest", "cetrnaest"], 14),
+    "petnaest": 15,
+    **dict.fromkeys(["šesnaest", "sesnaest"], 16),
+    "sedamnaest": 17,
+    "osamnaest": 18,
+    "devetnaest": 19,
+    "dvadeset": 20,
+    "trideset": 30,
+    **dict.fromkeys(["četrdeset", "cetrdeset"], 40),
+    "pedeset": 50,
+    **dict.fromkeys(["šezdeset", "sezdeset"], 60),
+    "sedamdeset": 70,
+    "osamdeset": 80,
+    "devedeset": 90,
+    "stotinu": 100,
+    **dict.fromkeys(["dvjesto", "dvjesta", "dvesta"], 200),
+    "tristo": 300,
+    **dict.fromkeys(["četiristo", "cetiristo"], 400),
+    "petsto": 500,
+    **dict.fromkeys(["šeststo", "sesto", "šesto"], 600),
+    "sedamsto": 700,
+    "osamsto": 800,
+    "devetsto": 900,
+}
+_THOUSAND_WORDS = frozenset(
+    ["hiljadu", "hiljade", "hiljada", "tisuću", "tisucu", "tisuće", "tisuce", "tisuća", "tisuca"]
+)
+_WORD = re.compile(r"\w+")
 
 
 class Facts(BaseModel):
@@ -152,6 +209,7 @@ def numbers_in(text: str) -> list[Decimal]:
     ]
     rest = _PRICE.sub(" ", text)
     found += [parse_km(match.group(0)) for match in _NUMBER.finditer(rest)]
+    found += [Decimal(number.value) for number in word_numbers(text)]
     return [number for number in found if number is not None]
 
 
@@ -167,15 +225,6 @@ def parse_km(text: str) -> Decimal | None:
         return None
 
 
-# Numbers in the advisor's own fixed texts (phone groups, "10–15 dana", RAL 7016 ...).
-_COPY_NUMBERS: frozenset[Decimal] = frozenset(
-    number
-    for value in vars(copy).values()
-    if isinstance(value, str)
-    for number in numbers_in(value)
-)
-
-
 def check_grounding(
     text: str, facts: Facts, *, known_numbers: Iterable[Decimal] = ()
 ) -> GroundingResult:
@@ -187,6 +236,8 @@ def check_grounding(
     problems: list[str] = []
     text = text.replace(copy.MARTOM_PHONE, " ")
     text = _PER_ONE.sub(" ", text)
+    text = _LIST_MARKER.sub(r"\1", text)
+    text = _strip_suggestion_counts(text)
     known_prices = facts.price_set()
     for match in _PRICE.finditer(text):
         amount = parse_km(match.group("after") or match.group("before"))
@@ -219,8 +270,100 @@ def check_grounding(
             problems.append(
                 f"number '{match.group(0)}' is not in any tool result or customer message"
             )
+    problems.extend(_check_number_words(text, known_prices, allowed))
     problems.extend(_priced_never_priced(text, facts.unpriced_names))
     return GroundingResult(problems)
+
+
+@dataclass(frozen=True)
+class _WordNumber:
+    start: int
+    end: int
+    value: int
+    words: int
+
+
+def word_numbers(text: str) -> list[_WordNumber]:
+    """Runs of Bosnian number words with their value: "četrdeset i devet" -> 49."""
+    tokens = list(_WORD.finditer(text))
+    found: list[_WordNumber] = []
+    index = 0
+    while index < len(tokens):
+        word = tokens[index].group(0).lower()
+        if word not in _WORD_VALUES and word not in _THOUSAND_WORDS:
+            index += 1
+            continue
+        start, total, current, count = tokens[index].start(), 0, 0, 0
+        end, last = start, None
+        while index < len(tokens):
+            token = tokens[index]
+            # One number only while words follow with spaces ("četrdeset i devet") and each
+            # part is smaller than the one before ("dva tri" is 2 and 3).
+            if count and text[end : token.start()].strip():
+                break
+            word = token.group(0).lower()
+            if word in _THOUSAND_WORDS:
+                if total:
+                    break
+                total, current, last = (current or 1) * 1000, 0, 1000
+            elif word in _WORD_VALUES:
+                value = _WORD_VALUES[word]
+                if last is not None and value >= last:
+                    break
+                current, last = current + value, value
+            elif (
+                word == "i"
+                and count
+                and index + 1 < len(tokens)
+                and tokens[index + 1].group(0).lower() in _WORD_VALUES
+            ):
+                end = token.end()  # "četrdeset i devet": the "i" joins, it isn't a gap
+                index += 1
+                continue
+            else:
+                break
+            count += 1
+            end = token.end()
+            index += 1
+        found.append(_WordNumber(start, end, total + current, count))
+    return found
+
+
+def _check_number_words(text: str, known_prices: set[Decimal], allowed: set[Decimal]) -> list[str]:
+    problems = []
+    for number in word_numbers(text):
+        phrase = text[number.start : number.end]
+        after = re.match(rf"\s*({_CURRENCY})", text[number.end :], re.IGNORECASE)
+        before = re.search(rf"({_CURRENCY})\s*$", text[: number.start], re.IGNORECASE)
+        currency = (after or before).group(1) if (after or before) else None
+        if currency is not None:
+            if re.fullmatch(_EURO, currency, re.IGNORECASE):
+                problems.append(f"price '{phrase} {currency}' is in euros; Martom prices are in KM")
+            elif Decimal(number.value) not in known_prices:
+                problems.append(f"price '{phrase} {currency}' is not in any tool result")
+        elif number.value == 1 and number.words == 1:
+            continue  # "jedan", "jednu": the article "a/one", like the per-unit 1
+        elif Decimal(number.value) not in allowed:
+            problems.append(f"number '{phrase}' is not in any tool result or customer message")
+    return problems
+
+
+def _strip_suggestion_counts(text: str) -> str:
+    """Drop "2 prijedloga" / "dva prijedloga" (up to MAX_SUGGESTIONS): not a quantity."""
+
+    def digit(match: re.Match[str]) -> str:
+        return " " if int(match.group(1)) <= MAX_SUGGESTIONS else match.group(0)
+
+    text = re.sub(
+        r"(?<![\d.,])(\d{1,2})(?=" + _SUGGESTION_NOUN.pattern + ")",
+        digit,
+        text,
+        flags=re.IGNORECASE,
+    )
+    for number in reversed(word_numbers(text)):
+        if number.value <= MAX_SUGGESTIONS and _SUGGESTION_NOUN.match(text, number.end):
+            text = text[: number.start] + " " + text[number.end :]
+    return text
 
 
 def _priced_never_priced(text: str, unpriced_names: Iterable[str]) -> list[str]:
@@ -254,3 +397,12 @@ def _is_int(value: Any) -> bool:
 def _unique[T](items: list[T]) -> list[T]:
     # dict keeps insertion order (like a JS Map), so this dedupes without reordering.
     return list(dict.fromkeys(items))
+
+
+# Numbers in the advisor's own fixed texts (phone groups, "10–15 dana", RAL 7016 ...).
+_COPY_NUMBERS: frozenset[Decimal] = frozenset(
+    number
+    for value in vars(copy).values()
+    if isinstance(value, str)
+    for number in numbers_in(value)
+)

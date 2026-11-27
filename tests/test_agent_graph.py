@@ -672,3 +672,65 @@ async def test_cart_count_must_come_from_the_customer() -> None:
     )
     result = await ask(graph, "Dodaj panele u korpu")
     assert result["answer"] == "Dodao sam panele u korpu."
+
+
+# R2-1: after the fence changes, the old list's numbers are no longer facts.
+def changed_fence_graph(replies: list[AIMessage]):
+    guard = Recorder(
+        understanding(height="153 cm", lengths=["25 m"], layout="straight"),
+        understanding(height="153 cm", lengths=["40 m"], layout="straight"),
+    )
+    return make_graph(
+        guard,
+        [tool_call("calculate_fence_bom"), AIMessage("Evo popisa."), *replies],
+        pricer=FakePricer(),
+    )
+
+
+async def test_changed_fence_clears_the_old_list_and_its_total() -> None:
+    # (A) the model repeats the 25 m total for the new 40 m fence without the tool.
+    graph = changed_fence_graph(
+        [AIMessage("Za 40 m ukupno je 905,10 KM."), AIMessage("Za 40 m ukupno je 905,10 KM.")]
+    )
+    await ask(graph, "Panel 25 m, 153 cm", thread="change-a")
+    second = await ask(graph, "Ipak 40 m", thread="change-a")
+    assert second["fallback"] is True
+    assert second["bom"] is None
+    assert second["bom_changed"] is True
+    assert "905,10" not in second["answer"]
+
+
+async def test_new_list_replaces_the_old_lists_numbers() -> None:
+    # (B, C) the tool runs again, but the answer quotes the old total and counts.
+    graph = changed_fence_graph(
+        [
+            tool_call("calculate_fence_bom"),
+            AIMessage("Za 40 m ukupno je 905,10 KM."),
+            AIMessage("Za 40 m trebate 10 panela i 11 stupova."),
+        ]
+    )
+    await ask(graph, "Panel 25 m, 153 cm", thread="change-b")
+    second = await ask(graph, "Ipak 40 m", thread="change-b")
+    assert second["fallback"] is True
+    panels = next(line for line in second["bom"]["lines"] if line["item"] == "panel")
+    assert panels["quantity"] == 16
+    assert second["bom_changed"] is True
+
+
+async def test_new_list_numbers_pass_after_a_change() -> None:
+    graph = changed_fence_graph(
+        [tool_call("calculate_fence_bom"), AIMessage("Za 40 m trebate 16 panela i 17 stupova.")]
+    )
+    await ask(graph, "Panel 25 m, 153 cm", thread="change-c")
+    second = await ask(graph, "Ipak 40 m", thread="change-c")
+    assert second["fallback"] is False
+    assert second["answer"] == "Za 40 m trebate 16 panela i 17 stupova."
+
+
+async def test_numbered_recommendation_list_is_not_a_fallback() -> None:
+    # R2-3 through the graph.
+    reply = "Imam dva prijedloga:\n1. PANEL 3D OGRADA\n2. Stup s pločom"
+    graph = make_graph(Recorder(understanding(request="product")), [AIMessage(reply)])
+    result = await ask(graph, "Treba mi ograda")
+    assert result["fallback"] is False
+    assert result["answer"] == reply

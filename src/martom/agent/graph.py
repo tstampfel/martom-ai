@@ -133,6 +133,7 @@ class AgentState(TypedDict, total=False):
     facts: dict[str, Any]  # grounding.Facts
     bom: dict[str, Any] | None  # the latest materials list of the conversation
     bom_changed: bool  # this turn made (or cleared) `bom`: send it again (#21)
+    bom_facts: dict[str, Any]  # grounding.Facts of `bom` only; replaced with each new list
     rewrite_failed: bool
     cart: list[dict[str, Any]]
     chips: dict[str, Any] | None
@@ -222,11 +223,11 @@ def build_graph(
             "reranked": False,
             "grade": "ok",
             "rewrites": 0,
-            # `facts` and `bom` stay: earlier tool results are still in the message history
-            # the model sees, so it may repeat their numbers (R1-3). A fence too large
-            # clears the old list.
-            "bom": None if plan.contact_martom else state.get("bom"),
-            "bom_changed": plan.contact_martom and state.get("bom") is not None,
+            # `facts` (search and product results) stay: they are still in the history the
+            # model sees, so it may repeat them (R1-3). The materials list and its numbers
+            # (`bom_facts`) stay only while the fence is the same; a changed fence or one too
+            # large makes the old list wrong, so it is cleared and must be recalculated (R2-1).
+            **_bom_update(state, previous, plan.spec, clear=plan.contact_martom),
             "cart": [],
             "rewrite_failed": False,
             "chips": plan.chips.model_dump(mode="json") if plan.chips else None,
@@ -329,6 +330,7 @@ def build_graph(
         facts = _facts(state)
         bom = state.get("bom")
         bom_changed = state.get("bom_changed", False)
+        bom_facts = _bom_facts(state)
         cart = list(state.get("cart", []))
         contact = state.get("contact_martom", False)
         results: list[ToolMessage] = []
@@ -337,7 +339,7 @@ def build_graph(
             try:
                 output = await _run_tool(name, call["args"], ctx)
             except FenceTooLargeToolError as exc:
-                contact, bom, bom_changed = True, None, True
+                contact, bom, bom_changed, bom_facts = True, None, True, Facts()
                 results.append(_tool_error(call_id, name, str(exc)))
                 continue
             except ToolError as exc:
@@ -350,10 +352,12 @@ def build_graph(
                 continue
             # The cart echoes the model's own quantity back: never a fact (R1-11).
             skip = ("quantity",) if name == "add_to_cart" else ()
-            facts = facts.merge(facts_from_output(output, skip_keys=skip))
             if name == "calculate_fence_bom":
-                bom, bom_changed = output, True
-            elif name == "add_to_cart":
+                # A new list replaces the old one's numbers, never adds to them (R2-1).
+                bom, bom_changed, bom_facts = output, True, facts_from_output(output)
+            else:
+                facts = facts.merge(facts_from_output(output, skip_keys=skip))
+            if name == "add_to_cart":
                 cart.append(output["cart_line"])
             content = json.dumps(output, ensure_ascii=False)
             results.append(ToolMessage(content, tool_call_id=call_id, name=name))
@@ -362,6 +366,7 @@ def build_graph(
             "facts": facts.model_dump(),
             "bom": bom,
             "bom_changed": bom_changed,
+            "bom_facts": bom_facts.model_dump(),
             "cart": cart,
             "contact_martom": contact,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
@@ -372,7 +377,8 @@ def build_graph(
         if state.get("generate_failed") or not isinstance(last, AIMessage):
             return _fallback(state, remove=None)
         text = last.text.strip()
-        result = check_grounding(text, _facts(state), known_numbers=_customer_numbers(state))
+        facts = _facts(state).merge(_bom_facts(state))
+        result = check_grounding(text, facts, known_numbers=_customer_numbers(state))
         if text and not last.tool_calls and result.ok:
             return {"answer": _join(text, *state.get("notes", []))}
         problems = result.problems or ["the answer was empty or still calling tools"]
@@ -458,6 +464,12 @@ def _generate_context(state: AgentState) -> str:
     parts = [GENERATE_SYSTEM]
     if spec is not None and spec.kind is not None:
         parts.append(tagged("fence_spec", spec.model_dump(mode="json")))
+        if state.get("bom") is None:
+            parts.append(
+                "There is no current materials list for this fence: call "
+                "calculate_fence_bom for any quantity or total. Materials lists earlier in "
+                "the conversation are out of date."
+            )
     if state.get("grade") == "weak":
         parts.append(
             "The catalogue search found nothing that fits this request: don't recommend "
@@ -519,6 +531,36 @@ def _customer_numbers(state: AgentState) -> set[Decimal]:
             values.append(default_panel_width(spec))
         numbers.update(Decimal(str(value)) for value in values if value is not None)
     return numbers
+
+
+def _bom_inputs(spec: FenceSpec | None) -> tuple[Any, ...] | None:
+    """What the materials list depends on; a change makes the old list wrong."""
+    if spec is None:
+        return None
+    return (
+        spec.kind,
+        spec.real_height_cm(),
+        tuple(spec.sides_m),
+        spec.closed,
+        spec.posts,
+        spec.panel_width_cm,
+        spec.requested_spacing_m,
+        spec.colour,
+    )
+
+
+def _bom_update(
+    state: AgentState, previous: FenceSpec | None, spec: FenceSpec | None, *, clear: bool
+) -> dict[str, Any]:
+    had_bom = state.get("bom") is not None
+    changed = spec is not None and _bom_inputs(spec) != _bom_inputs(previous)
+    if clear or changed:
+        return {"bom": None, "bom_changed": had_bom, "bom_facts": Facts().model_dump()}
+    return {"bom": state.get("bom"), "bom_changed": False, "bom_facts": state.get("bom_facts")}
+
+
+def _bom_facts(state: AgentState) -> Facts:
+    return Facts.model_validate(state.get("bom_facts") or {})
 
 
 def _facts(state: AgentState) -> Facts:

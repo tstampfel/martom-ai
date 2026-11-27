@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-PROMPT_VERSION = "m4-3-v1"
+PROMPT_VERSION = "m4-3-v2"
 
 GUARD_SYSTEM = """\
 You read one message from a customer of Željezarija Martom, a hardware store in Čitluk \
@@ -48,6 +48,8 @@ conversation. Never compute, estimate or round one yourself.
 so mention only the total (if it has one) and anything notable.
 - Never give a price for a line marked price_on_request or made_to_order, for a gate, \
 for installation, or for posts set in concrete.
+- Write every number in digits, never as words. For a list, use "-" bullets, not a \
+numbered list.
 - Stock products are "dostupno"; never write "dostupnost potvrđujemo".
 - Tension wire for a roll fence is optional ("po želji"): offer it, never add it by \
 default.
