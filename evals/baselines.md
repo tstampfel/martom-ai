@@ -121,16 +121,19 @@ parse. **14 questions (13 scored) against 10 scored before, so the numbers are n
   asked to add sizes and prices.
 - `seed-12-kolica` (R@10 0.75): 47382791 "KARIOLA KARIOLE TAČKE CIVARE CIVARA" never says "kolica",
   so neither keyword nor vector search reaches it; the other three kolica listings are found.
-  Listing wording (a title with "kolica" would fix it, like 53055264 and 57362536).
+  Listing wording (a title with "kolica" would fix it, like 53055264 and 57362536). Tracked in
+  #121 [M3-4c] (synonyms).
 - `seed-14-gradjevinska-kolica` (R@5 0.33, R@10 0.33, RR 0.33): the reranker puts other
   "građevinsk…" products first (kolotura 52849505, građevinski konac 54711855), with the wheelbarrow
   53055264 3rd; 57362536 "KARIOLA KOLICA 75L" and 47382791 are not in the top 10. Hybrid alone had
   R@10 0.67 here, so the rerank costs one listing on this question. The forbidden hand truck
-  35992113 and grinder are not in the top 5.
+  35992113 and grinder are not in the top 5. Revisit with Toni's #13 questions; one option is a
+  richer rerank document with the title, product type and category as separate fields (today the
+  reranker reads `product.search_text`, which has the title and type but no category).
 - Ranked second, not missed: `seed-04-t-stup` (RR 0.50: 81645615 "STUP … ZA STOPOM 40X40MM … 150CM",
   also a 150 cm fence post, comes before the T post 59473597) and `seed-09-no-height-kokosi`
   (RR 0.50: the PVC chicken mesh 73950900 before 68378185). Both first hits are plausible answers;
-  worth asking Toni whether they should count as expected.
+  they go to Toni via #13, to decide whether they should count as expected.
 
 ## Weak cases
 
