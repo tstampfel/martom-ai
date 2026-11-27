@@ -32,6 +32,7 @@ from martom.evals.retrieval import (
     RunScores,
     case_status,
     load_questions,
+    missing_manual_keys,
     run_search_eval,
     score_run,
 )
@@ -62,6 +63,11 @@ async def compare(models: list[str], eval_set: Path) -> None:
     rows: list[str] = []
     case_rows: list[str] = []
     async with await psycopg.AsyncConnection.connect(base.database_url, autocommit=True) as conn:
+        if missing := await missing_manual_keys(conn, questions):
+            raise SystemExit(
+                f"manual_product has no row for {missing}: run `martom load-manual-products`"
+                " (or `martom embed`) first, or those questions score 0"
+            )
         keyword = score_run(questions, await run_search_eval(conn, questions, "keyword"))
         rows.append(
             f"{'keyword (baseline)':<40} {'-':>6} {'-':>6} {'-':>6}"

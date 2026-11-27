@@ -20,13 +20,14 @@ later issue (the guardrail, M4) decides what search should return for them.
 """
 
 import json
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import psycopg
 
+from martom.bom.manual_products import load_manual_products
 from martom.embeddings import Embedder
 from martom.search.hybrid import search_hybrid
 from martom.search.keyword import search_keyword
@@ -100,9 +101,9 @@ def _forbidden_ids(row: dict, expected: tuple[int, ...]) -> tuple[int, ...]:
     return forbidden
 
 
-def _manual_keys(row: dict) -> tuple[str, ...]:
+def _manual_keys(row: dict, known: Collection[str]) -> tuple[str, ...]:
     """The optional `expected_manual_keys`: absent = (), present = a non-empty list of
-    non-empty strings."""
+    keys that are in `known` (a misspelled key could never match, R1-7)."""
     if "expected_manual_keys" not in row:
         return ()
     value = row["expected_manual_keys"]
@@ -114,11 +115,18 @@ def _manual_keys(row: dict) -> tuple[str, ...]:
         raise ValueError(
             f"expected_manual_keys must be a non-empty list of manual product keys, got {value!r}"
         )
+    if unknown := sorted(set(value) - set(known)):
+        raise ValueError(f"expected_manual_keys not in manual_products.toml: {unknown}")
     return tuple(value)
 
 
-def load_questions(path: Path) -> list[EvalQuestion]:
-    """Read a JSONL eval set: one JSON object per line, blank lines skipped."""
+def load_questions(path: Path, *, manual_keys: Collection[str] | None = None) -> list[EvalQuestion]:
+    """Read a JSONL eval set: one JSON object per line, blank lines skipped.
+
+    `manual_keys` are the manual product keys a question may expect; by default the keys
+    in manual_products.toml.
+    """
+    known = set(load_manual_products()) if manual_keys is None else set(manual_keys)
     questions: list[EvalQuestion] = []
     seen: set[str] = set()
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -134,7 +142,7 @@ def load_questions(path: Path) -> list[EvalQuestion]:
                 source=str(row["source"]),
                 note=row.get("note"),
                 must_not_include_listing_ids=_forbidden_ids(row, expected),
-                expected_manual_keys=_manual_keys(row),
+                expected_manual_keys=_manual_keys(row, known),
             )
         except (ValueError, KeyError, TypeError) as exc:
             raise ValueError(f"{path}: line {number} is not a valid question: {exc}") from exc
@@ -265,6 +273,22 @@ def case_status(scores: RunScores, question_id: str) -> str:
     if score is not None and score.recall_at_10 < 1:
         problems.append(f"R@10 {score.recall_at_10:.2f}")
     return ", ".join(problems) or "ok"
+
+
+async def missing_manual_keys(
+    conn: psycopg.AsyncConnection, questions: Sequence[EvalQuestion]
+) -> list[str]:
+    """The expected manual keys that have no `manual_product` row in this database.
+
+    The eval scripts stop on any: without the row (`martom load-manual-products` or
+    `martom embed` never ran) the question would score 0 and look like a search regression.
+    """
+    wanted = sorted({key for q in questions for key in q.expected_manual_keys})
+    if not wanted:
+        return []
+    cursor = await conn.execute("SELECT key FROM manual_product WHERE key = ANY(%s)", (wanted,))
+    present = {row[0] for row in await cursor.fetchall()}
+    return [key for key in wanted if key not in present]
 
 
 # A search under test: question text -> ranked ids (like a TS

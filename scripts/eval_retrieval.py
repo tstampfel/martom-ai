@@ -26,6 +26,7 @@ from martom.evals.retrieval import (
     EvalQuestion,
     RunScores,
     load_questions,
+    missing_manual_keys,
     run_search_eval,
     score_run,
 )
@@ -69,6 +70,11 @@ async def main(eval_set: Path, mode: str, limit: int) -> None:
     settings = Settings()
     embedder: Embedder | None = make_embedder(settings) if mode != "keyword" else None
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
+        if missing := await missing_manual_keys(conn, questions):
+            raise SystemExit(
+                f"manual_product has no row for {missing}: run `martom load-manual-products`"
+                " (or `martom embed`) first, or those questions score 0"
+            )
         results = await run_search_eval(conn, questions, mode, embedder=embedder, limit=limit)
     print(f"search: {mode}" + (f" ({embedder.model})" if embedder else ""))
     print_scores(questions, results, score_run(questions, results))

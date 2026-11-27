@@ -22,7 +22,7 @@ from langchain_core.runnables import RunnableLambda
 from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder
-from martom.evals.retrieval import EvalQuestion, run_search_eval, score_run
+from martom.evals.retrieval import EvalQuestion, missing_manual_keys, run_search_eval, score_run
 from martom.extract.store import save_products
 from martom.search.hybrid import search_hybrid
 from martom.search.keyword import SearchFilters, search_keyword
@@ -337,3 +337,14 @@ async def test_the_price_copy_keeps_every_decimal_of_the_toml_price(database_url
         await sync_manual_products(c, {ANCHOR: product(price="0.004")})
         cursor = await c.execute("SELECT price_km FROM manual_product")
         assert (await cursor.fetchone())[0] == Decimal("0.004")
+
+
+async def test_the_eval_scripts_can_tell_a_manual_key_is_missing_from_the_index(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # On a database where load-manual-products never ran, seed-15 would score 0 and look
+    # like a search regression; the scripts stop instead (R1-7).
+    question = EvalQuestion("m", "anker", (), "seed", expected_manual_keys=(ANCHOR,))
+    assert await missing_manual_keys(conn, [question]) == []
+    await sync_manual_products(conn, {})
+    assert await missing_manual_keys(conn, [question]) == [ANCHOR]

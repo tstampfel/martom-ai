@@ -363,3 +363,22 @@ def test_the_repo_eval_set_asks_for_the_manual_m8x70_anchor() -> None:
     # Every manual key in the set is a real manual_products.toml entry.
     known = set(load_manual_products())
     assert all(set(q.expected_manual_keys) <= known for q in manual)
+
+
+def test_load_questions_rejects_a_manual_key_that_is_not_in_the_toml(tmp_path: Path) -> None:
+    # A misspelled key could never match, and the question would just score 0 (R1-7).
+    path = tmp_path / "set.jsonl"
+    row = {
+        "id": "q1",
+        "question": "anker",
+        "expected_listing_ids": [],
+        "expected_manual_keys": ["anchor_m8x7O"],
+        "source": "seed",
+    }
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="anchor_m8x7O"):
+        load_questions(path)
+    # The known keys can be given (e.g. for another TOML).
+    assert load_questions(path, manual_keys={"anchor_m8x7O"})[0].expected_manual_keys == (
+        "anchor_m8x7O",
+    )
