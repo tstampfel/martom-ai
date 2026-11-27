@@ -19,7 +19,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from martom.olx.detail import ListingDetail
 
-PROMPT_VERSION = "m2-1-v1"
+PROMPT_VERSION = "m3-4c-v1"
 
 SYSTEM_PROMPT = """\
 You extract structured product data from one listing of Željezarija Martom, a hardware \
@@ -48,6 +48,12 @@ ograda", "stup za ogradu", "bodljikava žica", "kutna brusilica", "tiplo".
 words. synonyms are other names the listing uses for the product (e.g. "stub", \
 "stupovi", "koke", "fleksa").
 7. Ignore marketing text that states no facts.
+8. regional_synonyms is the only field not taken from the listing: other common names \
+that customers in Bosnia and Herzegovina and Croatia use for this kind of product, in \
+lower case, for search (e.g. a wheelbarrow listed as "KARIOLA": "kolica", "tačke", \
+"civare"; a wire tensioner: "španer", "zatezač"; fence mesh: "pletivo", "mreža"). Only \
+names of the same product, never related products, brands, sizes or marketing words. \
+At most 6; an empty list when the product has no other common name.
 """
 
 

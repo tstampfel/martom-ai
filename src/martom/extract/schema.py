@@ -6,8 +6,9 @@ schema used both for the tool definition and for parsing). A reply that doesn't 
 raises, and the extractor retries.
 
 Every string is copied from the listing **exactly as written**, odd sizes, typos and
-upper case included. Nothing here converts units or fixes values; prices are parsed into
-numbers later, in plain Python (`martom.extract.prices`).
+upper case included. The one exception is `regional_synonyms`, which the model adds from
+its own knowledge, for search only (#121). Nothing here converts units or fixes values;
+prices are parsed into numbers later, in plain Python (`martom.extract.prices`).
 
 `Field(description=...)` text goes into the JSON schema the model sees, so it is part of
 the prompt. Keep it short and concrete.
@@ -77,6 +78,15 @@ class ExtractedProduct(BaseModel):
     synonyms: list[str] = Field(
         description="Other names the listing itself uses for this product "
         "(e.g. 'stub', 'stupovi', 'koke', 'fleksa'). Only words that appear in it."
+    )
+    # The one field that is NOT copied from the listing (#121): common names customers use
+    # for this kind of product, so search finds a "KARIOLA TAČKE" listing for "kolica".
+    # Python appends them to search_text only; customers never see them.
+    regional_synonyms: list[str] = Field(
+        description="Other common names that customers in Bosnia and Herzegovina and "
+        "Croatia use for this kind of product, even if the listing doesn't use them, "
+        "lower case (e.g. for a wheelbarrow: 'kolica', 'tačke', 'kariola', 'civare'; "
+        "for a wire tensioner: 'španer', 'zatezač'). At most 6. Empty if none are common."
     )
     variants: list[ExtractedVariant] = Field(
         description="Every variant with its own size, colour or price, in listing order. "
