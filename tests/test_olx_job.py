@@ -22,6 +22,7 @@ import pytest
 from martom import cli
 from martom.migrate import run_migrations
 from martom.olx import job
+from martom.olx.allowlist import Allowlist, AllowlistedListing, load_allowlist
 from martom.olx.client import OlxClient
 from martom.olx.job import (
     RunStats,
@@ -37,8 +38,10 @@ pytestmark = pytest.mark.anyio
 
 REPO_MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 DETAIL_FIXTURE = Path(__file__).parent / "fixtures" / "olx" / "listing_details.json"
+ALLOWLISTED_FIXTURE = Path(__file__).parent / "fixtures" / "olx" / "allowlisted_listings.json"
 SHOP_ID = 17193
 LEAF, TOP = 881, 701
+NO_ALLOWLIST = Allowlist(listings=(), covered_categories={LEAF: "Ograde"})
 # Fake start times for scheduled runs: one "night" per call, a day apart (R1-8 needs the
 # two guard trips of an auto-apply at least 12 h apart).
 FIRST_NIGHT = datetime(2026, 12, 1, 2, 0, tzinfo=UTC)
@@ -95,9 +98,14 @@ class FakeShop:
         self.flaky: dict[int, int] = {}  # id -> how many more GETs answer 500 first
         self.abort_on: str | None = None
         self.errors_on: dict[str, int] = {}
+        # id -> a recorded listing-page row, served as is (its own category) instead of
+        # the generated one; the id must also be in `listed`.
+        self.recorded: dict[int, dict[str, Any]] = {}
         self.requests: list[httpx.Request] = []
 
     def summary_row(self, listing_id: int) -> dict[str, Any]:
+        if listing_id in self.recorded:
+            return dict(self.recorded[listing_id])
         return {
             "id": listing_id,
             "title": self.listed[listing_id],
@@ -211,8 +219,13 @@ async def sync(
     max_attempts: int = 1,
     scheduled: bool = False,
     at: datetime | None = None,
+    allowlist: Allowlist = NO_ALLOWLIST,
 ) -> RunStats:
-    """One run; `at` fakes its `started_at` (default: the database's now())."""
+    """One run; `at` fakes its `started_at` (default: the database's now()).
+
+    No allowlisted listings unless `allowlist` says so, so the guard's GETs don't show up
+    in tests about something else.
+    """
     async with make_client(server, max_attempts=max_attempts) as olx:
         return await run_sync(
             conn,
@@ -220,6 +233,7 @@ async def sync(
             kind="full" if full else "nightly",
             scheduled=scheduled,
             now=None if at is None else (lambda: at),
+            allowlist=allowlist,
         )
 
 
@@ -1328,6 +1342,240 @@ async def test_listing_with_a_new_owner_is_deactivated_as_not_martom(
 
     assert (await listings(conn))[10]["active"] is False
     assert any("listing 10 deactivated: not_martom" in r.getMessage() for r in caplog.records)
+
+
+# --- Allowlist guard (#45) ----------------------------------------------------------------
+
+# One allowlisted listing in leaf 1126, for the tests that build their own case.
+TENSIONER = AllowlistedListing(id=18129143, category_id=1126, name="Španer")
+ONE_ALLOWLISTED = Allowlist(listings=(TENSIONER,), covered_categories={LEAF: "Ograde"})
+
+
+def shop_with_allowlisted_listings() -> FakeShop:
+    """Ten ordinary listings plus the three allowlisted ones, as OLX listed them (recorded)."""
+    server = FakeShop(ten_listings())
+    for row in json.loads(ALLOWLISTED_FIXTURE.read_text(encoding="utf-8"))["rows"]:
+        server.listed[row["id"]] = row["title"]
+        server.recorded[row["id"]] = row
+    return server
+
+
+def shop_with_tensioner_in(category_id: int) -> FakeShop:
+    server = FakeShop(ten_listings())
+    server.listed[TENSIONER.id] = "ŠPANER"
+    server.recorded[TENSIONER.id] = {
+        **server.summary_row(1),
+        "id": TENSIONER.id,
+        "title": "ŠPANER",
+        "category_id": category_id,
+        "top_category_id": "224",
+    }
+    return server
+
+
+async def test_every_allowlisted_listing_is_synced_and_stored(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = shop_with_allowlisted_listings()
+
+    with caplog.at_level(logging.INFO):
+        stats = await sync(conn, server, allowlist=load_allowlist())  # the committed file
+
+    stored = await listings(conn)
+    for entry in load_allowlist().listings:
+        assert entry.id in stored, entry
+        assert stored[entry.id]["active"] is True
+        assert stored[entry.id]["detail_hash"] is not None
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    # 81645615 is recorded in 881 (Ograde), not in 876: a move into a covered category is
+    # an info line, not a warning.
+    assert run["allowlist_warnings"] == []
+    assert stats.allowlist_warnings == []
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(
+        getattr(r, "event", None) == "allowlist_listing_in_covered_category"
+        and r.listing_id == 81645615  # type: ignore[attr-defined]
+        for r in caplog.records
+    )
+
+
+async def test_allowlisted_listings_are_stored_once_though_several_targets_return_them(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = shop_with_allowlisted_listings()
+
+    await sync(conn, server, allowlist=load_allowlist())
+
+    count = await fetch_all(
+        conn,
+        "SELECT count(*) FROM olx_listing WHERE id = ANY(%s)",
+        [81645615, 18129143, 48475613],
+    )
+    assert count == [(3,)]
+
+
+async def test_seen_allowlisted_listing_is_not_fetched_again_by_the_guard(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = shop_with_tensioner_in(1126)
+    await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+    server.requests.clear()
+
+    await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    assert server.detail_requests() == []
+
+
+async def test_allowlisted_listing_that_answers_404_is_warned_and_recorded(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeShop(ten_listings())  # the tensioner is not listed, so GET answers 404
+
+    with caplog.at_level(logging.WARNING, logger="martom.olx.job"):
+        stats = await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    run = await last_run(conn)
+    assert run["allowlist_warnings"] == [
+        {
+            "listing_id": 18129143,
+            "name": "Španer",
+            "reason": "404",
+            "expected_category_id": 1126,
+            "category_id": None,
+            "error": None,
+        }
+    ]
+    # A warning never fails the run.
+    assert run["status"] == "succeeded"
+    assert stats.status == "succeeded"
+    assert run["errors"] == 0
+    warning = next(r for r in caplog.records if "18129143" in r.getMessage())
+    assert warning.levelno == logging.WARNING
+    assert "404" in warning.getMessage()
+    assert warning.event == "allowlist_warning"  # type: ignore[attr-defined]
+
+
+async def test_allowlisted_listing_in_another_category_warns_with_old_and_new(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = shop_with_tensioner_in(2091)
+
+    with caplog.at_level(logging.WARNING, logger="martom.olx.job"):
+        await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    assert run["allowlist_warnings"] == [
+        {
+            "listing_id": 18129143,
+            "name": "Španer",
+            "reason": "moved",
+            "expected_category_id": 1126,
+            "category_id": 2091,
+            "error": None,
+        }
+    ]
+    assert (await listings(conn))[18129143]["active"] is True  # stored as usual
+    message = next(r.getMessage() for r in caplog.records if "18129143" in r.getMessage())
+    assert "1126" in message and "2091" in message
+
+
+async def test_allowlisted_listing_moved_into_ograde_raises_no_warning(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = shop_with_tensioner_in(LEAF)  # 881, Ograde: covered by the category sync
+
+    with caplog.at_level(logging.INFO):
+        await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    run = await last_run(conn)
+    assert run["allowlist_warnings"] == []
+    assert run["status"] == "succeeded"
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(
+        r.getMessage() == "18129143 now found via category Ograde; allowlist entry redundant"
+        and r.levelno == logging.INFO
+        for r in caplog.records
+    )
+
+
+async def test_allowlisted_listing_missing_from_the_pages_but_active_is_not_seen(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    server.off_list = {TENSIONER.id: "active"}
+
+    await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    [warning] = (await last_run(conn))["allowlist_warnings"]
+    assert warning["reason"] == "not_seen"
+
+
+@pytest.mark.parametrize(("status", "reason"), [("inactive", "inactive"), ("sold", "inactive")])
+async def test_allowlisted_listing_that_is_no_longer_active_is_warned(
+    conn: psycopg.AsyncConnection, status: str, reason: str
+) -> None:
+    server = FakeShop(ten_listings())
+    server.off_list = {TENSIONER.id: status}
+
+    await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    [warning] = (await last_run(conn))["allowlist_warnings"]
+    assert warning["reason"] == reason
+
+
+async def test_allowlisted_listing_whose_check_fails_is_warned_but_counts_no_error(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    server.detail_errors = {TENSIONER.id: 503}
+
+    stats = await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    [warning] = (await last_run(conn))["allowlist_warnings"]
+    assert (warning["reason"], warning["error"]) == ("recheck_failed", "5xx")
+    assert stats.status == "succeeded"
+    assert stats.errors == 0
+    assert stats.failed_listing_ids is None
+
+
+async def test_allowlist_warning_never_deactivates_other_listings(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    stats = await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    assert stats.deactivated == 0
+    assert all(row["active"] for row in (await listings(conn)).values())
+    assert (await last_run(conn))["allowlist_warnings"][0]["reason"] == "404"
+
+
+async def test_run_that_breaks_before_the_guard_records_no_allowlist_check(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    server.errors_on = {"/search": 500}
+
+    stats = await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    assert stats.status == "failed"
+    # NULL, not []: the review check must not read "no warnings" from a run that never
+    # looked (it takes the latest run with a non-NULL value).
+    assert (await last_run(conn))["allowlist_warnings"] is None
+
+
+async def test_run_sync_reads_the_committed_allowlist_by_default(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = shop_with_allowlisted_listings()
+
+    async with make_client(server) as olx:
+        stats = await run_sync(conn, olx, kind="nightly")
+
+    assert stats.allowlist_warnings == []
 
 
 # --- The CLI ----------------------------------------------------------------------------

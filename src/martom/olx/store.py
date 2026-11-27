@@ -208,7 +208,7 @@ RUN_COLUMNS = frozenset(
         "deactivation_candidates", "deactivated", "reactivated", "errors",
         "deactivation_skipped", "would_deactivate", "skipped_listing_ids",
         "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
-        "final_request_interval", "error", "extracted",
+        "final_request_interval", "error", "extracted", "allowlist_warnings",
     }
 )  # fmt: skip
 
@@ -224,7 +224,11 @@ async def finish_run(conn: psycopg.AsyncConnection, run_id: int, values: Mapping
     query = sql.SQL("UPDATE sync_run SET {}, finished_at = now() WHERE id = {}").format(
         assignments, sql.Placeholder("_run_id")
     )
-    await conn.execute(query, {**values, "_run_id": run_id})
+    params = dict(values)
+    if params.get("allowlist_warnings") is not None:
+        # A list of dicts: psycopg needs to be told it is JSON, not a Postgres array.
+        params["allowlist_warnings"] = Jsonb(params["allowlist_warnings"])
+    await conn.execute(query, {**params, "_run_id": run_id})
 
 
 async def load_skipped_ids(conn: psycopg.AsyncConnection, run_id: int) -> list[int]:

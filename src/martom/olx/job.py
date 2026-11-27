@@ -18,7 +18,11 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
    - the confirmed ones are at most 10% of the active listings (`deactivation_allowed`).
      Above that the run deactivates none, logs an ERROR and records the skip, with the
      ids, in `sync_run` (`deactivation_skipped`, `skipped_listing_ids`).
-6. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
+6. Allowlist guard (#45, `guard_allowlist`): every listing in `olx/allowlist.toml` must
+   have been seen in its recorded category or a covered one ("Ograde"). A missing one
+   gets one GET /listings/{id}. Each problem is logged as a warning and recorded in
+   `sync_run.allowlist_warnings`; it never changes the status and deactivates nothing.
+7. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
    'partial' below 100% coverage or when a GET still failed after its retries (those ids
    go in `failed_listing_ids`, and the next run fetches and re-checks them first),
    'skipped_guard' when a guard skipped deactivation (`run_outcome`), 'failed' when the
@@ -55,12 +59,13 @@ import logging
 from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import psycopg
 
 from martom.olx import store
+from martom.olx.allowlist import Allowlist, AllowlistWarning, check_seen, load_allowlist
 from martom.olx.client import OlxApiError, OlxClient, OlxCounters, OlxRateLimitAbortError
 from martom.olx.detail import (
     DetailFetchAbortedError,
@@ -109,6 +114,8 @@ class RunStats:
     skipped_listing_ids: list[int] | None = None
     applied_run_ids: list[int] | None = None
     recheck_skipped: bool = False
+    # None: the guard didn't run; []: it ran and found nothing (see migration 008).
+    allowlist_warnings: list[dict[str, Any]] | None = None
     error: str | None = None
     run_id: int | None = field(default=None, compare=False)
 
@@ -322,11 +329,13 @@ async def run_sync(
     kind: RunKind,
     scheduled: bool = False,
     now: Callable[[], datetime] | None = None,
+    allowlist: Allowlist | None = None,
 ) -> RunStats:
     """Run one sync (`nightly` or `full`) and record it in `sync_run`; return its stats.
 
     `scheduled`: started by the scheduler, so it may auto-apply (module docstring).
     `now` stamps `sync_run.started_at` (default: the database's now()); tests pass a fake.
+    `allowlist`: the listings the guard checks (default: the committed `allowlist.toml`).
 
     OLX failures don't raise: they end the run as 'partial' (OLX stopped it early) or
     'failed' (see the module docstring). Anything else (a database error, a bug) is
@@ -334,11 +343,13 @@ async def run_sync(
     """
     if kind == "apply_skipped":
         raise ValueError("use apply_skipped_run for kind 'apply_skipped'")
+    # Read before the run starts: a broken file stops here, not halfway through a sync.
+    checked = load_allowlist() if allowlist is None else allowlist
     return await _recorded(
         conn,
         olx,
         kind,
-        lambda stats: _sync(conn, olx, stats),
+        lambda stats: _sync(conn, olx, stats, checked),
         scheduled=scheduled,
         started_at=None if now is None else now(),
     )
@@ -428,7 +439,9 @@ async def _recorded(
     return stats
 
 
-async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) -> None:
+async def _sync(
+    conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats, allowlist: Allowlist
+) -> None:
     """One nightly/full run; when it stops early, carry over the ids still to do.
 
     That holds for every way it can stop (OLX stopping it -> 'partial', or any other
@@ -441,7 +454,7 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
     # the run goes, for the case that it stops early: those go to the next run.
     todo = set(failed_last_run)
     try:
-        await _sync_steps(conn, olx, stats, failed_last_run, todo)
+        await _sync_steps(conn, olx, stats, failed_last_run, todo, allowlist)
     except Exception:
         _carry_over(stats, todo)
         raise
@@ -453,6 +466,7 @@ async def _sync_steps(
     stats: RunStats,
     failed_last_run: set[int],
     todo: set[int],
+    allowlist: Allowlist,
 ) -> None:
     assert stats.run_id is not None
     result = await sync_shop(olx)
@@ -485,6 +499,9 @@ async def _sync_steps(
             await _save_details(conn, exc.partial, stored, stats, todo)
             raise
         await _save_details(conn, details, stored, stats, todo)
+
+    warnings = await guard_allowlist(olx, allowlist, result.listings)
+    stats.allowlist_warnings = [warning.as_json() for warning in warnings]
 
     candidates = deactivation_candidates((i for i, s in stored.items() if s.active), result)
     stats.deactivation_candidates = len(candidates)
@@ -545,6 +562,81 @@ async def _sync_steps(
     # on purpose: the guard tripped and a mass deactivation went past it, which
     # someone should look at.
     stats.skipped_listing_ids = sorted(gone) or None
+
+
+async def guard_allowlist(
+    olx: OlxClient, allowlist: Allowlist, seen: Mapping[int, Mapping[str, Any]]
+) -> list[AllowlistWarning]:
+    """Check the allowlisted listings against what the category sync saw (#45).
+
+    A listing seen outside its recorded category and outside the covered ones is "moved".
+    A listing not seen at all gets one GET /listings/{id} through the rate-limited client
+    (the same re-check as deactivation candidates): 404, "inactive" or "not_martom" when
+    OLX says it is gone, "not_seen" when it is still active (the category sync missed it),
+    "recheck_failed" when the GET failed. Every warning is logged; none raises, so the run
+    goes on. Only `OlxRateLimitAbortError` propagates: OLX stopped the whole run.
+    """
+    warnings, missing = check_seen(allowlist, seen)
+    if missing:
+        try:
+            recheck = await recheck_listings(olx, missing, await shop_id(olx))
+        except OlxRateLimitAbortError:
+            raise
+        except OlxApiError as exc:  # the shop profile failed: no GET was made
+            recheck = Recheck(errors=dict.fromkeys(missing, _error_type(exc)))
+        for entry in allowlist.listings:
+            if entry.id not in missing:
+                continue
+            if entry.id in recheck.gone:
+                reason, error = recheck.gone[entry.id], None
+            elif entry.id in recheck.still_active:
+                reason, error = "not_seen", None
+            else:
+                reason, error = "recheck_failed", recheck.errors.get(entry.id, "unknown")
+            warnings.append(
+                AllowlistWarning(
+                    listing_id=entry.id,
+                    name=entry.name,
+                    reason=reason,
+                    expected_category_id=entry.category_id,
+                    error=error,
+                )
+            )
+    order = [entry.id for entry in allowlist.listings]
+    warnings.sort(key=lambda warning: order.index(warning.listing_id))
+    for warning in warnings:
+        logger.warning(
+            "allowlisted listing %d (%s): %s; drop it from olx/allowlist.toml if that is expected",
+            warning.listing_id,
+            warning.name,
+            _describe(warning),
+            # `name` is a reserved LogRecord attribute, so it goes in as `listing_name`.
+            extra={
+                "event": "allowlist_warning",
+                "listing_id": warning.listing_id,
+                "listing_name": warning.name,
+                "reason": warning.reason,
+                "expected_category_id": warning.expected_category_id,
+                "category_id": warning.category_id,
+                "error": warning.error,
+            },
+        )
+    return warnings
+
+
+def _describe(warning: AllowlistWarning) -> str:
+    match warning.reason:
+        case "moved":
+            return (
+                f"moved from category {warning.expected_category_id} to "
+                f"{warning.category_id}, which the sync doesn't cover"
+            )
+        case "not_seen":
+            return "not on the listing pages, though OLX says it is still active"
+        case "recheck_failed":
+            return f"not on the listing pages, and GET /listings failed ({warning.error})"
+        case _:  # 404, inactive, not_martom
+            return f"not on the listing pages, and OLX says it is gone ({warning.reason})"
 
 
 async def _save_details(
@@ -631,6 +723,7 @@ __all__ = [
     "RunStats",
     "apply_skipped_run",
     "deactivation_allowed",
+    "guard_allowlist",
     "recheck_allowed",
     "recheck_listings",
     "run_outcome",
