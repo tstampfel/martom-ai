@@ -4,7 +4,7 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795701977-d1d0` (M5-2f).
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g).
 
 | Canvas | Repo |
 | --- | --- |
@@ -22,7 +22,7 @@ The `.html` files are the **source of each screen** from the design canvas. They
 
 ## Screens
 
-The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina oko 1,5 m"* → panel fence 153 cm, antracit, base-plate posts (the default). On screen 2 the customer also answers 2 corners with sides 10 + 5 + 10 m (example answers, not defaults); screens 3–5 still show straight-run placeholder quantities until the BOM (M4-1) and the real screens (M5-x) replace them. Gates are out of scope (`docs/domain/fence-rules.md`).
+The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina oko 1,5 m"* → panel fence 153 cm, antracit, base-plate posts (the default). On screen 2 the customer also answers 2 corners with sides 10 + 5 + 10 m (example answers, not defaults); screens 3–5 show the BOM for the straight 25 m run (10 panels, 11 posts, 44 clips, 44 anchors, 905,10 KM + dostava) until the real screens (M5-x) show the calculated BOM, corners included. The start card's third example step reads "Gotov popis: 905,10 KM okvirno". Gates are out of scope (`docs/domain/fence-rules.md`).
 
 | # | Web (`web/`, 1440 wide, fluid) | Mobile (`mobile/`, 390 × 844) | What it shows |
 | --- | --- | --- | --- |
@@ -75,4 +75,4 @@ Both were captured from martom.springmedia.hr at 4× size. Ask Toni for the orig
 
 ## Prices on the mockups
 
-Real OLX prices from 26 Nov 2026: panel 153 × 250 cm = 53 KM, obujmica 50 × 50 = 1,50 KM, PVC traka 19 cm × 35 m = 73 KM, Garden Light 150 cm = 7,50 KM/m. Post price and clamps per post are placeholders (`[cijena]`, `[broj po stupu: Toni]`) until Toni gives the BOM rules (M4-1).
+Reference prices from OLX, 26 Nov 2026: panel 153 × 250 cm = 53 KM, PVC traka 19 cm × 35 m = 73 KM, Garden Light 150 cm = 7,50 KM/m. Stup 155 cm s pločom = 24,90 KM, PVC kopča sa samoreznim vijkom = 1,00 KM and tiplo anker M8 × 80 mm = 1,30 KM are not separate listings: their prices are in the description of panel listing 63996799 (see "Where the prices live" in `docs/domain/fence-rules.md`). Quantities follow `docs/domain/fence-rules.md`: one post more than panels, 4 clips and 4 anchors per post at 153 cm. The 25 m example: 10 × 53 + 11 × 24,90 + 44 × 1,00 + 44 × 1,30 = 905,10 KM.

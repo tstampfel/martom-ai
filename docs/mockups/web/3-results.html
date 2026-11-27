@@ -88,13 +88,14 @@ a{color:inherit;text-decoration:none}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { q: { panel: 10, post: 11, clamp: 44, strip: 0 }, added: false }; }
+  constructor(props) { super(props); this.state = { q: { panel: 10, post: 11, clamp: 44, anchor: 44, strip: 0 }, added: false }; }
   renderVals() {
     const q = this.state.q, fmt = (n) => n.toFixed(2).replace('.', ',');
     const items = [
       { key: 'panel', name: 'Panel 153 × 250 cm, antracit', detail: '53,00 KM / panel', price: 53 },
-      { key: 'post', name: 'Stup za panelnu ogradu, antracit', detail: '[profil i cijena: Toni]', price: null },
-      { key: 'clamp', name: 'Obujmica PVC 50 × 50 mm', detail: '1,50 KM / kom · [broj po stupu: Toni]', price: 1.5 },
+      { key: 'post', name: 'Stup 155 cm s pločom, antracit', detail: '24,90 KM / kom · 1 više od broja panela', price: 24.9 },
+      { key: 'clamp', name: 'PVC kopča sa samoreznim vijkom', detail: '1,00 KM / kom · 4 po stupu', price: 1 },
+      { key: 'anchor', name: 'Tiplo anker M8 × 80 mm', detail: '1,30 KM / kom · 4 po stupu', price: 1.3 },
       { key: 'strip', name: 'PVC traka 19 cm × 35 m', detail: '73,00 KM / rola · neobavezno', price: 73 }
     ];
     const set = (k, d) => () => this.setState({ q: { ...q, [k]: Math.max(0, q[k] + d) }, added: false });
