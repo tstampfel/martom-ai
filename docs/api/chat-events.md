@@ -1,6 +1,6 @@
-# Chat event contract (`POST /api/chat`)
+# Chat contract (`POST /api/chat`)
 
-`POST /api/chat` answers with a Server-Sent Events stream. Each SSE message carries one
+The browser sends one JSON request body per customer message, and `POST /api/chat` answers with a Server-Sent Events stream. Each SSE message carries one
 event as JSON in its `data:` line, and the event's `type` field says which kind it is:
 
 ```text
@@ -16,17 +16,61 @@ the contract both sides build against.
 
 | File | Role |
 | --- | --- |
-| `src/martom/api/chat_events.py` | Source of truth: Pydantic models, one per event, joined in a union on `type` |
-| `docs/api/chat-events.schema.json` | JSON Schema generated from the models; `tests/test_chat_events.py` fails when it is out of date |
-| `web/src/api/events.ts` | TypeScript types, mirrored by hand from the schema |
-| `web/src/api/fixtures/` | Recorded example streams; `events.test.ts` checks every event against the types and the schema |
+| `src/martom/api/chat_events.py` | Source of truth for the events: Pydantic models, one per event, joined in a union on `type` |
+| `src/martom/api/chat_request.py` | Source of truth for the request body (`ChatRequest`) |
+| `docs/api/chat-events.schema.json`, `docs/api/chat-request.schema.json` | JSON Schemas generated from the models; `tests/test_chat_events.py` and `tests/test_chat_request.py` fail when they are out of date |
+| `web/src/api/events.ts`, `web/src/api/chatClient.ts` | TypeScript types, mirrored by hand from the schemas |
+| `web/src/api/fixtures/` | Recorded example streams; `events.test.ts` checks every event against the types and the schema, `chatClient.test.ts` checks requests the clarify form builds |
 
-After changing a model, regenerate the schema and update `events.ts` and the fixtures:
+After changing a model, regenerate the schemas and update the TypeScript types and the fixtures:
 
 ```sh
-uv run python -m martom.api.chat_events
-uv run pytest tests/test_chat_events.py
+uv run python -m martom.api.chat_events   # writes both schemas
+uv run pytest tests/test_chat_events.py tests/test_chat_request.py
 npm --prefix web test
+```
+
+## Request
+
+`message` is what the customer typed, or the summary of their chip answers ("2 kuta ·
+10 + 5 + 10 m · Na beton, s pločicom · Antracit (RAL 7016)"); it is display text, and
+the agent never parses lengths out of it. `thread_id` comes from the previous reply's
+`done` event (`null` for the first message). `answers` is set only when the message
+answers a `chips` event, else `null`:
+
+- `choices`: question id → picked option `value`, for each `single` question answered.
+- `sides`: the length of each fence side in metres, as numbers, in order. Each side is
+  above 0 and at most 300 m (longer sides get no BOM, so the request is refused; the
+  form checks it first). Empty when the chips had no `layout` question, or the customer
+  picked "Ne znam" for the corners; the length then comes from the message. A straight
+  fence (0 corners) sends `project.length_m` as its one side.
+- `closed`: `true` when the fence goes all the way round. A closed fence needs at least
+  3 sides; with no sides it is `false`.
+
+The corners are never sent: they are `len(sides) - 1` for an open fence and
+`len(sides)` for a closed one (`ClarifyAnswers.corners`, the same rule as the BOM's
+`check_layout`). Unknown fields are refused.
+
+```json
+{
+  "message": "2 kuta · 10 + 5 + 10 m · Na beton, s pločicom · Antracit (RAL 7016)",
+  "thread_id": "3b6f2a0e-7c1d-4e7a-9a43-2f1c5d8e9b10",
+  "answers": {
+    "choices": {"posts": "plate", "color": "antracit"},
+    "sides": [10, 5, 10],
+    "closed": false
+  }
+}
+```
+
+Around a yard with four sides:
+
+```json
+{
+  "message": "4 kuta, zatvoreno · 10 + 5 + 10 + 5 m · Na beton, s pločicom · Svejedno",
+  "thread_id": "3b6f2a0e-7c1d-4e7a-9a43-2f1c5d8e9b10",
+  "answers": {"choices": {"posts": "plate", "color": "any"}, "sides": [10, 5, 10, 5], "closed": true}
+}
 ```
 
 ## Rules for every event
@@ -63,42 +107,71 @@ step that leads to clarify questions).
 
 ### `chips`
 
-The clarify questions (`docs/mockups/*/2-clarify.html`). A `single` question offers
-options to pick one from; a `side_lengths` question asks for the length of each fence side
-in metres and has no options. An option's `value` goes back in the next message; `badge`
-is shown on the chip and `note` under the question once the option is picked.
+The clarify questions and the "Vaš projekt" summary (`docs/mockups/*/2-clarify.html`).
+
+`project` (or `null`) fills the dark panel before the customer answers: a short `title`
+("Ograda za dvorište"), the total `length_m` the advisor understood from the message
+(or `null`), and `facts` it already knows, each a `label` and a `value` ("Visina", "oko
+150 cm"). Without a `project` the panel falls back to the customer's first message as
+its title.
+
+Each question has the full `text` for the form and an optional short `label` for its
+panel row ("Stupovi"; the panel uses `text` when it is `null`). There are two kinds:
+
+- `single`: pick one option. An option's `value` goes back in `answers.choices`; `badge`
+  is shown on the chip, `note` under the question once the option is picked, and
+  `short_label` (or `label`) in the panel. `default` is an option value picked before
+  the customer taps anything, or `null`; the advisor sends `"plate"` for the posts
+  question, because base-plate posts are the default (fence-rules.md).
+- `layout`: the fence layout. It has no options and no default; the frontend draws the
+  corner chips (0, 1, 2, 3, 4+, Ne znam), the "Ide okolo (zatvoreno)" toggle and one
+  length field per side (none for 0 corners when `project.length_m` is known, none for
+  "Ne znam"), and sends the result as `answers.sides` and `answers.closed` (see Request).
+  At most one per event.
+
+Question ids are unique within the event.
 
 ```json
 {
   "type": "chips",
   "intro": "Još tri stvari:",
+  "project": {
+    "title": "Ograda za dvorište",
+    "length_m": 25,
+    "facts": [{"label": "Visina", "value": "oko 150 cm"}]
+  },
   "questions": [
+    {"id": "layout", "text": "Koliko ima kutova?", "label": "Kutovi", "kind": "layout", "options": [], "default": null},
     {
       "id": "posts",
       "text": "Gdje idu stupovi?",
+      "label": "Stupovi",
       "kind": "single",
       "options": [
-        {"value": "plate", "label": "Na beton, s pločicom", "badge": null, "note": null},
+        {"value": "plate", "label": "Na beton, s pločicom", "short_label": null, "badge": null, "note": null},
         {
           "value": "concrete",
           "label": "U zemlju (betoniram)",
+          "short_label": "U zemlju · po upitu",
           "badge": "po upitu · po narudžbi",
           "note": "Stupovi za betoniranje su po upitu i rade se po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami."
         },
-        {"value": "unknown", "label": "Ne znam", "badge": null, "note": null}
-      ]
+        {"value": "unknown", "label": "Ne znam", "short_label": null, "badge": null, "note": null}
+      ],
+      "default": "plate"
     },
     {
       "id": "color",
       "text": "Koja boja?",
+      "label": "Boja",
       "kind": "single",
       "options": [
-        {"value": "antracit", "label": "Antracit (RAL 7016)", "badge": null, "note": null},
-        {"value": "zelena", "label": "Zelena (RAL 6005)", "badge": null, "note": null},
-        {"value": "any", "label": "Svejedno", "badge": null, "note": null}
-      ]
-    },
-    {"id": "sides", "text": "Dužina svake strane (m)", "kind": "side_lengths", "options": []}
+        {"value": "antracit", "label": "Antracit (RAL 7016)", "short_label": "Antracit", "badge": null, "note": null},
+        {"value": "zelena", "label": "Zelena (RAL 6005)", "short_label": "Zelena", "badge": null, "note": null},
+        {"value": "any", "label": "Svejedno", "short_label": null, "badge": null, "note": null}
+      ],
+      "default": null
+    }
   ]
 }
 ```

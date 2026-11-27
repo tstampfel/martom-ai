@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ClarifyAnswers": {
+      "additionalProperties": false,
+      "description": "The customer's answers to a chips event.",
+      "properties": {
+        "choices": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Question id → picked option value, for the single questions.",
+          "title": "Choices",
+          "type": "object"
+        },
+        "sides": {
+          "description": "Length of each fence side in metres, in order, each 0 < x ≤ 300. Empty when the chips had no layout question or the customer doesn't know the corners; then the length comes from the message.",
+          "items": {
+            "exclusiveMinimum": 0,
+            "maximum": 300,
+            "type": "number"
+          },
+          "title": "Sides",
+          "type": "array"
+        },
+        "closed": {
+          "default": false,
+          "description": "The fence goes all the way round (a closed loop).",
+          "title": "Closed",
+          "type": "boolean"
+        }
+      },
+      "title": "ClarifyAnswers",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The POST /api/chat request body. Generated from src/martom/api/chat_request.py; do not edit by hand.",
+  "properties": {
+    "message": {
+      "description": "As typed, or the summary of the chip answers.",
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "From the previous reply's done event; null at first.",
+      "title": "Thread Id"
+    },
+    "answers": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClarifyAnswers"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Set when the message answers a chips event."
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "title": "ChatRequest",
+  "type": "object"
+}

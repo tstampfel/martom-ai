@@ -167,9 +167,108 @@ def test_option_defaults_are_written_out() -> None:
     assert option == {
         "value": "plate",
         "label": "Na beton, s pločicom",
+        "short_label": None,
         "badge": None,
         "note": None,
     }
+
+
+def posts_question(**overrides: Any) -> dict[str, Any]:
+    question: dict[str, Any] = {
+        "id": "posts",
+        "text": "Gdje idu stupovi?",
+        "label": "Stupovi",
+        "kind": "single",
+        "options": [
+            {"value": "plate", "label": "Na beton, s pločicom"},
+            {"value": "concrete", "label": "U zemlju (betoniram)", "short_label": "U zemlju"},
+        ],
+        "default": "plate",
+    }
+    question.update(overrides)
+    return question
+
+
+def layout_question(**overrides: Any) -> dict[str, Any]:
+    question: dict[str, Any] = {
+        "id": "layout",
+        "text": "Koliko ima kutova?",
+        "label": "Kutovi",
+        "kind": "layout",
+        "options": [],
+    }
+    question.update(overrides)
+    return question
+
+
+def chips(questions: list[dict[str, Any]], **overrides: Any) -> dict[str, Any]:
+    event: dict[str, Any] = {"type": "chips", "intro": None, "questions": questions}
+    event.update(overrides)
+    return event
+
+
+def test_chips_carry_the_project_summary() -> None:
+    event = parse_event(
+        chips(
+            [layout_question(), posts_question()],
+            project={
+                "title": "Ograda za dvorište",
+                "length_m": 25,
+                "facts": [{"label": "Visina", "value": "oko 150 cm"}],
+            },
+        )
+    )
+    dumped = event.model_dump(mode="json")
+    assert dumped["project"] == {
+        "title": "Ograda za dvorište",
+        "length_m": 25,
+        "facts": [{"label": "Visina", "value": "oko 150 cm"}],
+    }
+    assert dumped["questions"][1]["default"] == "plate"
+    assert dumped["questions"][1]["label"] == "Stupovi"
+    assert dumped["questions"][1]["options"][1]["short_label"] == "U zemlju"
+
+
+def test_project_and_short_labels_are_optional() -> None:
+    event = parse_event(chips([posts_question(label=None, default=None)]))
+    dumped = event.model_dump(mode="json")
+    assert dumped["project"] is None
+    assert dumped["questions"][0]["label"] is None
+    assert dumped["questions"][0]["default"] is None
+
+
+@pytest.mark.parametrize("length_m", [0, -5])
+def test_project_length_is_positive(length_m: float) -> None:
+    with pytest.raises(ValidationError, match="length_m"):
+        parse_event(chips([posts_question()], project={"title": "x", "length_m": length_m}))
+
+
+def test_default_must_be_one_of_the_options() -> None:
+    with pytest.raises(ValidationError, match="default"):
+        parse_event(chips([posts_question(default="wood")]))
+
+
+def test_layout_question_has_no_options_and_no_default() -> None:
+    with pytest.raises(ValidationError, match="layout"):
+        parse_event(chips([layout_question(options=[{"value": "2", "label": "2"}])]))
+    with pytest.raises(ValidationError, match="default"):
+        parse_event(chips([layout_question(default="2")]))
+
+
+def test_at_most_one_layout_question() -> None:
+    with pytest.raises(ValidationError, match="layout"):
+        parse_event(chips([layout_question(), layout_question(id="layout2")]))
+
+
+def test_question_ids_are_unique() -> None:
+    with pytest.raises(ValidationError, match="unique"):
+        parse_event(chips([posts_question(), posts_question()]))
+
+
+def test_side_lengths_kind_is_gone() -> None:
+    # Replaced by the layout kind; the sides travel in the request, not as a question.
+    with pytest.raises(ValidationError):
+        parse_event(chips([layout_question(kind="side_lengths")]))
 
 
 def test_choice_question_needs_options() -> None:
@@ -411,7 +510,8 @@ def test_schema_lists_every_event_type() -> None:
 
 
 def docs_examples() -> list[dict[str, Any]]:
-    text = DOCS_PATH.read_text(encoding="utf-8")
+    # The Request section above it has request bodies (tests/test_chat_request.py).
+    text = DOCS_PATH.read_text(encoding="utf-8").split("\n## Events\n")[1]
     return [json.loads(block) for block in re.findall(r"```json\n(.*?)```", text, re.S)]
 
 

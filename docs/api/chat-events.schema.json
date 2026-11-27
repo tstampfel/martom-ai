@@ -183,6 +183,19 @@
           "title": "Label",
           "type": "string"
         },
+        "short_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Shorter text for the 'Vaš projekt' panel, e.g. 'Antracit'; else label.",
+          "title": "Short Label"
+        },
         "badge": {
           "anyOf": [
             {
@@ -213,6 +226,7 @@
       "required": [
         "value",
         "label",
+        "short_label",
         "badge",
         "note"
       ],
@@ -223,18 +237,32 @@
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "e.g. 'corners', 'posts', 'color'.",
+          "description": "e.g. 'posts', 'color'; the key of its answer in choices.",
           "title": "Id",
           "type": "string"
         },
         "text": {
+          "description": "The full question, e.g. 'Gdje idu stupovi?'.",
           "title": "Text",
           "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Short row label for the 'Vaš projekt' panel, e.g. 'Stupovi'.",
+          "title": "Label"
         },
         "kind": {
           "enum": [
             "single",
-            "side_lengths"
+            "layout"
           ],
           "title": "Kind",
           "type": "string"
@@ -245,13 +273,28 @@
           },
           "title": "Options",
           "type": "array"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Option value picked before the customer taps, e.g. 'plate' (base-plate posts, fence-rules.md). Only for single questions.",
+          "title": "Default"
         }
       },
       "required": [
         "id",
         "text",
+        "label",
         "kind",
-        "options"
+        "options",
+        "default"
       ],
       "title": "ChipQuestion",
       "type": "object"
@@ -279,6 +322,18 @@
           "description": "e.g. 'Još tri stvari:'.",
           "title": "Intro"
         },
+        "project": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Title, length and facts for the 'Vaš projekt' panel."
+        },
         "questions": {
           "items": {
             "$ref": "#/$defs/ChipQuestion"
@@ -291,6 +346,7 @@
       "required": [
         "type",
         "intro",
+        "project",
         "questions"
       ],
       "title": "ChipsEvent",
@@ -522,6 +578,70 @@
         "cards"
       ],
       "title": "ProductCardsEvent",
+      "type": "object"
+    },
+    "ProjectFact": {
+      "additionalProperties": false,
+      "description": "Something the advisor already knows from the message, e.g. Visina: oko 150 cm.",
+      "properties": {
+        "label": {
+          "description": "e.g. 'Visina'.",
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "description": "e.g. 'oko 150 cm'.",
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "title": "ProjectFact",
+      "type": "object"
+    },
+    "ProjectSummary": {
+      "additionalProperties": false,
+      "description": "What the 'Vaš projekt' panel shows before the customer answers anything.",
+      "properties": {
+        "title": {
+          "description": "e.g. 'Ograda za dvorište'.",
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "length_m": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Total length understood from the message, in metres (e.g. 25). A straight fence (0 corners) sends it back as its one side.",
+          "title": "Length M"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/ProjectFact"
+          },
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "length_m",
+        "facts"
+      ],
+      "title": "ProjectSummary",
       "type": "object"
     },
     "StepEvent": {
