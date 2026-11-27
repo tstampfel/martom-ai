@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
 
+import anthropic
+import httpx
 import pytest
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
@@ -21,6 +23,7 @@ from martom.search.keyword import SearchFilters
 from martom.search.query_parser import (
     PROMPT_VERSION,
     ParsedQuery,
+    ParseResult,
     QueryParser,
     build_messages,
     make_query_parser,
@@ -195,14 +198,14 @@ def test_make_query_parser_builds_a_fast_haiku_without_thinking(
     assert "temperature" not in built  # Haiku 5.5 rejects sampling settings
     assert built["schema"] is ParsedQuery
     assert built["method"] == "json_schema"
-    assert built["default_request_timeout"] == query_parser.PARSE_TIMEOUT_SECONDS == 1.5
-    assert parser.timeout == 1.5
+    assert built["default_request_timeout"] == query_parser.PARSE_TIMEOUT_SECONDS == 2.5
+    assert parser.timeout == 2.5
 
 
 def test_make_query_parser_for_batch_use_waits_and_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Recording fixtures and scoring evals must not inherit live search's 1.5 s / no-retry
+    # Recording fixtures and scoring evals must not inherit live search's 2.5 s / no-retry
     # limit (the recording timed out with it).
     built: dict = {}
 
@@ -252,3 +255,26 @@ def test_recorded_reply_gives_the_expected_filters(case: dict) -> None:
         min_price=Decimal(expected["min_price"]) if expected.get("min_price") else None,
         max_price=Decimal(expected["max_price"]) if expected.get("max_price") else None,
     )
+
+
+@pytest.mark.parametrize(
+    ("error", "outcome"),
+    [
+        (TimeoutError(), "timeout"),
+        (
+            anthropic.APITimeoutError(request=httpx.Request("POST", "https://api.invalid")),
+            "timeout",
+        ),
+        (RuntimeError("bad reply"), "error"),
+    ],
+)
+async def test_parse_filters_tells_a_timeout_from_an_error(error: Exception, outcome: str) -> None:
+    parser = QueryParser(fake_model(error), model_name="fake")
+    result = await parser.parse_filters("ograda")
+    assert result == ParseResult(None, outcome)  # type: ignore[arg-type]
+
+
+async def test_parse_filters_reports_ok_with_the_filters() -> None:
+    parser = QueryParser(fake_model(ANTRACIT_150), model_name="fake")
+    result = await parser.parse_filters("ograda 1,5 m antracit")
+    assert result == ParseResult(SearchFilters(height_cm=150.0, colour="antracit"), "ok")

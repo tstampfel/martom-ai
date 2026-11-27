@@ -48,7 +48,7 @@ def fake_cohere(monkeypatch: pytest.MonkeyPatch) -> type[FakeAsyncClientV2]:
 
 
 def test_default_model_is_rerank_4_fast() -> None:
-    assert DEFAULT_RERANK_MODEL == "rerank-v4.0-fast"
+    assert DEFAULT_RERANK_MODEL == "rerank-v5.0-fast"
     assert Settings().rerank_model == DEFAULT_RERANK_MODEL
 
 
@@ -63,7 +63,7 @@ def test_client_gets_the_unwrapped_key_not_the_mask(fake_cohere: type[FakeAsyncC
     reranker = make_reranker(Settings(cohere_api_key=SecretStr("real-cohere-key")))
     assert reranker is not None
     assert fake_cohere.instances[0].kwargs["api_key"] == "real-cohere-key"
-    assert reranker.model == "cohere/rerank-v4.0-fast"
+    assert reranker.model == "cohere/rerank-v5.0-fast"
 
 
 def test_live_queries_get_one_attempt_and_a_short_timeout(

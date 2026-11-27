@@ -15,7 +15,9 @@ How the work is split, following the extraction rule "the model copies, Python p
 
 The call is made fast on purpose: thinking off, effort low, no SDK retries, and
 `QueryParser.filters` gives up after PARSE_TIMEOUT_SECONDS. If parsing fails or is slow,
-search runs without filters (a search without filters beats no search).
+search runs without filters (a search without filters beats no search). retrieve() runs the
+query embedding and the unfiltered candidate search while it waits, so the limit adds
+little to a search that would have waited for those anyway.
 
 The question goes into the user message inside <question> tags, and the system prompt says
 it is data, never instructions (CLAUDE.md: customer text is data, prompt-injection safe).
@@ -27,8 +29,11 @@ import asyncio
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
+import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -42,7 +47,11 @@ logger = logging.getLogger(__name__)
 PROMPT_VERSION = "m3-4-v1"
 # The most a search waits for the parse before it searches without filters. Haiku without
 # thinking usually answers in well under a second.
-PARSE_TIMEOUT_SECONDS = 1.5
+# Live search's limit for one parse. Measured on the eval set (#16, evals/baselines.md):
+# Haiku took p50 1.33 s and p95 1.60 s per question, so 1.5 s sent 18-30% of live searches
+# out without filters. 2.5 s covers that p95 with room for a slow network moment, and
+# retrieve() runs the embedding and the unfiltered search during the wait.
+PARSE_TIMEOUT_SECONDS = 2.5
 # Batch use (recording fixtures, scoring evals) waits for a real answer: a long timeout
 # and SDK retries, so a slow reply is never mistaken for a broken one.
 BATCH_TIMEOUT_SECONDS = 60.0
@@ -155,6 +164,16 @@ def to_filters(parsed: ParsedQuery) -> SearchFilters:
 
 
 type ParserModel = Runnable[Sequence[BaseMessage], ParsedQuery]
+type ParseOutcome = Literal["ok", "timeout", "error"]
+
+
+@dataclass(frozen=True)
+class ParseResult:
+    """The filters (None when the parse failed) and how the parse went, for the fallback
+    metric: "ok", "timeout" (the limit, or the SDK's own timeout) or "error"."""
+
+    filters: SearchFilters | None
+    outcome: ParseOutcome
 
 
 class QueryParser:
@@ -180,8 +199,12 @@ class QueryParser:
 
         With fallback=False (evals) there is no time limit and errors are raised.
         """
+        return (await self.parse_filters(question, fallback=fallback)).filters
+
+    async def parse_filters(self, question: str, *, fallback: bool = True) -> ParseResult:
+        """Like `filters`, plus how the parse went (retrieve() logs it as a metric)."""
         if not fallback:
-            return to_filters(await self.parse(question))
+            return ParseResult(to_filters(await self.parse(question)), "ok")
         try:
             parsed = await asyncio.wait_for(self.parse(question), timeout=self.timeout)
         except Exception as exc:
@@ -191,8 +214,9 @@ class QueryParser:
                 "query parsing failed; searching without filters",
                 extra={"model": self.model_name, "error": type(exc).__name__},
             )
-            return None
-        return to_filters(parsed)
+            timed_out = isinstance(exc, (TimeoutError, anthropic.APITimeoutError))
+            return ParseResult(None, "timeout" if timed_out else "error")
+        return ParseResult(to_filters(parsed), "ok")
 
 
 def make_query_parser(settings: Settings, *, for_queries: bool = True) -> QueryParser | None:

@@ -2,16 +2,19 @@
 
 This is the "Retrieve" node of the agent graph (docs/PLAN.md, Agent graph):
 
-1. Understand, two calls at the same time (asyncio.gather, like Promise.all): Haiku reads
-   the question for filters (search/query_parser.py) while the embedding provider embeds
-   it. Neither needs the other, so the slower one sets the time, not their sum.
+1. Understand, two jobs at the same time (asyncio.gather, like Promise.all): Haiku reads
+   the question for filters (search/query_parser.py), while the embedding provider embeds
+   it and hybrid search runs without filters (the result of a parse fallback, and the
+   top-up's source). Neither needs the other, so the slower one sets the time, not their
+   sum: the parse limit (2.5 s) costs nothing beyond the parse itself.
 2. Search: hybrid search (search/hybrid.py) with those filters returns its best
    `candidates` (30) in RRF order. Parsed filters narrow, but must never hide a strong
    match: a height filter can't match a listing that sells one thing without variants
    ("T STUP 150 CM" keeps its height in the title), and a colour filter misses a listing
-   whose colour wasn't extracted. So when a height or colour is set, the search also runs
-   with those two relaxed (`relax_filters`; the query vector is reused: one more SQL
-   query, no paid call), and the hits the filtered list lacks are added after it: enough
+   whose colour wasn't extracted. So when a height or colour is set, hits from a search
+   with those two relaxed (`relax_filters`: the search from step 1, or with a price limit
+   one more SQL query; the query vector is reused, no paid call) that the filtered list
+   lacks are added after it: enough
    to fill it up to `candidates`, and at least TOP_UP even when it is full
    (`Retrieval.top_up_added`). Price limits are never relaxed: a price is known data, and
    a listing over the customer's stated limit fails on purpose (R2-1). So nothing over
@@ -31,7 +34,10 @@ agent (M4) to decide.
 Every outside call has a fallback, so a customer's search never fails because a provider is
 down or slow: no filters if Haiku fails, keyword results only if the embedding fails
 (search_hybrid's own fallback), RRF order if the rerank fails or takes longer than
-RERANK_TIMEOUT_SECONDS. Evals pass `fallback=False`: no time limits, and any failure is
+RERANK_TIMEOUT_SECONDS. Each search logs one "retrieval finished" line with how the parse
+and the rerank went (`parse_outcome`, `rerank_outcome`: ok / timeout / error / skipped, plus
+their times), so monitoring (M6-3) can watch the fallback rates; never the question. Evals
+pass `fallback=False`: no time limits, and any failure is
 raised, so a degraded answer is never scored as the real one.
 
 What this does not decide: whether the results are good enough. Hybrid search always
@@ -42,7 +48,6 @@ the grading step (M4) to judge, with the rerank `relevance` scores as evidence.
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable
 from dataclasses import dataclass, field, replace
 
 import psycopg
@@ -62,12 +67,12 @@ from martom.search.keyword import (
     filter_params,
     strip_filler_words,
 )
-from martom.search.query_parser import QueryParser
+from martom.search.query_parser import ParseResult, QueryParser
 from martom.search.rerank import Reranker
 
 logger = logging.getLogger(__name__)
 
-# The most a search waits for the reranker before answering in RRF order. Rerank 4 Fast on
+# The most a search waits for the reranker before answering in RRF order. Rerank 5 Fast on
 # 30 short texts usually takes a few hundred milliseconds.
 RERANK_TIMEOUT_SECONDS = 1.5
 # Relaxed-search hits added after a full filtered list (see the module docstring). With 30
@@ -106,6 +111,10 @@ class Retrieval:
     top_up_added: int  # candidates added from the relaxed search (R1-1)
     reranked: bool  # False: no reranker configured, it failed, or it was too slow
     timings_ms: dict[str, float] = field(default_factory=dict)
+    # How the parse and the rerank went (the fallback metric, see the "retrieval" log line):
+    # "ok", "timeout", "error", or "skipped" (none configured, or nothing to rerank).
+    parse_outcome: str = "skipped"
+    rerank_outcome: str = "skipped"
 
 
 class _KnownQueryVector(Embeddings):
@@ -147,10 +156,6 @@ async def _embed(
     return vector, None
 
 
-async def _no_filters() -> None:
-    return None
-
-
 async def retrieve(
     conn: psycopg.AsyncConnection,
     question: str,
@@ -174,48 +179,81 @@ async def retrieve(
 
     if not strip_filler_words(question):
         # Nothing to search for (search_hybrid would return []): skip the paid calls.
-        for name in ("understand", "search", "rerank", "total"):
+        for name in ("understand", "parse", "search", "rerank", "total"):
             timings[name] = 0.0
         return Retrieval([], SearchFilters(), False, False, 0, False, timings)
 
-    parse: Awaitable[SearchFilters | None] = (
-        parser.filters(question, fallback=fallback) if parser else _no_filters()
-    )
-    parsed_filters, (vector, embed_error) = await asyncio.gather(
-        parse, _embed(embedder, question, fallback=fallback)
+    async def parse() -> ParseResult | None:
+        if parser is None:
+            return None
+        begun = time.perf_counter()
+        try:
+            return await parser.parse_filters(question, fallback=fallback)
+        finally:
+            timings["parse"] = round((time.perf_counter() - begun) * 1000, 1)
+
+    async def embed_and_search_unfiltered() -> tuple[Embedder, bool, list[HybridHit]]:
+        # Needs no filters, so it runs while Haiku reads the question: the search without
+        # filters is what a parse fallback returns, and the top-up's source otherwise.
+        vector, embed_error = await _embed(embedder, question, fallback=fallback)
+        known = Embedder(model=embedder.model, embeddings=_KnownQueryVector(vector, embed_error))
+        unfiltered = await search_hybrid(
+            conn,
+            question,
+            SearchFilters(),
+            embedder=known,
+            limit=candidates + TOP_UP,  # room for the top-up beyond the filtered hits
+            fallback=fallback,
+        )
+        return known, embed_error is not None, unfiltered
+
+    timings["parse"] = 0.0
+    parse_result, (known, embedding_fallback, unfiltered) = await asyncio.gather(
+        parse(), embed_and_search_unfiltered()
     )
     mark = lap("understand", started)
 
-    known = Embedder(model=embedder.model, embeddings=_KnownQueryVector(vector, embed_error))
+    parsed_filters = parse_result.filters if parse_result else None
     filters = parsed_filters or SearchFilters()
-    hybrid = await search_hybrid(
-        conn, question, filters, embedder=known, limit=candidates, fallback=fallback
-    )
-    matched = {hit.listing_id for hit in hybrid}
     top_up_added = 0
-    relaxed = relax_filters(filters)
-    if relaxed != filters:
-        # Room for the top-up beyond hits the filtered list already has.
-        wider = await search_hybrid(
-            conn,
-            question,
-            relaxed,
-            embedder=known,
-            limit=candidates + TOP_UP,
-            fallback=fallback,
+    if filters == SearchFilters():
+        hybrid = unfiltered[:candidates]
+        matched = {hit.listing_id for hit in hybrid}
+    else:
+        hybrid = await search_hybrid(
+            conn, question, filters, embedder=known, limit=candidates, fallback=fallback
         )
-        hybrid, top_up_added = _top_up(hybrid, wider, candidates)
-        # A top-up hit may still pass every filter: it only ranked below the filtered
-        # search's top `candidates` (R3-1). Ask the data, not the rank.
-        matched |= await _passing_filters(
-            conn, [h.listing_id for h in hybrid if h.listing_id not in matched], filters
-        )
+        matched = {hit.listing_id for hit in hybrid}
+        relaxed = relax_filters(filters)
+        if relaxed != filters:
+            # Only a price limit (or a type) survives relaxing; without one the prefetched
+            # unfiltered search is the relaxed search.
+            wider = (
+                unfiltered
+                if relaxed == SearchFilters()
+                else await search_hybrid(
+                    conn,
+                    question,
+                    relaxed,
+                    embedder=known,
+                    limit=candidates + TOP_UP,
+                    fallback=fallback,
+                )
+            )
+            hybrid, top_up_added = _top_up(hybrid, wider, candidates)
+            # A top-up hit may still pass every filter: it only ranked below the filtered
+            # search's top `candidates` (R3-1). Ask the data, not the rank.
+            matched |= await _passing_filters(
+                conn, [h.listing_id for h in hybrid if h.listing_id not in matched], filters
+            )
     filters_dropped = bool(hybrid) and not matched
     if filters_dropped:
         logger.info("no candidate passed every parsed filter; relaxed height and colour")
     mark = lap("search", mark)
 
-    scores = await _rerank(conn, question, hybrid, reranker, rerank_timeout, fallback=fallback)
+    scores, rerank_outcome = await _rerank(
+        conn, question, hybrid, reranker, rerank_timeout, fallback=fallback
+    )
     lap("rerank", mark)
     if scores is None:
         picked = [(h, None) for h in hybrid[:limit]]
@@ -223,6 +261,24 @@ async def retrieve(
         picked = [(hybrid[index], relevance) for index, relevance in scores[:limit]]
     hits = [_hit(h, relevance, h.listing_id in matched) for h, relevance in picked]
     lap("total", started)
+    parse_outcome = parse_result.outcome if parse_result else "skipped"
+    # One line per search for monitoring (M6-3): the parse and rerank fallback rates come
+    # from parse_outcome / rerank_outcome. Never the question (customer text).
+    logger.info(
+        "retrieval finished",
+        extra={
+            "event": "retrieval",
+            "parse_outcome": parse_outcome,
+            "parse_ms": timings["parse"],
+            "rerank_outcome": rerank_outcome,
+            "rerank_ms": timings["rerank"],
+            "total_ms": timings["total"],
+            "embedding_fallback": embedding_fallback,
+            "filters_parsed": filters != SearchFilters(),
+            "top_up_added": top_up_added,
+            "hits": len(hits),
+        },
+    )
     return Retrieval(
         hits=hits,
         filters=filters,
@@ -231,6 +287,8 @@ async def retrieve(
         top_up_added=top_up_added,
         reranked=scores is not None,
         timings_ms=timings,
+        parse_outcome=parse_outcome,
+        rerank_outcome=rerank_outcome,
     )
 
 
@@ -302,10 +360,11 @@ async def _rerank(
     timeout: float,
     *,
     fallback: bool,
-) -> list[tuple[int, float]] | None:
-    """(index into `hits`, relevance) pairs, best first; None means keep the RRF order."""
+) -> tuple[list[tuple[int, float]] | None, str]:
+    """(index into `hits`, relevance) pairs, best first, and the outcome ("ok", "timeout",
+    "error" or "skipped"); no pairs means keep the RRF order."""
     if reranker is None or not hits:
-        return None
+        return None, "skipped"
     documents = await _search_texts(conn, hits)
     if not fallback:
         scores = await reranker.rerank(question, documents)
@@ -319,8 +378,8 @@ async def _rerank(
                 "rerank failed; results stay in RRF order",
                 extra={"rerank_model": reranker.model, "error": type(exc).__name__},
             )
-            return None
-    return [(s.index, s.relevance) for s in scores]
+            return None, "timeout" if isinstance(exc, TimeoutError) else "error"
+    return [(s.index, s.relevance) for s in scores], "ok"
 
 
 async def _search_texts(conn: psycopg.AsyncConnection, hits: list[HybridHit]) -> list[str]:

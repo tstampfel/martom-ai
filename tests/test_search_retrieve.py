@@ -22,6 +22,7 @@ from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder
 from martom.evals.retrieval import EvalQuestion
 from martom.evals.retrieve_eval import run_retrieve_eval
 from martom.extract.store import save_products
+from martom.search import retrieve as retrieve_module
 from martom.search.hybrid import search_hybrid
 from martom.search.keyword import SearchFilters
 from martom.search.query_parser import ParsedQuery, QueryParser
@@ -431,3 +432,98 @@ async def test_matched_filters_comes_from_the_data_not_the_rank(
     returned = {hit.listing_id: hit.matched_filters for hit in result.hits}
     assert set(returned) & passing - {result.hits[0].listing_id}  # some came via top-up
     assert returned == {listing_id: listing_id in passing for listing_id in returned}
+
+
+# --- the parse runs next to the embedding and the unfiltered search (#16) --------------------
+
+
+async def test_the_parse_the_embedding_and_the_unfiltered_search_start_together(
+    conn: psycopg.AsyncConnection,
+    embedder: Embedder,
+    embeddings: ConceptEmbeddings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The parse only finishes once the unfiltered search (which needs the embedding) has
+    # run: if retrieve() waited for the parse first, it would time out and search
+    # unfiltered (parse_outcome "timeout"). Events, not sleeps: nothing waits on a clock.
+    unfiltered_searched = asyncio.Event()
+
+    async def tracking_search(*args: object, **kwargs: object) -> list:
+        filters = args[2] if len(args) > 2 else kwargs.get("filters", SearchFilters())
+        if filters == SearchFilters():
+            unfiltered_searched.set()
+        return await search_hybrid(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(retrieve_module, "search_hybrid", tracking_search)
+
+    async def waits_for_the_search(messages: Sequence[BaseMessage]) -> ParsedQuery:
+        assert embeddings.started.is_set()
+        await unfiltered_searched.wait()
+        return ParsedQuery(height="153 cm", colour=None, min_price=None, max_price=None)
+
+    parser = QueryParser(RunnableLambda(waits_for_the_search), model_name="fake", timeout=5.0)
+    result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None)
+    assert result.parse_outcome == "ok"
+    assert result.filters == SearchFilters(height_cm=153.0)
+    assert result.top_up_added > 0  # the prefetched unfiltered hits fed the top-up
+
+
+async def test_a_parse_timeout_still_returns_results_without_filters(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    async def times_out(messages: Sequence[BaseMessage]) -> ParsedQuery:
+        raise TimeoutError
+
+    parser = QueryParser(RunnableLambda(times_out), model_name="fake")
+    result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None)
+    assert result.parse_outcome == "timeout"
+    assert not result.parsed
+    assert result.filters == SearchFilters()
+    assert set(ids(result.hits)[:2]) == PANELS
+    hybrid = await search_hybrid(conn, "panelna ograda", embedder=embedder)
+    assert ids(result.hits) == ids(hybrid)  # the same as a search without a parser
+
+
+async def test_a_parse_error_is_told_apart_from_a_timeout(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    async def breaks(messages: Sequence[BaseMessage]) -> ParsedQuery:
+        raise RuntimeError("bad reply")
+
+    parser = QueryParser(RunnableLambda(breaks), model_name="fake")
+    result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None)
+    assert result.parse_outcome == "error"
+    assert result.hits
+
+
+async def test_every_search_logs_one_metric_line_without_the_question(
+    conn: psycopg.AsyncConnection, embedder: Embedder, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="martom.search.retrieve")
+    reranker = FakeReranker(error=RuntimeError("cohere down"))
+    await retrieve(
+        conn,
+        "tajna panelna ograda",
+        embedder=embedder,
+        parser=parser_replying(NO_FILTERS),
+        reranker=reranker,
+    )
+    lines = [r for r in caplog.records if getattr(r, "event", None) == "retrieval"]
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.parse_outcome == "ok"
+    assert line.rerank_outcome == "error"
+    assert line.embedding_fallback is False
+    for field in ("parse_ms", "rerank_ms", "total_ms"):
+        assert isinstance(getattr(line, field), float)
+    assert line.hits > 0
+    assert "tajna" not in line.getMessage()
+    assert all("tajna" not in str(value) for value in vars(line).values())
+
+
+async def test_without_a_parser_the_outcome_is_skipped(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=None, reranker=None)
+    assert result.parse_outcome == "skipped"
+    assert result.rerank_outcome == "skipped"

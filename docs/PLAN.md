@@ -66,7 +66,7 @@ flowchart TB
     api --> wa["WhatsApp<br/>order link to Toni"]
     api --> pg["Postgres (RDS)<br/>products, vectors, checkpoints"]
     api --> redis["Redis sidecar<br/>query cache"]
-    api --> cohere["Cohere Rerank 4<br/>reorders top 30"]
+    api --> cohere["Cohere Rerank 5<br/>reorders top 30"]
     api --> claude["Claude<br/>Sonnet + Haiku"]
     olx["OLX.ba API<br/>~2,600 public listings"] --> sync["Nightly sync job<br/>per category, 1 req / 2 s<br/>Haiku extracts variants"]
     sync --> pg
@@ -116,7 +116,7 @@ The design follows the jamwithai **Production Agentic RAG** course, adapted from
 | Agent | LangGraph, using LangChain components | Explicit graph: guardrail → retrieve → grade → rewrite → generate; interrupts for order confirmation |
 | LLMs | Claude Sonnet 5.5 (agent), Claude Haiku 5.5 (extraction, query parsing, grading) | Strong Bosnian, good tool use; API credits now, Bedrock later |
 | Search | Postgres 16: full-text (`martom` config with unaccent) + pgvector, combined with RRF | 2,600 products don't need OpenSearch; one store for products, vectors and LangGraph checkpoints |
-| Rerank | Cohere Rerank 4 Fast | Multilingual; skipped automatically if it's down |
+| Rerank | Cohere Rerank 5 Fast (`rerank-v5.0-fast`) | Multilingual; skipped automatically if it's down. Tied Rerank 4 Fast on the eval set (#16) and is newer and cheaper |
 | Embeddings | Multilingual model, to be chosen in M3 (Cohere embed-multilingual or similar) | Decided with the eval set, not upfront |
 | Cache | Redis (sidecar container) | Repeated queries and embeddings (course week 6) |
 | Ingestion | Scheduled container task, nightly | One job doesn't need Airflow |
@@ -206,7 +206,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 | M3-1 | Eval dataset: 50+ real customer questions (about 35 fence, 15 other products) with expected listing IDs, in LangSmith + repo JSONL | Exists before any tuning; Toni reviewed the answers |
 | M3-2 | Keyword search: full-text + trigram + filters (type, height, colour, price) | Baseline recall@10 reported in the PR |
 | M3-3 | Embeddings + pgvector migration + hybrid search with RRF | Hybrid beats keyword baseline on recall@10 |
-| M3-4 | Query understanding (Haiku → filters) + Cohere Rerank 4 with fallback | recall@5 ≥ 90%; p95 retrieval < 800 ms |
+| M3-4 | Query understanding (Haiku → filters) + Cohere Rerank with fallback | recall@5 ≥ 90%; p95 retrieval < 800 ms |
 | M3-5 | Redis cache for query results and embeddings (TTL, graceful fallback) | Cache hit skips LLM/embedding calls; Redis down ≠ outage |
 
 ### M4 — Agent (course weeks 5, 7)
@@ -274,7 +274,7 @@ Expect roughly **$45–80 per month** at launch traffic (a few hundred conversat
 | --- | --- | --- |
 | AWS: Fargate (API + nightly job, Redis as a sidecar container), load balancer, RDS Postgres small | ~$35–45 | Kept on purpose as a learning investment: ECS + load balancer + RDS + Terraform is the standard AWS pattern in job ads. ElastiCache only if traffic needs it. |
 | Claude: agent (Sonnet) + extraction/grading (Haiku) | ~$10–30 | Target < $0.10 per conversation; full catalogue extraction is a one-off of a few dollars |
-| Cohere Rerank 4 Fast | ~$1–2 | About $2 per 1,000 searches |
+| Cohere Rerank 5 Fast | ~$1–2 | About $2 per 1,000 searches |
 | WhatsApp orders | $0 | Click-to-chat links sent from the customer's phone; no Meta fees |
 | LangSmith | $0 | Free developer tier to start; Plus is $39/seat/month if needed |
 | Cloudflare (frontend, Turnstile), GitHub Actions (public repo) | $0 | Standard runners are free on public repos |

@@ -23,8 +23,10 @@ import cohere
 
 from martom.settings import Settings
 
-# Cohere Rerank 4 Fast (docs/PLAN.md, Stack): multilingual, the low-latency Rerank 4.
-DEFAULT_RERANK_MODEL = "rerank-v4.0-fast"
+# Cohere Rerank 5 Fast (docs/PLAN.md, Stack): multilingual, low latency. It tied Rerank 4
+# Fast on the eval set (evals/baselines.md, #16) and is newer and cheaper; set
+# RERANK_MODEL=rerank-v4.0-fast to go back.
+DEFAULT_RERANK_MODEL = "rerank-v5.0-fast"
 # Live search: one attempt and a short HTTP timeout; retrieve() also caps the whole wait.
 QUERY_MAX_RETRIES = 0
 QUERY_TIMEOUT_SECONDS = 2.0
