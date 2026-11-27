@@ -12,6 +12,8 @@ import psycopg
 import uvicorn
 from pydantic import ValidationError
 
+from martom.extract.extractor import Extractor, make_structured_model
+from martom.extract.job import ExtractionStats, run_extraction
 from martom.log import configure_logging, logging_config
 from martom.migrate import MigrationError, run_migrations
 from martom.olx.client import OlxClient
@@ -72,7 +74,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="set by the scheduler (M6-1): only scheduled runs count toward auto-apply",
     )
 
+    extract = commands.add_parser(
+        "extract",
+        help="extract products and variants with Claude Haiku from listings whose detail changed",
+    )
+    extract.add_argument(
+        "--all",
+        action="store_true",
+        help="re-extract every active listing (after a prompt or schema change)",
+    )
+    extract.add_argument(
+        "--limit", type=int, metavar="N", help="extract at most N listings (for a trial run)"
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "extract":
+        if args.limit is not None and args.limit < 1:
+            parser.error("--limit must be at least 1")
+        return run_extract_command(force_all=args.all, limit=args.limit)
 
     if args.command == "sync":
         if args.scheduled and args.apply_skipped is not None:
@@ -144,6 +164,43 @@ def run_sync_command(
     if stats.status == "succeeded":
         return 0
     return 1 if stats.status == "failed" else 2  # 2: partial or skipped_guard
+
+
+def make_extractor(settings: Settings) -> Extractor:
+    """The Claude Haiku extractor (a function so tests can swap in a fake model)."""
+    return Extractor(
+        make_structured_model(settings),
+        model_name=settings.fast_model,
+        concurrency=settings.extraction_concurrency,
+    )
+
+
+def run_extract_command(*, force_all: bool = False, limit: int | None = None) -> int:
+    """`martom extract [--all] [--limit N]`.
+
+    Exit 0 when every listing was extracted ('succeeded'), 2 when some still failed after
+    their retries ('partial'; they are tried again next run), 1 when the run broke.
+    """
+    try:
+        settings = Settings()
+        extractor = make_extractor(settings)
+    except (ValidationError, ValueError) as exc:
+        print(f"invalid settings: {exc}", file=sys.stderr)
+        return 1
+    configure_logging(settings.log_level)
+
+    async def extract() -> ExtractionStats:
+        async with await psycopg.AsyncConnection.connect(
+            settings.database_url, autocommit=True
+        ) as conn:
+            return await run_extraction(conn, extractor, force_all=force_all, limit=limit)
+
+    try:
+        stats = asyncio.run(extract())
+    except Exception:
+        logger.exception("extraction run crashed")
+        return 1
+    return {"succeeded": 0, "partial": 2}.get(stats.status, 1)
 
 
 def run_api(host: str, port: int, *, reload: bool) -> int:

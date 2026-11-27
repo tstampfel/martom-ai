@@ -10,7 +10,7 @@ provide the variables, in production ECS injects them from Secrets Manager.
 import re
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # CORS may only ever allow the public customer site and local development servers.
@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # Seconds between OLX request starts. Politeness rule: 2.0 s by default, never
     # configured below 1.3 s; after a 429 the client raises it for the rest of the run.
     olx_request_interval: float = Field(default=2.0, ge=1.3)
+
+    # Claude, read by `martom extract` (M2-1). SecretStr keeps the key out of logs and
+    # reprs (it prints as '**********'); None means "not configured".
+    anthropic_api_key: SecretStr | None = None
+    # Haiku for extraction, query parsing and grading (CLAUDE.md, Stack).
+    fast_model: str = "claude-haiku-5-5"
+    # Listings extracted at the same time (one Claude call each).
+    extraction_concurrency: int = Field(default=4, ge=1, le=16)
 
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")
