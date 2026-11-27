@@ -14,6 +14,8 @@ import uvicorn
 from pydantic import ValidationError
 
 from martom.api.admin import AdminTokenError, check_admin_token
+from martom.embed_job import EmbedStats, run_embedding
+from martom.embeddings import EmbeddingError, make_embedder
 from martom.extract.extractor import (
     Extractor,
     MissingApiKeyError,
@@ -107,6 +109,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     commands.add_parser(
+        "embed",
+        help="embed products and knowledge chunks whose text changed (run after extract)",
+    )
+
+    commands.add_parser(
         "report",
         help="print Toni's open review issues in Bosnian, by priority, with OLX links",
     )
@@ -115,6 +122,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "report":
         return run_report_command()
+
+    if args.command == "embed":
+        return run_embed_command()
 
     if args.command == "load-knowledge":
         return run_load_knowledge_command(args.dir)
@@ -163,6 +173,39 @@ def run_load_knowledge_command(directory: Path) -> int:
     print(
         f"knowledge_chunk: inserted {stats.inserted}, updated {stats.updated}, "
         f"unchanged {stats.unchanged}, deleted {stats.deleted}"
+    )
+    return 0
+
+
+def run_embed_command() -> int:
+    """`martom embed`: exit 0 when every changed text was embedded, 1 otherwise.
+
+    Rows embedded before a failure stay saved, so running it again continues from there.
+    """
+    try:
+        settings = Settings()
+        embedder = make_embedder(settings)
+    except (ValidationError, EmbeddingError) as exc:
+        print(f"invalid settings: {exc}", file=sys.stderr)
+        return 1
+    configure_logging(settings.log_level)
+
+    async def embed() -> EmbedStats:
+        async with await psycopg.AsyncConnection.connect(
+            settings.database_url, autocommit=True
+        ) as conn:
+            return await run_embedding(conn, embedder)
+
+    try:
+        stats = asyncio.run(embed())
+    except Exception:
+        logger.exception("embedding run crashed")
+        return 1
+    print(
+        f"model {embedder.model}\n"
+        f"products: embedded {stats.products_embedded}, unchanged {stats.products_unchanged}\n"
+        f"knowledge chunks: embedded {stats.chunks_embedded}, "
+        f"unchanged {stats.chunks_unchanged}"
     )
     return 0
 

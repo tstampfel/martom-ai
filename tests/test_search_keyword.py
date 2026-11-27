@@ -4,37 +4,31 @@ The catalogue is the 10 golden extraction records (real listings, tests/fixtures
 plus a few small synthetic products for the cases the golden set doesn't cover.
 """
 
-import json
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from decimal import Decimal
-from pathlib import Path
-from typing import Any
 
 import psycopg
 import pytest
 
 from martom.evals.retrieval import EvalQuestion, run_keyword_eval
-from martom.extract.store import ProductRecord, VariantRow, save_products
-from martom.migrate import run_migrations
+from martom.extract.store import VariantRow, save_products
 from martom.search.keyword import KeywordHit, SearchFilters, search_keyword, strip_filler_words
+from search_catalogue import (
+    BRUSILICA,
+    FARMER,
+    INACTIVE_PANEL,
+    KATANAC,
+    KOKOSI,
+    PANELS,
+    T_POST,
+    TIPLO,
+    VEZNA_ZICA,
+    build_catalogue,
+    synthetic,
+)
 
 pytestmark = pytest.mark.anyio
-
-REPO = Path(__file__).resolve().parents[1]
-FIXTURES = REPO / "tests" / "fixtures" / "extraction"
-
-PANELS = {63996799, 1199211}
-BRUSILICA = 52889522
-T_POST = 59473597
-FARMER = 24449780
-KOKOSI = 68378185
-KATANAC = 36376333
-TIPLO = 31905913
-
-# Synthetic listings (ids far from real OLX ids).
-VEZNA_ZICA = 900001  # slash-joined words, for the unaccent fix
-INACTIVE_PANEL = 900002  # a sold listing that matches "panelna ograda" perfectly
 
 
 @pytest.fixture
@@ -42,86 +36,9 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-def _load(name: str) -> Any:
-    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
-
-
-def _golden_records() -> list[ProductRecord]:
-    records = []
-    for row in _load("golden.json")["records"].values():
-        variants = [
-            VariantRow(**{**v, "price": Decimal(v["price"]) if v["price"] else None})
-            for v in row["variants"]
-        ]
-        records.append(ProductRecord(**{**row, "variants": variants}))
-    return records
-
-
-def _synthetic(listing_id: int, product_type: str, search_text: str) -> ProductRecord:
-    return ProductRecord(
-        listing_id=listing_id,
-        detail_hash="h",
-        product_type=product_type,
-        brand=None,
-        material=None,
-        wire_thickness=None,
-        mesh=None,
-        colours=[],
-        uses=[],
-        compatible_with=[],
-        synonyms=[],
-        extraction={},
-        model="test",
-        prompt_version="test",
-        search_text=search_text,
-        variants=[VariantRow("v", "153", None, None, None, "10,00 KM", Decimal("10.00"), "kom")],
-    )
-
-
-async def _add_listing(
-    conn: psycopg.AsyncConnection,
-    listing_id: int,
-    title: str,
-    slug: str,
-    active: bool = True,
-    price: float | None = None,
-) -> None:
-    await conn.execute(
-        "INSERT INTO olx_listing (id, slug, title, summary, detail_hash, active, price)"
-        " VALUES (%s, %s, %s, '{}', 'h', %s, %s)",
-        (listing_id, slug, title, active, price),
-    )
-
-
 @pytest.fixture
 async def conn(database_url: str) -> AsyncIterator[psycopg.AsyncConnection]:
-    run_migrations(database_url, REPO / "migrations")
-    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as c:
-        listings = _load("listings.json")["listings"]
-        for listing_id, body in listings.items():
-            await _add_listing(
-                c, int(listing_id), body["title"], body["slug"], price=body.get("price")
-            )
-        await _add_listing(c, VEZNA_ZICA, "VEZNA ŽICA/POCINČANA 1,2MM", "vezna-zica-900001")
-        await _add_listing(
-            c, INACTIVE_PANEL, "PANELNA OGRADA PANEL", "panelna-ograda-900002", active=False
-        )
-        records = _golden_records()
-        records.append(
-            _synthetic(
-                VEZNA_ZICA,
-                "vezna žica",
-                "VEZNA ŽICA/POCINČANA 1,2MM | vezna žica",
-            )
-        )
-        records.append(
-            _synthetic(
-                INACTIVE_PANEL,
-                "panelna ograda",
-                "PANELNA OGRADA PANEL | panelna ograda | antracit",
-            )
-        )
-        await save_products(c, records)
+    async with await build_catalogue(database_url) as c:
         yield c
 
 
@@ -151,6 +68,15 @@ async def test_matches_inflected_forms(conn: psycopg.AsyncConnection) -> None:
 async def test_a_typo_still_finds_the_product(conn: psycopg.AsyncConnection) -> None:
     # "brusilca" stems to nothing in the catalogue; trigram similarity finds it.
     assert BRUSILICA in ids(await search_keyword(conn, "brusilca"))
+
+
+async def test_a_hit_says_whether_full_text_matched(conn: psycopg.AsyncConnection) -> None:
+    # Hybrid search (M3-3) treats a trigram-only hit as a typo match that needs vector
+    # search to agree (#102).
+    exact = next(h for h in await search_keyword(conn, "brusilica") if h.listing_id == BRUSILICA)
+    typo = next(h for h in await search_keyword(conn, "brusilca") if h.listing_id == BRUSILICA)
+    assert exact.text_match is True
+    assert typo.text_match is False
 
 
 async def test_a_typo_in_a_multi_word_query_still_finds_the_product(
@@ -307,7 +233,7 @@ async def _add_kolica(
         " price_by_agreement) VALUES (%s, %s, 'KOLICA', '{}', 'h', %s, %s)",
         (listing_id, f"kolica-{listing_id}", price, by_agreement),
     )
-    record = replace(_synthetic(listing_id, "kolica", "KOLICA | kolica"), variants=variants)
+    record = replace(synthetic(listing_id, "kolica", "KOLICA | kolica"), variants=variants)
     await save_products(conn, [record])
 
 

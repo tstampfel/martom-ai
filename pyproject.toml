@@ -14,6 +14,7 @@ dependencies = [
     "fastapi>=0.165.0",
     "httpx>=0.28.1",
     "langchain-anthropic>=1.0",
+    "langchain-cohere>=0.5",
     "langchain-core>=1.0,<2.0",
     "langsmith>=0.3.0",
     "psycopg[binary]>=3.3.9",
@@ -37,6 +38,9 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.6",
 ]
+local-embeddings = [
+    "sentence-transformers>=5.0",
+]
 
 [tool.ruff]
 line-length = 100
@@ -56,5 +60,7 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests/ on sys.path, so test modules can import shared helpers (tests/search_catalogue.py).
+pythonpath = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
 xfail_strict = true

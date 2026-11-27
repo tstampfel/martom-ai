@@ -11,13 +11,16 @@ later issue (the guardrail, M4) decides what search should return for them.
 """
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import psycopg
 
+from martom.embeddings import Embedder
+from martom.search.hybrid import search_hybrid
 from martom.search.keyword import search_keyword
+from martom.search.vector import search_vector
 
 
 @dataclass(frozen=True)
@@ -139,12 +142,75 @@ def score_run(questions: Sequence[EvalQuestion], results: Mapping[str, Sequence[
     )
 
 
+# A search under test: question text -> ranked listing ids (like a TS
+# `(text: string) => Promise<number[]>`).
+SearchIds = Callable[[str], Awaitable[list[int]]]
+
+
+async def run_eval(questions: Sequence[EvalQuestion], search: SearchIds) -> dict[str, list[int]]:
+    """Run every question through `search`, one at a time: question id -> ranked ids."""
+    return {question.id: await search(question.question) for question in questions}
+
+
 async def run_keyword_eval(
     conn: psycopg.AsyncConnection, questions: Sequence[EvalQuestion], *, limit: int = 10
 ) -> dict[str, list[int]]:
     """Run every question through `search_keyword` (no filters): question id -> ranked ids."""
-    results: dict[str, list[int]] = {}
-    for question in questions:
-        hits = await search_keyword(conn, question.question, limit=limit)
-        results[question.id] = [hit.listing_id for hit in hits]
-    return results
+
+    async def search(text: str) -> list[int]:
+        return [hit.listing_id for hit in await search_keyword(conn, text, limit=limit)]
+
+    return await run_eval(questions, search)
+
+
+async def run_search_eval(
+    conn: psycopg.AsyncConnection,
+    questions: Sequence[EvalQuestion],
+    mode: str,
+    *,
+    embedder: Embedder | None = None,
+    limit: int = 10,
+) -> dict[str, list[int]]:
+    """Run the set through one search: "keyword", "vector" or "hybrid" (no filters).
+
+    "vector" and "hybrid" need `embedder`, the model whose vectors are in the database.
+    """
+    if mode == "keyword":
+        return await run_keyword_eval(conn, questions, limit=limit)
+    if embedder is None:
+        raise ValueError(f"{mode} search needs an embedder")
+    model = embedder  # a local name the nested functions can close over, typed non-None
+
+    async def vector(text: str) -> list[int]:
+        query = await model.embed_query(text)
+        return [
+            hit.listing_id for hit in await search_vector(conn, query, model.model, limit=limit)
+        ]
+
+    async def hybrid(text: str) -> list[int]:
+        # fallback=False: a failed query embedding stops the eval instead of quietly
+        # turning this question into a keyword-only answer scored as hybrid.
+        hits = await search_hybrid(conn, text, embedder=model, limit=limit, fallback=False)
+        return [hit.listing_id for hit in hits]
+
+    searches = {"vector": vector, "hybrid": hybrid}
+    if mode not in searches:
+        raise ValueError(f"unknown search mode {mode!r}")
+    return await run_eval(questions, searches[mode])
+
+
+async def issue_102_hits(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> tuple[list[int], list[int]]:
+    """Hybrid results for the two #102 cases: ("kolica" ids, "panelan" ids).
+
+    "kolica" must not return the grinder 52889522; "panelan" must still find the panels.
+    fallback=False, like the eval: if a query can't be embedded this raises, instead of
+    answering with keyword results (where "kolica" returns the grinder for the wrong reason).
+    """
+
+    async def ids(query: str) -> list[int]:
+        hits = await search_hybrid(conn, query, embedder=embedder, fallback=False)
+        return [hit.listing_id for hit in hits]
+
+    return await ids("kolica"), await ids("panelan")
