@@ -17,10 +17,10 @@ from contextlib import asynccontextmanager
 import psycopg
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg.rows import dict_row
+from psycopg.rows import dict_row, tuple_row
 from psycopg_pool import AsyncConnectionPool
 
-from martom.migrate import ADVISORY_LOCK_KEY
+from martom.migrate import ADVISORY_LOCK_KEY, acquire_advisory_lock
 
 # Connections the API keeps for checkpoint reads and writes. A chat turn holds one only
 # while it reads or writes a checkpoint, so a few cover many concurrent chats.
@@ -32,19 +32,35 @@ POOL_MAX_SIZE = 5
 CONNECTION_KWARGS = {"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row}
 
 
-def setup_checkpointer(database_url: str) -> None:
-    """Create or upgrade the checkpointer's tables. Safe to run again (it is idempotent).
+def setup_checkpointer(database_url: str) -> int:
+    """Create or upgrade the checkpointer's tables; returns how many library migrations ran.
 
-    Only `martom migrate` calls this. It holds the migration runner's advisory lock, so two
-    migrate tasks starting at once don't both run the library's DDL.
+    Safe to run again: a second run returns 0. Only `martom migrate` calls this. It holds
+    the migration runner's advisory lock, so a second migrate task started at the same
+    time waits and then finds nothing to do.
     """
     with psycopg.connect(database_url, **CONNECTION_KWARGS) as conn:
-        conn.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK_KEY,))
+        acquire_advisory_lock(conn)
         try:
+            before = _library_version(conn)
             PostgresSaver(conn).setup()
+            return _library_version(conn) - before
         finally:
             if not conn.broken:
                 conn.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK_KEY,))
+
+
+def _library_version(conn: psycopg.Connection) -> int:
+    """The library's last applied migration number (its own `checkpoint_migrations.v`).
+
+    -1 when it has never run, so the first setup returns the full migration count.
+    """
+    with conn.cursor(row_factory=tuple_row) as cur:
+        exists = cur.execute("SELECT to_regclass('checkpoint_migrations')").fetchone()
+        if exists is None or exists[0] is None:
+            return -1
+        row = cur.execute("SELECT coalesce(max(v), -1) FROM checkpoint_migrations").fetchone()
+    return -1 if row is None else row[0]
 
 
 @asynccontextmanager
@@ -56,8 +72,14 @@ async def open_checkpointer(database_url: str) -> AsyncGenerator[AsyncPostgresSa
     not once per request. The tables must already exist (`martom migrate`).
     """
     # `open=False` + `await pool.open()`: the async pool must be opened inside the event loop.
+    # `check`: test each connection before handing it out, so the first chat turn after an
+    # RDS restart or an idle disconnect gets a fresh connection instead of a dead one.
     pool = AsyncConnectionPool(
-        database_url, max_size=POOL_MAX_SIZE, kwargs=CONNECTION_KWARGS, open=False
+        database_url,
+        max_size=POOL_MAX_SIZE,
+        kwargs=CONNECTION_KWARGS,
+        check=AsyncConnectionPool.check_connection,
+        open=False,
     )
     await pool.open()
     try:

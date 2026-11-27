@@ -159,12 +159,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("nothing to apply")
         # The agent graph's checkpointer owns its tables (the one exception to SQL
         # migrations); create or upgrade them here, never at API startup.
+        # Prints only when it changed something, so a second run's whole output is still
+        # "nothing to apply" (CI's no-op check relies on that).
         try:
-            setup_checkpointer(database_url)
+            library_migrations = setup_checkpointer(database_url)
         except psycopg.Error as exc:
             print(f"checkpointer setup failed: {exc}", file=sys.stderr)
             return 1
-        print("checkpointer tables ready")
+        if library_migrations:
+            print(f"checkpointer: applied {library_migrations} library migrations")
     return 0
 
 
