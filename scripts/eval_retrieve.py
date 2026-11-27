@@ -243,7 +243,12 @@ def print_summary(results: list[ModelResult], n: int) -> None:
                 f" {percentile(r.samples['rerank'], 95):>8.1f} ms"
                 f" {percentile(r.samples['total'], 95):>7.1f} ms"
             )
-    print("(one question = 10% of recall on 10 questions: a one-question gap is within noise)")
+    scored = results[0].scores.scored if results and results[0].scores else 0
+    if scored:
+        print(
+            f"(one question = {1 / scored:.0%} of recall on {scored} scored questions:"
+            " a one-question gap is within noise)"
+        )
 
 
 async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> None:

@@ -26,6 +26,10 @@ recall and MRR.
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full: Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, live parser (1.5 s), 1/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid (same run, baseline) | 14 lines (seed-01 … seed-14) | 13 | 0.814 | 0.917 | 0.910 | not computed (eval_retrieve.py) |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, rerank-v5.0-fast, live parser (2.5 s), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 
 Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them by
 hand. **Tomislav only:** agents never pass `--env-file .env` (CLAUDE.md); an agent that needs a
@@ -84,6 +88,48 @@ the two models taking turns on each question.
   lands (M3-5); docs/PLAN.md says so. The latency above predates 2967f5a (2.5 s parse limit,
   embedding and unfiltered search during the parse); fresh numbers follow from his run on the
   final commit. Recall@5 0.95 meets "≥ 90%".
+
+## M3-4 baseline (#16 final, 2026-11-27)
+
+`scripts/eval_retrieve.py` (default `rerank-v5.0-fast`), Tomislav's run on his main database at
+e5cdbd8: live parse limit 2.5 s, the embedding and the unfiltered search running during the
+parse. **14 questions (13 scored) against 10 scored before, so the numbers are not comparable
+1:1 with the #16 comparison above**: seed-12, seed-13 and seed-14 are new and hard.
+
+| Measure | Result | Target (docs/PLAN.md) |
+| --- | --- | --- |
+| recall@5 / recall@10 / MRR (batch = live parser) | 0.891 / 0.891 / 0.872 | recall@5 ≥ 90% |
+| Parse fallbacks | 0/14 scoring, 0/42 timed (was 6–10 of 33 at 1.5 s) | |
+| Haiku parse alone | p50 1,191 ms, p95 1,823 ms, max 1,823 ms; 0/14 over 2.5 s | |
+| Timed run, 42 searches (14 × 3) | total p50 1,686 ms, **p95 2,209 ms**, max 2,637 ms; rerank p95 512 ms; search after the parse p95 50 ms | p95 retrieval < 2.5 s with Haiku on the path |
+| Rerank fallbacks | 0/42 | |
+
+- Batch and live parser give the same recall, so the 2.5 s limit loses no filters on this set.
+- The search stage after the parse is 0 ms (p50) for questions without filters: their results
+  are the unfiltered search that already ran during the parse.
+- recall@5 0.891 is just under 0.90 (recall is a mean per question: one more expected listing in
+  seed-14's top 5 would give 0.917). The misses are below; seed-06 is a data issue, and seed-12 /
+  seed-14 come from listing wording.
+- #102, full pipeline: "kolica" top 5 has no grinder 52889522; "panelan" puts the panels 63996799
+  and 1199211 first (relevance 0.30 and 0.27, low for v5.0 on a one-word typo).
+
+### Misses (full pipeline, rerank-v5.0-fast)
+
+- `seed-06-anker-m8x80` (R@10 0.50): 40021189 "TIPLO SIDRO ANKER ANKERI SVE MJERE" is "Na upit"
+  with no sizes in the description, so nothing ties it to "M8x80". **Data issue**; Toni has been
+  asked to add sizes and prices.
+- `seed-12-kolica` (R@10 0.75): 47382791 "KARIOLA KARIOLE TAČKE CIVARE CIVARA" never says "kolica",
+  so neither keyword nor vector search reaches it; the other three kolica listings are found.
+  Listing wording (a title with "kolica" would fix it, like 53055264 and 57362536).
+- `seed-14-gradjevinska-kolica` (R@5 0.33, R@10 0.33, RR 0.33): the reranker puts other
+  "građevinsk…" products first (kolotura 52849505, građevinski konac 54711855), with the wheelbarrow
+  53055264 3rd; 57362536 "KARIOLA KOLICA 75L" and 47382791 are not in the top 10. Hybrid alone had
+  R@10 0.67 here, so the rerank costs one listing on this question. The forbidden hand truck
+  35992113 and grinder are not in the top 5.
+- Ranked second, not missed: `seed-04-t-stup` (RR 0.50: 81645615 "STUP … ZA STOPOM 40X40MM … 150CM",
+  also a 150 cm fence post, comes before the T post 59473597) and `seed-09-no-height-kokosi`
+  (RR 0.50: the PVC chicken mesh 73950900 before 68378185). Both first hits are plausible answers;
+  worth asking Toni whether they should count as expected.
 
 ## Weak cases
 
