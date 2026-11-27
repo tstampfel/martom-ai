@@ -241,6 +241,10 @@ def decode_text(raw: bytes) -> str | None:
 
     UTF-16 is recognised by its BOM, or, without one, by its NUL bytes (real UTF-8 text never
     holds NUL): NULs on odd positions mean little-endian ASCII, on even positions big-endian.
+    Without a BOM the UTF-16 reading is kept only when NULs fill at least 30% of one byte
+    parity and the result looks like text (see is_plausible_text). Any other file holding a
+    NUL (a database, a stray NUL in UTF-8, UTF-32 without a BOM) is undecodable, so scan_file
+    reports it instead of passing it.
     """
     try:
         if raw.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
@@ -248,11 +252,22 @@ def decode_text(raw: bytes) -> str | None:
         if raw.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
             return raw.decode("utf-16")
         if b"\x00" in raw:
-            little_endian = raw[1::2].count(0) >= raw[0::2].count(0)
-            return raw.decode("utf-16-le" if little_endian else "utf-16-be")
+            odd_nuls, even_nuls = raw[1::2].count(0), raw[0::2].count(0)
+            little_endian = odd_nuls >= even_nuls
+            # UTF-16 Latin text has a NUL in (nearly) every other byte; demand at least 30%.
+            if max(odd_nuls, even_nuls) < 0.3 * (len(raw) // 2):
+                return None
+            text = raw.decode("utf-16-le" if little_endian else "utf-16-be")
+            return text if is_plausible_text(text) else None
         return raw.decode("utf-8-sig")  # utf-8-sig also reads plain UTF-8, dropping a BOM
     except UnicodeDecodeError:
         return None
+
+
+def is_plausible_text(text: str) -> bool:
+    """True when at least 95% of the characters are printable or whitespace."""
+    readable = sum(char.isprintable() or char.isspace() for char in text)
+    return bool(text) and readable >= 0.95 * len(text)
 
 
 def is_binary(path: Path) -> bool:
@@ -780,3 +795,25 @@ def test_allowlisted_wa_me_link_passes(tmp_path: Path) -> None:
     link = "https://wa.me/38760000000?text=Narud%C5%BEba%3A%20panel%20153%20cm%2C%2010%20kom"
 
     assert scan_file(write_json(tmp_path, {"link": link})) == []
+
+
+# --- O-1: a NUL byte without a BOM must not pass silently ------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"zovi 063 123 456\x00\n",  # UTF-8 with one stray NUL
+        b"SQLite format 3\x00\x10\x00\x01\x01\x00@  \x00\x00\x00\x02zovi 063 123 456",
+        "zovi 063 123 456".encode("utf-32-le"),  # UTF-32 without a BOM
+    ],
+    ids=["stray-nul", "sqlite-like", "utf32-no-bom"],
+)
+def test_nul_bytes_that_are_not_utf16_text_fail(tmp_path: Path, raw: bytes) -> None:
+    path = tmp_path / "data.db"
+    path.write_bytes(raw)
+
+    problems = scan_file(path)
+
+    assert len(problems) == 1
+    assert "can't be checked" in problems[0]
