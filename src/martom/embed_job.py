@@ -4,7 +4,9 @@ What is embedded:
 - a product: its `search_text` (the same compact text keyword search indexes; the
   marketing description is left out for the same reason), only for listings in
   `active_olx_listing`;
-- a knowledge chunk: its title and body.
+- a knowledge chunk: its title and body;
+- a manual product (`manual_product`, #112): its `search_text`, built from the
+  manual_products.toml name (search/manual.py).
 
 A row is embedded again only when `text_hash(model, text)` differs from its stored
 `embedding_hash`: its text changed (a re-extraction, Toni edited a chunk) or the model did.
@@ -32,6 +34,12 @@ UPDATE product
 SET embedding = %s::vector, embedding_model = %s, embedding_hash = %s
 WHERE listing_id = %s
 """
+_MANUAL = "SELECT key, search_text, embedding_hash FROM manual_product ORDER BY key"
+_SAVE_MANUAL = """
+UPDATE manual_product
+SET embedding = %s::vector, embedding_model = %s, embedding_hash = %s
+WHERE key = %s
+"""
 _CHUNKS = "SELECT id, title, body, embedding_hash FROM knowledge_chunk ORDER BY id"
 _SAVE_CHUNK = """
 UPDATE knowledge_chunk
@@ -46,6 +54,8 @@ class EmbedStats:
     products_unchanged: int
     chunks_embedded: int
     chunks_unchanged: int
+    manual_embedded: int = 0
+    manual_unchanged: int = 0
 
 
 def knowledge_text(title: str, body: str) -> str:
@@ -84,7 +94,8 @@ async def _embed_rows(
 
 
 async def run_embedding(conn: psycopg.AsyncConnection, embedder: Embedder) -> EmbedStats:
-    """Embed every changed active product and knowledge chunk (see the module docstring)."""
+    """Embed every changed active product, knowledge chunk and manual product (see the
+    module docstring)."""
     cursor = await conn.execute(_PRODUCTS)
     products = [(row[0], row[1], row[2]) for row in await cursor.fetchall()]
     products_embedded, products_unchanged = await _embed_rows(
@@ -95,6 +106,17 @@ async def run_embedding(conn: psycopg.AsyncConnection, embedder: Embedder) -> Em
     chunks = [(row[0], knowledge_text(row[1], row[2]), row[3]) for row in await cursor.fetchall()]
     chunks_embedded, chunks_unchanged = await _embed_rows(conn, embedder, chunks, _SAVE_CHUNK)
 
-    stats = EmbedStats(products_embedded, products_unchanged, chunks_embedded, chunks_unchanged)
+    cursor = await conn.execute(_MANUAL)
+    manual = [(row[0], row[1], row[2]) for row in await cursor.fetchall()]
+    manual_embedded, manual_unchanged = await _embed_rows(conn, embedder, manual, _SAVE_MANUAL)
+
+    stats = EmbedStats(
+        products_embedded,
+        products_unchanged,
+        chunks_embedded,
+        chunks_unchanged,
+        manual_embedded,
+        manual_unchanged,
+    )
     logger.info("embedding run finished", extra={"model": embedder.model, **stats.__dict__})
     return stats
