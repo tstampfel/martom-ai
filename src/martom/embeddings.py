@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import json
 import math
+import os
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -30,17 +31,27 @@ from langchain_core.embeddings import Embeddings
 
 from martom.settings import Settings
 
-# The size of the vector(...) columns in migration 007. Every candidate model can give
-# 1024 numbers (natively or by a `dimensions` option), so changing model never needs a
-# migration.
+# The size of the vector(...) columns in migration 007. Every allowed model below returns
+# exactly this many numbers, so switching between them never needs a migration; a model
+# with another size is refused in make_embedder, before any paid call.
 EMBEDDING_DIMENSIONS = 1024
 # Texts per request. Cohere accepts at most 96 per call; the others accept more.
 DEFAULT_BATCH_SIZE = 96
 
-DEFAULT_COHERE_MODEL = "embed-multilingual-v3.0"  # 1024 numbers, 100+ languages
-# Cohere's trial keys are rate limited: retry a refused call this many times (langchain-
-# cohere waits longer before each retry).
-COHERE_MAX_RETRIES = 6
+# Cohere models that return 1024 numbers without a dimensions option (langchain-cohere
+# passes none). embed-multilingual-light-v3.0, for example, returns 384.
+COHERE_MODELS = frozenset({"embed-multilingual-v3.0"})
+DEFAULT_COHERE_MODEL = "embed-multilingual-v3.0"  # 100+ languages
+# Batch runs (`martom embed`) wait out Cohere's trial rate limit: up to 6 attempts,
+# langchain-cohere waiting 4-10 s between them, and 60 s per request so a stalled
+# connection can't hang the run.
+COHERE_BATCH_MAX_RETRIES = 6
+COHERE_BATCH_TIMEOUT_SECONDS = 60.0
+# A search query gets one attempt of at most 3 s: langchain-cohere's shortest wait before a
+# retry is 4 s, more than a search should spend, and hybrid search answers with keyword
+# results when the query can't be embedded (search/hybrid.py).
+COHERE_QUERY_MAX_RETRIES = 1
+COHERE_QUERY_TIMEOUT_SECONDS = 3.0
 
 # Open multilingual models that run on this machine and give 1024 numbers, with the text
 # each one expects before a query and before a document. e5 was trained with "query: " and
@@ -105,8 +116,11 @@ class Embedder:
         return _check_size(await self.embeddings.aembed_query(text), self.model)
 
 
-def make_embedder(settings: Settings) -> Embedder:
+def make_embedder(settings: Settings, *, for_queries: bool = False) -> Embedder:
     """The embedder named by EMBEDDING_PROVIDER / EMBEDDING_MODEL.
+
+    `for_queries=True` is for live search (the API, the agent): it gives up fast, so a
+    provider problem costs a search seconds, not a minute. The default is for batch runs.
 
     "fake" gives deterministic random vectors with no network call: they carry no meaning,
     so use it only to try the commands locally, never to judge search quality.
@@ -123,12 +137,20 @@ def make_embedder(settings: Settings) -> Embedder:
         from langchain_cohere import CohereEmbeddings
 
         model = settings.embedding_model or DEFAULT_COHERE_MODEL
+        if model not in COHERE_MODELS:
+            raise EmbeddingError(
+                f"Cohere model {model!r} doesn't return {EMBEDDING_DIMENSIONS} numbers; "
+                f"allowed: {', '.join(sorted(COHERE_MODELS))}"
+            )
         # langchain-cohere sends input_type "search_document" for documents and
         # "search_query" for queries, which Cohere's v3 models need.
         cohere = CohereEmbeddings(
             model=model,
             cohere_api_key=settings.cohere_api_key,
-            max_retries=COHERE_MAX_RETRIES,
+            max_retries=COHERE_QUERY_MAX_RETRIES if for_queries else COHERE_BATCH_MAX_RETRIES,
+            request_timeout=(
+                COHERE_QUERY_TIMEOUT_SECONDS if for_queries else COHERE_BATCH_TIMEOUT_SECONDS
+            ),
         )
         return Embedder(model=f"cohere/{model}", embeddings=cohere)
     if provider == "local":
@@ -218,9 +240,13 @@ class FileCachedEmbeddings(Embeddings):
         return hashlib.sha256(text.encode()).hexdigest()
 
     def _save(self) -> None:
+        # Write a temporary file next to it, then swap it in: os.replace is atomic, so a
+        # Ctrl-C or a killed process leaves the old file or the new one, never half of one.
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"documents": self._documents, "queries": self._queries}
-        self.path.write_text(json.dumps(payload), encoding="utf-8")
+        temporary = self.path.with_name(self.path.name + ".tmp")
+        temporary.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(temporary, self.path)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         # dict.fromkeys keeps the first-seen order and drops repeats, like a JS Set.

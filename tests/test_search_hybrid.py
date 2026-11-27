@@ -7,6 +7,8 @@ mentions. So "tačke" (another word for a wheelbarrow) is close to "KOLICA" alth
 share no letters, which is exactly what keyword search can't do.
 """
 
+import asyncio
+import logging
 import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -20,6 +22,7 @@ from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder, vector_literal
 from martom.evals.retrieval import EvalQuestion, run_search_eval
 from martom.extract.store import VariantRow, save_products
+from martom.search import hybrid
 from martom.search.hybrid import search_hybrid
 from martom.search.keyword import SearchFilters, search_keyword
 from martom.search.vector import search_knowledge, search_vector
@@ -176,6 +179,10 @@ async def test_kolica_does_not_return_the_grinder(
     # #102: keyword search returns the grinder for "kolica" by trigram alone ("brusilica
     # kutna" is 0.57 similar). Hybrid keeps a trigram-only hit only when vector search
     # also finds the listing, so the false positive goes without touching the 0.55 threshold.
+    # candidates=3 because vector search has no relevance floor: on this ~16-product
+    # catalogue the default 30 returns every product, the grinder included. This shows the
+    # mechanism; whether it holds at the default on the real catalogue is the kolica column
+    # of scripts/compare_embeddings.py (R1-3).
     assert BRUSILICA in ids(await search_keyword(conn, "kolica"))
     hits = await search_hybrid(conn, "kolica", embedder=embedder, candidates=3)
     assert BRUSILICA not in ids(hits)
@@ -258,3 +265,61 @@ async def test_the_eval_runs_each_search_mode(
         await run_search_eval(conn, questions, "hybrid")
     with pytest.raises(ValueError, match="mode"):
         await run_search_eval(conn, questions, "magic", embedder=embedder)
+
+
+# --- when vector search can't help (R1-1, R1-2) ------------------------------------------
+
+
+class FailingEmbeddings(VocabEmbeddings):
+    def embed_query(self, text: str) -> list[float]:
+        raise RuntimeError("provider down")
+
+
+class SlowEmbeddings(VocabEmbeddings):
+    async def aembed_query(self, text: str) -> list[float]:
+        await asyncio.sleep(5)
+        return self._vector(text)
+
+
+async def test_a_failing_query_embedding_falls_back_to_keyword_results(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    embedder = Embedder(MODEL, FailingEmbeddings())
+    with caplog.at_level(logging.WARNING, logger="martom.search.hybrid"):
+        hits = await search_hybrid(conn, "panelan ogarda", embedder=embedder)
+    # Typo matches stay: there is no vector search to confirm or reject them. (Both words
+    # are typos, so full text matches nothing; keyword alone ranks the panels first.)
+    assert set(ids(hits)[:2]) == PANELS
+    assert all(hit.vector_rank is None for hit in hits)
+    assert "keyword results only" in caplog.text
+
+
+async def test_a_slow_query_embedding_times_out_into_keyword_results(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hybrid, "QUERY_EMBED_TIMEOUT_SECONDS", 0.05)
+    hits = await search_hybrid(conn, "panelna ograda", embedder=Embedder(MODEL, SlowEmbeddings()))
+    assert set(ids(hits)[:2]) == PANELS
+
+
+async def test_typo_matches_stay_when_the_model_has_no_vectors_yet(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    # EMBEDDING_MODEL changed but `martom embed` hasn't run: vector search finds nothing.
+    embedder = Embedder("test/not-embedded-yet", VocabEmbeddings())
+    with caplog.at_level(logging.WARNING, logger="martom.search.hybrid"):
+        hits = await search_hybrid(conn, "panelan ogarda", embedder=embedder)
+    assert set(ids(hits)[:2]) == PANELS
+    assert [r.embedding_model for r in caplog.records] == ["test/not-embedded-yet"]
+
+
+async def test_a_typo_match_on_a_listing_without_a_vector_stays(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    # A listing extracted since the last `martom embed` has no vector: vector search can't
+    # have found it, so it can't be judged and is kept. The grinder has a vector that
+    # vector search didn't return for "kolica", so it still goes.
+    await conn.execute("UPDATE product SET embedding = NULL WHERE listing_id = 1199211")
+    assert 1199211 in ids(await search_hybrid(conn, "panelan", embedder=embedder))
+    hits = await search_hybrid(conn, "kolica", embedder=embedder, candidates=3)
+    assert BRUSILICA not in ids(hits)

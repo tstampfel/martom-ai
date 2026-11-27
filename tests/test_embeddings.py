@@ -115,6 +115,8 @@ def test_file_cache_embeds_each_text_once(tmp_path: Path) -> None:
     assert [v[0] for v in reread.embed_documents(["a", "ccc"])] == [1, 3]
     reread.embed_query("a")
     assert again.document_calls == [] and again.query_calls == []
+    # Saved atomically through a temporary file, which doesn't stay behind (R1-6).
+    assert [f.name for f in tmp_path.iterdir()] == ["cache.json"]
     # The file holds hashes and vectors, never the texts themselves.
     assert "ccc" not in json.dumps(json.loads(cache_file.read_text()))
 
@@ -133,15 +135,24 @@ def test_cohere_uses_the_multilingual_model_by_default() -> None:
     assert embedder.embeddings.model == "embed-multilingual-v3.0"
 
 
-def test_an_embedding_model_can_be_named() -> None:
-    embedder = make_embedder(
-        Settings(
-            embedding_provider="cohere",
-            embedding_model="embed-multilingual-light-v3.0",
-            cohere_api_key="fake-key",
-        )
+def test_a_cohere_model_with_another_vector_size_is_refused() -> None:
+    # embed-multilingual-light-v3.0 returns 384 numbers: refused before any paid call.
+    settings = Settings(
+        embedding_provider="cohere",
+        embedding_model="embed-multilingual-light-v3.0",
+        cohere_api_key="fake-key",
     )
-    assert embedder.model == "cohere/embed-multilingual-light-v3.0"
+    with pytest.raises(EmbeddingError, match=r"embed-multilingual-v3\.0"):
+        make_embedder(settings)
+
+
+def test_query_embedding_is_quick_to_give_up_and_batch_embedding_patient() -> None:
+    # A search can fall back to keyword results; a batch run should wait out a rate limit.
+    settings = Settings(embedding_provider="cohere", embedding_model=None, cohere_api_key="k")
+    query = make_embedder(settings, for_queries=True).embeddings
+    batch = make_embedder(settings).embeddings
+    assert (query.max_retries, query.request_timeout) == (1, 3.0)  # one attempt, no retry
+    assert (batch.max_retries, batch.request_timeout) == (6, 60.0)
 
 
 class StubSentenceModel:
