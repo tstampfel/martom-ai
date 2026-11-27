@@ -208,7 +208,7 @@ RUN_COLUMNS = frozenset(
         "deactivation_candidates", "deactivated", "reactivated", "errors",
         "deactivation_skipped", "would_deactivate", "skipped_listing_ids",
         "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
-        "final_request_interval", "error",
+        "final_request_interval", "error", "extracted",
     }
 )  # fmt: skip
 

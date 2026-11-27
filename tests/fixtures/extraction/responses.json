@@ -1,0 +1,774 @@
+{
+ "_about": "Model replies for the 10 golden listings (tests/fixtures/extraction/listings.json), keyed by listing id: the ExtractedProduct JSON the structured-output call returns. SOURCE: hand-written to SYSTEM_PROMPT's rules by the M2-1 implementing agent on 27 Nov 2026, because no Anthropic API key was available to it; NOT yet recorded from claude-haiku-5-5. Re-record with real Haiku output: `uv run python scripts/record_extraction_fixtures.py --record` (needs ANTHROPIC_API_KEY in the shell; without --record the script only rewrites golden.json and calls no model), then review the diff and update tests/fixtures/extraction/golden.json.",
+ "source": "hand-written",
+ "model": null,
+ "prompt_version": "m2-1-v1",
+ "responses": {
+  "63996799": {
+   "product_type": "panelna ograda",
+   "brand": null,
+   "material": "čvrsta pocinčana čelična žica s debelim slojem kvalitetne PVC plastifikacije",
+   "wire_thickness": "Ø 4,20 / 4,40 mm",
+   "mesh": null,
+   "colours": [
+    "ZELENA RAL 6005",
+    "ANTRACIT RAL 7016"
+   ],
+   "uses": [
+    "ograđivanje obiteljskih kuća",
+    "dvorišta",
+    "vrtova",
+    "vikendica",
+    "poslovnih objekata",
+    "igrališta i sportskih terena"
+   ],
+   "compatible_with": [
+    "stupovi sa stopom",
+    "PVC kopče",
+    "tiplo ankeri"
+   ],
+   "synonyms": [
+    "3D panelna ograda",
+    "paneli"
+   ],
+   "variants": [
+    {
+     "label": "3D Panelna ograda 83 x 200 cm (Ø 4,20/4,40 mm PVC): 27,00 KM / panel",
+     "height": "83",
+     "length": "200 cm",
+     "colour": null,
+     "size": null,
+     "price": "27,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 83 x 250 cm (Ø 4,20/4,40 mm PVC): 31,00 KM / panel",
+     "height": "83",
+     "length": "250 cm",
+     "colour": null,
+     "size": null,
+     "price": "31,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 103 x 200 cm (Ø 4,20/4,40 mm PVC): 31,00 KM / panel",
+     "height": "103",
+     "length": "200 cm",
+     "colour": null,
+     "size": null,
+     "price": "31,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 103 x 250 cm (Ø 4,20/4,40 mm PVC): 41,00 KM / panel",
+     "height": "103",
+     "length": "250 cm",
+     "colour": null,
+     "size": null,
+     "price": "41,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 123 x 200 cm (Ø 4,20/4,40 mm PVC): 36,00 KM / panel",
+     "height": "123",
+     "length": "200 cm",
+     "colour": null,
+     "size": null,
+     "price": "36,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 123 x 250 cm (Ø 4,20/4,40 mm PVC): 44,00 KM / panel",
+     "height": "123",
+     "length": "250 cm",
+     "colour": null,
+     "size": null,
+     "price": "44,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 153 x 200 cm (Ø 4,20/4,40 mm PVC): 44,00 KM / panel",
+     "height": "153",
+     "length": "200 cm",
+     "colour": null,
+     "size": null,
+     "price": "44,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 153 x 250 cm (Ø 4,20/4,40 mm PVC): 53,00 KM / panel",
+     "height": "153",
+     "length": "250 cm",
+     "colour": null,
+     "size": null,
+     "price": "53,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 203 x 200 cm (Ø 4,20/4,40 mm PVC): 56,00 KM / panel",
+     "height": "203",
+     "length": "200 cm",
+     "colour": null,
+     "size": null,
+     "price": "56,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "3D Panelna ograda 203 x 250 cm (Ø 4,20/4,40 mm PVC): 85,00 KM / panel",
+     "height": "203",
+     "length": "250 cm",
+     "colour": null,
+     "size": null,
+     "price": "85,00 KM",
+     "unit": "panel"
+    },
+    {
+     "label": "Stup H-85 cm sa stopom (za panele visine 83 cm): 16,80 KM / kom",
+     "height": "H-85 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "16,80 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "Stup H-105 cm sa stopom (za panele visine 103 cm): 19,00 KM / kom",
+     "height": "H-105 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "19,00 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "Stup H-125 cm sa stopom (za panele visine 123 cm): 21,50 KM / kom",
+     "height": "H-125 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "21,50 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "Stup H-155 cm sa stopom (za panele visine 153 cm): 24,90 KM / kom",
+     "height": "H-155 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "24,90 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "Stup H-205 cm sa stopom (za panele visine 203 cm): 31,00 KM / kom",
+     "height": "H-205 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "31,00 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "PVC kopča sa samorezivim vijkom: 1,00 KM / kom",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "1,00 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "Tiplo anker FI 10 / M8 x 80 mm (za pričvršćivanje stope stupa u beton): 1,30 KM / kom",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "FI 10 / M8 x 80 mm",
+     "price": "1,30 KM",
+     "unit": "kom"
+    }
+   ]
+  },
+  "1199211": {
+   "product_type": "panelna ograda",
+   "brand": "Nylofor",
+   "material": "čelična, pravokutno punktirana žica, pocinčana, s polyesterskim slojem",
+   "wire_thickness": "4,50mm i 4.20mm",
+   "mesh": null,
+   "colours": [
+    "MASLINASTO ZELENA RAL 6005",
+    "ANTRACIT 7016",
+    "SIVA 7040"
+   ],
+   "uses": [
+    "stambeni i poslovni objekti",
+    "barijere protiv buke",
+    "vjetrobrani"
+   ],
+   "compatible_with": [
+    "kvadratni stupovi",
+    "trake za zaštitu od pogleda"
+   ],
+   "synonyms": [
+    "ograda panelna",
+    "panel",
+    "paneli",
+    "panelne ograde",
+    "Nylofor 3D"
+   ],
+   "variants": [
+    {
+     "label": "2500x 830 mm",
+     "height": "830 mm",
+     "length": "2500",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2500 x 1030 mm",
+     "height": "1030 mm",
+     "length": "2500",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2500 x 1230 mm",
+     "height": "1230 mm",
+     "length": "2500",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2500 x 1530 mm",
+     "height": "1530 mm",
+     "length": "2500",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2500 x 1730 mm",
+     "height": "1730 mm",
+     "length": "2500",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2500 x 2030 mm",
+     "height": "2030 mm",
+     "length": "2500",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000x 830 mm",
+     "height": "830 mm",
+     "length": "2000",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000 x 1030 mm",
+     "height": "1030 mm",
+     "length": "2000",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000 x 1230 mm",
+     "height": "1230 mm",
+     "length": "2000",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000 x 1530 mm",
+     "height": "1530 mm",
+     "length": "2000",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000 x 1730 mm",
+     "height": "1730 mm",
+     "length": "2000",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000 x 2030 mm",
+     "height": "2030 mm",
+     "length": "2000",
+     "colour": null,
+     "size": null,
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "830 mm",
+     "height": "830 mm",
+     "length": null,
+     "colour": null,
+     "size": "50x50mm",
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "1030 mm",
+     "height": "1030 mm",
+     "length": null,
+     "colour": null,
+     "size": "50x50mm",
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "1230 mm",
+     "height": "1230 mm",
+     "length": null,
+     "colour": null,
+     "size": "50x50mm",
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "1530 mm",
+     "height": "1530 mm",
+     "length": null,
+     "colour": null,
+     "size": "50x50mm",
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "1730 mm",
+     "height": "1730 mm",
+     "length": null,
+     "colour": null,
+     "size": "50x50mm",
+     "price": null,
+     "unit": null
+    },
+    {
+     "label": "2000 mm",
+     "height": "2000 mm",
+     "length": null,
+     "colour": null,
+     "size": "50x50mm",
+     "price": null,
+     "unit": null
+    }
+   ]
+  },
+  "24449780": {
+   "product_type": "farmer pletivo",
+   "brand": null,
+   "material": null,
+   "wire_thickness": null,
+   "mesh": null,
+   "colours": [],
+   "uses": [
+    "vinogradi",
+    "pašnjaci",
+    "livade",
+    "zemljišta",
+    "farme",
+    "šume"
+   ],
+   "compatible_with": [
+    "stupovi"
+   ],
+   "synonyms": [
+    "pletena ogradna mreža",
+    "farmer pletena ogradna mreža"
+   ],
+   "variants": [
+    {
+     "label": "100CM (100/8/15) -88,00KM/ROLA 50M",
+     "height": "100CM",
+     "length": null,
+     "colour": null,
+     "size": "100/8/15",
+     "price": "88,00KM",
+     "unit": "ROLA 50M"
+    },
+    {
+     "label": "120CM - (120/9/15) 107,00 KM/ROLA 50M",
+     "height": "120CM",
+     "length": null,
+     "colour": null,
+     "size": "120/9/15",
+     "price": "107,00 KM",
+     "unit": "ROLA 50M"
+    },
+    {
+     "label": "150CM -( 150/12/15) - 130,00KM/ROLA 50M",
+     "height": "150CM",
+     "length": null,
+     "colour": null,
+     "size": "150/12/15",
+     "price": "130,00KM",
+     "unit": "ROLA 50M"
+    },
+    {
+     "label": "100CM (100/8/30) -63,00KM/ROLA 50M",
+     "height": "100CM",
+     "length": null,
+     "colour": null,
+     "size": "100/8/30",
+     "price": "63,00KM",
+     "unit": "ROLA 50M"
+    }
+   ]
+  },
+  "36376333": {
+   "product_type": "katanac",
+   "brand": null,
+   "material": null,
+   "wire_thickness": null,
+   "mesh": null,
+   "colours": [],
+   "uses": [],
+   "compatible_with": [],
+   "synonyms": [],
+   "variants": [
+    {
+     "label": "50MM - 18,00KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "50MM",
+     "price": "18,00KM",
+     "unit": null
+    },
+    {
+     "label": "40MM - 10,00KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "40MM",
+     "price": "10,00KM",
+     "unit": null
+    },
+    {
+     "label": "30MM IBFM - 6,75KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "30MM",
+     "price": "6,75KM",
+     "unit": null
+    }
+   ]
+  },
+  "54710841": {
+   "product_type": "bodljikava žica",
+   "brand": null,
+   "material": "Vruće pocinčana",
+   "wire_thickness": "fi 1,80mm",
+   "mesh": null,
+   "colours": [],
+   "uses": [
+    "nadvišenje mreža i ograda",
+    "ograđivanje stoke i pašnjaka",
+    "zaštita imanja od neovlaštenog ulaska i divljači"
+   ],
+   "compatible_with": [
+    "drveni, betonski ili metalni stupovi"
+   ],
+   "synonyms": [
+    "cinčana bodljikava žica",
+    "pocinčana bodljikava žica"
+   ],
+   "variants": [
+    {
+     "label": "Bodljikava žica cinčana 100 m (fi 1,80mm): 26,00 KM",
+     "height": null,
+     "length": "100 m",
+     "colour": null,
+     "size": null,
+     "price": "26,00 KM",
+     "unit": null
+    },
+    {
+     "label": "Bodljikava žica cinčana 250 m (fi 1,80mm): 58,00 KM",
+     "height": null,
+     "length": "250 m",
+     "colour": null,
+     "size": null,
+     "price": "58,00 KM",
+     "unit": null
+    }
+   ]
+  },
+  "35990143": {
+   "product_type": "kućica za psa",
+   "brand": null,
+   "material": "paneli sa izolacijom",
+   "wire_thickness": null,
+   "mesh": null,
+   "colours": [],
+   "uses": [
+    "zaštita pasa od hladnoće, vrućine, vlage i buke"
+   ],
+   "compatible_with": [],
+   "synonyms": [
+    "kuća za psa",
+    "kućice za pse"
+   ],
+   "variants": [
+    {
+     "label": "KUĆICA ZA PSA MALA 43X50X59CM - 185,00KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "43X50X59CM",
+     "price": "185,00KM",
+     "unit": null
+    },
+    {
+     "label": "KUĆICA ZA PSA SREDNJA 57X70X75CM - 245,00KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "57X70X75CM",
+     "price": "245,00KM",
+     "unit": null
+    },
+    {
+     "label": "KUĆICA ZA PSA VELIKA 70X96X96 - 365,00KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "70X96X96",
+     "price": "365,00KM",
+     "unit": null
+    }
+   ]
+  },
+  "59473597": {
+   "product_type": "stup za ogradu",
+   "brand": null,
+   "material": "čelik, plastificiran",
+   "wire_thickness": "3,50 mm",
+   "mesh": null,
+   "colours": [
+    "zelena"
+   ],
+   "uses": [
+    "pletena žica",
+    "farmer pletivo",
+    "plastificirane ograde u roli",
+    "voćnjaci",
+    "dvorišta",
+    "vinogradi"
+   ],
+   "compatible_with": [
+    "pletivo",
+    "zatezna žica",
+    "zatezači",
+    "Eurofence"
+   ],
+   "synonyms": [
+    "stub",
+    "stupovi",
+    "T-stup",
+    "T-profil"
+   ],
+   "variants": [
+    {
+     "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-100 cm: 11,50 KM / kom",
+     "height": "H-100 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "11,50 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-125 cm: 10,00 KM / kom",
+     "height": "H-125 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "10,00 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-150 cm: 12,25 KM / kom",
+     "height": "H-150 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "12,25 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-175 cm: 14,00 KM / kom",
+     "height": "H-175 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "14,00 KM",
+     "unit": "kom"
+    },
+    {
+     "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-200 cm: 17,00 KM / kom",
+     "height": "H-200 cm",
+     "length": null,
+     "colour": null,
+     "size": null,
+     "price": "17,00 KM",
+     "unit": "kom"
+    }
+   ]
+  },
+  "68378185": {
+   "product_type": "mreža za kokoši",
+   "brand": null,
+   "material": null,
+   "wire_thickness": "0,60MM",
+   "mesh": "25MM",
+   "colours": [],
+   "uses": [
+    "ograda za kokoši"
+   ],
+   "compatible_with": [],
+   "synonyms": [
+    "ograda za koke",
+    "koke"
+   ],
+   "variants": [
+    {
+     "label": "OGRADA ZA KOKE H-100CM OKCE 25MM FII 0,60MM , 20METARA - 57,50KM",
+     "height": "H-100CM",
+     "length": "20METARA",
+     "colour": null,
+     "size": null,
+     "price": "57,50KM",
+     "unit": null
+    },
+    {
+     "label": "OGRADA ZA KOKE H-120CM OKCE 25MM FII 0,60MM, 20METARA - 68,75 KM",
+     "height": "H-120CM",
+     "length": "20METARA",
+     "colour": null,
+     "size": null,
+     "price": "68,75 KM",
+     "unit": null
+    },
+    {
+     "label": "OGRADA ZA KOKE H-150CM OKCE 25MM FII 0,60MM, 20METARA - 84,00 KM",
+     "height": "H-150CM",
+     "length": "20METARA",
+     "colour": null,
+     "size": null,
+     "price": "84,00 KM",
+     "unit": null
+    },
+    {
+     "label": "OGRADA ZA KOKE H-200CM OKCE 25MM FII 0,60MM, 20METARA - 107,50 KM",
+     "height": "H-200CM",
+     "length": "20METARA",
+     "colour": null,
+     "size": null,
+     "price": "107,50 KM",
+     "unit": null
+    }
+   ]
+  },
+  "52889522": {
+   "product_type": "kutna brusilica",
+   "brand": "TOTAL",
+   "material": null,
+   "wire_thickness": null,
+   "mesh": null,
+   "colours": [],
+   "uses": [
+    "precizno rezanje i brušenje",
+    "rad u skučenim prostorima"
+   ],
+   "compatible_with": [],
+   "synonyms": [
+    "fleksa",
+    "flexa",
+    "mala fleksa"
+   ],
+   "variants": []
+  },
+  "31905913": {
+   "product_type": "tiplo",
+   "brand": "Fischer",
+   "material": null,
+   "wire_thickness": null,
+   "mesh": null,
+   "colours": [],
+   "uses": [
+    "rigips",
+    "cigla",
+    "beton"
+   ],
+   "compatible_with": [],
+   "synonyms": [
+    "fišer"
+   ],
+   "variants": [
+    {
+     "label": "TIPLO FISCHER FIŠER SX6, -0,15KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "SX6",
+     "price": "0,15KM",
+     "unit": null
+    },
+    {
+     "label": "TIPLO FISCHER FIŠER SX8, -0,20KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "SX8",
+     "price": "0,20KM",
+     "unit": null
+    },
+    {
+     "label": "TIPLO FISCHER FIŠER SX10 - 0,35KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "SX10",
+     "price": "0,35KM",
+     "unit": null
+    },
+    {
+     "label": "TIPLO FISHER FIŠER SX12 - 0,75KM",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "SX12",
+     "price": "0,75KM",
+     "unit": null
+    }
+   ]
+  }
+ }
+}

@@ -83,7 +83,7 @@ export const copy = {
     steps: [
       { text: 'Razumijem: 25 m · dvorište · 150 cm' },
       { text: 'Pronašao panele, stupove i pribor' },
-      { text: 'Popis: 10 panela · 11 stupova · 44 kopče' },
+      { text: 'Gotov popis: 905,10 KM okvirno' },
     ],
   },
   howItWorks: {
