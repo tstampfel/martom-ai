@@ -135,6 +135,19 @@ def test_cohere_uses_the_multilingual_model_by_default() -> None:
     assert embedder.embeddings.model == "embed-multilingual-v3.0"
 
 
+@pytest.mark.parametrize("for_queries", [False, True])
+def test_cohere_sends_the_real_key_not_the_secretstr_mask(for_queries: bool) -> None:
+    # langchain-cohere str()-s a SecretStr before unwrapping it, so passing Settings'
+    # SecretStr through sent "Bearer **********" and Cohere answered 401. No network here:
+    # the headers are built locally.
+    settings = Settings(
+        embedding_provider="cohere", embedding_model=None, cohere_api_key="fake-key-123"
+    )
+    cohere = make_embedder(settings, for_queries=for_queries).embeddings
+    for client in (cohere.client, cohere.async_client):
+        assert client._client_wrapper.get_headers()["Authorization"] == "Bearer fake-key-123"
+
+
 def test_a_cohere_model_with_another_vector_size_is_refused() -> None:
     # embed-multilingual-light-v3.0 returns 384 numbers: refused before any paid call.
     settings = Settings(

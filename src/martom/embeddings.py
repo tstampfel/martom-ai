@@ -149,7 +149,9 @@ def make_embedder(settings: Settings, *, for_queries: bool = False) -> Embedder:
         # "search_query" for queries, which Cohere's v3 models need.
         cohere = CohereEmbeddings(
             model=model,
-            cohere_api_key=settings.cohere_api_key,
+            # The plain string, not the SecretStr: langchain-cohere str()-s a SecretStr
+            # before unwrapping it and would send the mask "**********" (401).
+            cohere_api_key=settings.cohere_api_key.get_secret_value(),
             max_retries=COHERE_QUERY_MAX_RETRIES if for_queries else COHERE_BATCH_MAX_RETRIES,
             request_timeout=(
                 COHERE_QUERY_TIMEOUT_SECONDS if for_queries else COHERE_BATCH_TIMEOUT_SECONDS
