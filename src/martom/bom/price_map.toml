@@ -1,0 +1,258 @@
+# Which synced product prices each BOM line (#125). Data, not code: every change is
+# reviewed in a PR. Read by martom.bom.pricing (load_price_map); the DB pricer
+# (martom.agent.pricer) and Toni's review check (bom_price_missing) use it.
+#
+# DRAFT: drafted by an agent from the local synced catalogue on 27 Nov 2026. Tomislav
+# (and Toni where unsure) confirm it, then `status` becomes "reviewed".
+status = "draft"
+
+# One [[entry]] per BOM item + size, exactly as the calculators write them
+# (martom.bom.common.Item values; sizes such as "153 × 250 cm", "155 cm", "M8×80").
+# Leave `size` out for a line without a size.
+#
+# An entry points at either
+#   listing_id + variants : an OLX listing and the product_variant row(s) that price the
+#                           line. Each table in `variants` names fields of ONE variant
+#                           exactly as extraction wrote them (label, height, length,
+#                           colour, size, unit; compared exactly, case and spaces
+#                           included). Each table must match exactly one variant of the
+#                           listing; several tables (e.g. colours) must all match and all
+#                           have the same price.
+#   manual                : a table in manual_products.toml (products without a listing).
+#
+# Anything else is "cijena na upit": no entry, an inactive listing, a variant that is
+# missing, ambiguous or has no price, or colours with different prices. Never a guess.
+#
+# [[unmapped]] records the BOM lines that deliberately have no entry yet, with the reason,
+# so a test can check that every line the calculators emit is decided.
+
+# --- Panel fence: OLX 63996799 (panels, posts, clips and anchors are its variants) ------
+
+[[entry]]
+item = "panel"
+size = "83 × 200 cm"
+listing_id = 63996799
+variants = [{ height = "83", length = "200 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "83 × 250 cm"
+listing_id = 63996799
+variants = [{ height = "83", length = "250 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "103 × 200 cm"
+listing_id = 63996799
+variants = [{ height = "103", length = "200 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "103 × 250 cm"
+listing_id = 63996799
+variants = [{ height = "103", length = "250 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "123 × 200 cm"
+listing_id = 63996799
+variants = [{ height = "123", length = "200 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "123 × 250 cm"
+listing_id = 63996799
+variants = [{ height = "123", length = "250 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "153 × 200 cm"
+listing_id = 63996799
+variants = [{ height = "153", length = "200 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "153 × 250 cm"
+listing_id = 63996799
+variants = [{ height = "153", length = "250 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "203 × 200 cm"
+listing_id = 63996799
+variants = [{ height = "203", length = "200 cm", unit = "panel" }]
+
+[[entry]]
+item = "panel"
+size = "203 × 250 cm"
+listing_id = 63996799
+variants = [{ height = "203", length = "250 cm", unit = "panel" }]
+
+[[entry]]
+item = "post_base_plate"
+size = "85 cm"
+listing_id = 63996799
+variants = [{ height = "H-85 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_base_plate"
+size = "105 cm"
+listing_id = 63996799
+variants = [{ height = "H-105 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_base_plate"
+size = "125 cm"
+listing_id = 63996799
+variants = [{ height = "H-125 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_base_plate"
+size = "155 cm"
+listing_id = 63996799
+variants = [{ height = "H-155 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_base_plate"
+size = "205 cm"
+listing_id = 63996799
+variants = [{ height = "H-205 cm", unit = "kom" }]
+
+[[entry]]
+item = "pvc_clip"
+listing_id = 63996799
+variants = [{ label = "PVC kopča sa samorezivim vijkom" }]
+
+[[entry]]
+item = "anchor_m8x80"
+size = "M8×80"
+listing_id = 63996799
+variants = [{ size = "FI 10 / M8 x 80 mm" }]
+
+# --- Welded roll fence -----------------------------------------------------------------
+
+# T-post, OLX 59473597 (also prices the support T-posts through price_from). The listing
+# has 100, 125, 150, 175 and 200 cm; there is no 120 cm variant (see [[unmapped]]).
+[[entry]]
+item = "post_t"
+size = "100 cm"
+listing_id = 59473597
+variants = [{ height = "H-100", unit = "kom" }]
+
+[[entry]]
+item = "post_t"
+size = "125 cm"
+listing_id = 59473597
+variants = [{ height = "H-125", unit = "kom" }]
+
+[[entry]]
+item = "post_t"
+size = "150 cm"
+listing_id = 59473597
+variants = [{ height = "H-150", unit = "kom" }]
+
+[[entry]]
+item = "post_t"
+size = "175 cm"
+listing_id = 59473597
+variants = [{ height = "H-175", unit = "kom" }]
+
+[[entry]]
+item = "post_t"
+size = "200 cm"
+listing_id = 59473597
+variants = [{ height = "H-200", unit = "kom" }]
+
+# Foot-plate post (stup sa stopom), OLX 81645615.
+[[entry]]
+item = "post_foot_plate"
+size = "60 cm"
+listing_id = 81645615
+variants = [{ height = "60 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_foot_plate"
+size = "80 cm"
+listing_id = 81645615
+variants = [{ height = "80 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_foot_plate"
+size = "100 cm"
+listing_id = 81645615
+variants = [{ height = "100 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_foot_plate"
+size = "125 cm"
+listing_id = 81645615
+variants = [{ height = "125 cm", unit = "kom" }]
+
+[[entry]]
+item = "post_foot_plate"
+size = "150 cm"
+listing_id = 81645615
+variants = [{ height = "150 cm", unit = "kom" }]
+
+# Tensioner (španer), OLX 18129143. The BOM line has no colour, so all three colours are
+# listed: the line is priced only while they cost the same. The reinforced barbed-wire
+# tensioner (variant 4) is a different product and is not mapped.
+[[entry]]
+item = "tensioner"
+listing_id = 18129143
+variants = [
+    { colour = "Zeleni", unit = "kom" },
+    { colour = "Antracit", unit = "kom" },
+    { colour = "Cinčani", unit = "kom" },
+]
+
+# Tension wire 2,70 mm, 100 m coil, OLX 46677177 (the wire add-on).
+[[entry]]
+item = "tension_wire"
+size = "2,70 mm"
+listing_id = 46677177
+variants = [{ size = "2,70MM", unit = "100M" }]
+
+# Wire holder, OLX 48475613 (the wire add-on on foot-plate posts); its only variant.
+[[entry]]
+item = "wire_holder"
+listing_id = 48475613
+variants = [{ unit = "KOM" }]
+
+# Anchor M8×70: no OLX listing.
+[[entry]]
+item = "anchor_m8x70"
+size = "M8×70"
+manual = "anchor_m8x70"
+
+# --- Not mapped yet: always "cijena na upit" -------------------------------------------
+
+[[unmapped]]
+item = "post_t"
+size = "120 cm"
+reason = "OLX 59473597 has no 120 cm variant (it has 100/125/150/175/200 cm); fence-rules.md pairs 60 and 80 cm rolls with a 120 cm T-post."
+
+[[unmapped]]
+item = "roll_welded"
+size = "60 cm"
+reason = "No OLX listing recorded for the welded roll (fence-rules.md). The candidate roll listings price per metre and have other heights."
+
+[[unmapped]]
+item = "roll_welded"
+size = "80 cm"
+reason = "As roll_welded 60 cm."
+
+[[unmapped]]
+item = "roll_welded"
+size = "100 cm"
+reason = "As roll_welded 60 cm."
+
+[[unmapped]]
+item = "roll_welded"
+size = "125 cm"
+reason = "As roll_welded 60 cm."
+
+[[unmapped]]
+item = "roll_welded"
+size = "150 cm"
+reason = "As roll_welded 60 cm."

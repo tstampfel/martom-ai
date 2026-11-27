@@ -62,10 +62,14 @@ class Item(StrEnum):
 
 @dataclass(frozen=True)
 class PriceRef:
-    """The product whose price a line uses, when it isn't the line's own item and size."""
+    """A product to price: a line's `price_from`, or a line's own item and size.
+
+    `size` is None for an item the calculators write without a size (a PVC clip, a
+    tensioner); martom.bom.pricing keys the price map by it.
+    """
 
     item: Item
-    size: str
+    size: str | None
 
 
 @dataclass(frozen=True)
