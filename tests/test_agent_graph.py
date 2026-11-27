@@ -94,9 +94,10 @@ class FakePricer:
 
 
 class FakeRetriever:
-    def __init__(self, relevance: float | None = 0.75) -> None:
+    def __init__(self, relevance: float | None = 0.75, *, manual: bool = False) -> None:
         self.queries: list[str] = []
         self.relevance = relevance
+        self.manual = manual
 
     async def __call__(self, query: str) -> Retrieval:
         self.queries.append(query)
@@ -110,7 +111,23 @@ class FakeRetriever:
             keyword_rank=1,
             vector_rank=1,
         )
-        return Retrieval([hit], SearchFilters(), True, False, 0, self.relevance is not None)
+        hits = [hit]
+        if self.manual:
+            hits.append(
+                RetrievedHit(
+                    listing_id=None,
+                    title="Stup za panel 60 x 40",
+                    slug=None,
+                    product_type="stup",
+                    rrf_score=0.02,
+                    relevance=self.relevance,
+                    keyword_rank=2,
+                    vector_rank=None,
+                    source="manual",
+                    manual_key="post_60x40",
+                )
+            )
+        return Retrieval(hits, SearchFilters(), True, False, 0, self.relevance is not None)
 
 
 def understanding(**fields: Any) -> Understanding:
@@ -734,3 +751,29 @@ async def test_numbered_recommendation_list_is_not_a_fallback() -> None:
     result = await ask(graph, "Treba mi ograda")
     assert result["fallback"] is False
     assert result["answer"] == reply
+
+
+async def test_manual_product_hit_flows_through_the_graph() -> None:
+    # #112 hits: no listing id, no link. The full manual-product handling is #132.
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [AIMessage("Imamo i stup za panel.")],
+        retriever=FakeRetriever(manual=True),
+    )
+    result = await ask(graph, "Stup za panel")
+    manual = next(hit for hit in result["hits"] if hit["source"] == "manual")
+    assert manual["listing_id"] is None
+    assert manual["url"] is None
+    assert manual["manual_key"] == "post_60x40"
+    assert result["answer"] == "Imamo i stup za panel."
+
+
+async def test_fallback_skips_hits_without_a_link() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [AIMessage("Košta 999 KM."), AIMessage("Košta 999 KM.")],
+        retriever=FakeRetriever(manual=True),
+    )
+    result = await ask(graph, "Stup za panel")
+    assert result["fallback"] is True
+    assert "Stup za panel 60 x 40" not in result["answer"]

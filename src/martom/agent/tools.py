@@ -80,8 +80,11 @@ class SearchArgs(BaseModel):
 
 
 def hit_json(hit: RetrievedHit) -> dict[str, Any]:
+    # A manual product (#112) has no listing id or link; its full handling is #132.
     return {
+        "source": hit.source,
         "listing_id": hit.listing_id,
+        "manual_key": hit.manual_key,
         "title": hit.title,
         "url": hit.url,
         "product_type": hit.product_type,
