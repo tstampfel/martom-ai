@@ -4,6 +4,7 @@ Most tests swap the database for a small fake source; the last one reads a real 
 """
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from martom import cli
+from martom.api.admin import AdminTokenMissingError
 from martom.api.app import create_app
 from martom.migrate import run_migrations
 from martom.review.report import ReportIssue, ReportListing
@@ -34,7 +36,7 @@ ISSUE = ReportIssue(
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ["ADMIN_TOKEN", "DATABASE_URL", "CORS_ALLOWED_ORIGINS"]:
+    for name in ["ADMIN_TOKEN", "APP_ENV", "DATABASE_URL", "CORS_ALLOWED_ORIGINS"]:
         monkeypatch.delenv(name, raising=False)
 
 
@@ -95,6 +97,76 @@ def test_commands_never_print_a_short_admin_token(
     captured = capsys.readouterr()
     assert SHORT_TOKEN not in captured.out + captured.err
     assert "ADMIN_TOKEN must be at least 32 characters" in captured.err
+
+
+@pytest.mark.parametrize("app_env", ["local", "test", "production"])
+def test_short_admin_token_fails_in_every_app_env(
+    app_env: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
+
+    with pytest.raises(ValidationError, match="at least 32 characters"):
+        Settings()
+
+
+def test_unset_admin_token_does_not_stop_other_commands_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # sync and extract load the same Settings: only the API (create_app) needs the token,
+    # so a missing secret never stops the nightly sync.
+    monkeypatch.setenv("APP_ENV", "production")
+
+    assert Settings().admin_token is None
+
+
+def test_api_refuses_to_start_in_production_without_an_admin_token() -> None:
+    settings = Settings(app_env="production")
+
+    with pytest.raises(AdminTokenMissingError, match="ADMIN_TOKEN is not set") as error:
+        create_app(settings, health_checks={})
+
+    assert "openssl rand -hex 32" in str(error.value)
+
+
+def test_api_starts_in_production_with_an_admin_token() -> None:
+    settings = Settings(app_env="production", admin_token=TOKEN)  # type: ignore[arg-type]
+
+    async def source() -> list[ReportIssue]:
+        return []
+
+    app = create_app(settings, health_checks={}, review_issue_source=source)
+    response = TestClient(app).get("/admin/review-issues", headers=bearer(TOKEN))
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("app_env", ["local", "test"])
+def test_api_without_token_outside_production_logs_one_warning_and_answers_404(
+    app_env: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="martom.api"):
+        app = create_app(Settings(app_env=app_env), health_checks={})  # type: ignore[arg-type]
+        TestClient(app).get("/admin/review-issues", headers=bearer(TOKEN))
+        response = TestClient(app).get("/admin/review-issues", headers=bearer(TOKEN))
+
+    warnings = [r for r in caplog.records if "ADMIN_TOKEN" in r.getMessage()]
+    assert len(warnings) == 1
+    assert warnings[0].levelno == logging.WARNING
+    assert response.status_code == 404
+
+
+def test_martom_api_exits_cleanly_in_production_without_an_admin_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(args))
+
+    assert cli.main(["api"]) == 1
+
+    assert calls == []
+    assert "ADMIN_TOKEN is not set" in capsys.readouterr().err
 
 
 def test_endpoint_is_404_when_no_token_is_configured() -> None:

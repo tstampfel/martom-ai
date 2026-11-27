@@ -1,11 +1,14 @@
 """GET /admin/review-issues: Toni's open review issues as JSON, behind a bearer token.
 
-The token comes from ADMIN_TOKEN (`Settings.admin_token`). With no token configured the
+The token comes from ADMIN_TOKEN (`Settings.admin_token`). In production the API refuses
+to start without it. In local and test a missing token logs one warning at startup and the
 endpoint answers 404, the same as a route that doesn't exist, so it can never be open by
-accident. A missing or wrong token answers 401. Only the `Authorization: Bearer <token>`
-header is accepted (a token in the URL would end up in access logs).
+accident. A missing or wrong token in the request answers 401. Only the
+`Authorization: Bearer <token>` header is accepted (a token in the URL would end up in
+access logs).
 """
 
+import logging
 import secrets
 from collections.abc import Awaitable, Callable
 
@@ -16,6 +19,36 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from martom.review.report import ReportIssue, load_open_issues, report_json
 from martom.settings import Settings
+
+logger = logging.getLogger(__name__)
+
+
+class AdminTokenMissingError(ValueError):
+    """APP_ENV=production but ADMIN_TOKEN is unset: the API must not start."""
+
+
+def check_admin_token(settings: Settings) -> None:
+    """Tomislav's rule (27 Nov): production needs ADMIN_TOKEN; local and test may skip it.
+
+    Only the API calls this (`create_app`, `martom api`), so a missing token never stops
+    `martom sync` or `martom extract`. A token that is set but too short is rejected
+    earlier, by `Settings` itself, in every APP_ENV.
+    """
+    if settings.admin_token is None and settings.app_env == "production":
+        raise AdminTokenMissingError(
+            "ADMIN_TOKEN is not set; APP_ENV=production needs it for the /admin endpoints "
+            "(generate one with `openssl rand -hex 32`)"
+        )
+
+
+def warn_if_admin_disabled(settings: Settings) -> None:
+    """Outside production, a missing token turns /admin off (404); say so once."""
+    if settings.admin_token is None:
+        logger.warning(
+            "ADMIN_TOKEN is not set: the /admin endpoints are off (404)",
+            extra={"app_env": settings.app_env},
+        )
+
 
 # Like `() => Promise<ReportIssue[]>` in TypeScript; tests pass a fake one.
 ReviewIssueSource = Callable[[], Awaitable[list[ReportIssue]]]
