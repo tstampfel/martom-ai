@@ -206,8 +206,8 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 | M3-1 | Eval dataset: 50+ real customer questions (about 35 fence, 15 other products) with expected listing IDs, in LangSmith + repo JSONL | Exists before any tuning; Toni reviewed the answers |
 | M3-2 | Keyword search: full-text + trigram + filters (type, height, colour, price) | Baseline recall@10 reported in the PR |
 | M3-3 | Embeddings + pgvector migration + hybrid search with RRF | Hybrid beats keyword baseline on recall@10 |
-| M3-4 | Query understanding (Haiku → filters) + Cohere Rerank with fallback | recall@5 ≥ 90%; p95 retrieval < 800 ms |
-| M3-5 | Redis cache for query results and embeddings (TTL, graceful fallback) | Cache hit skips LLM/embedding calls; Redis down ≠ outage |
+| M3-4 | Query understanding (Haiku → filters) + Cohere Rerank with fallback | recall@5 ≥ 90%; p95 retrieval < 2.5 s with the Haiku parse on the path (Tomislav, 27 Nov: 800 ms isn't reachable with Haiku p50 ~1.3 s; the UI shows the step card at once, so the wait isn't a blank screen); recheck under M3-5 |
+| M3-5 | Redis cache for query results and embeddings (TTL, graceful fallback) | Cache hit skips LLM/embedding calls; Redis down ≠ outage; recheck M3-4's retrieval p95 with the cache |
 
 ### M4 — Agent (course weeks 5, 7)
 

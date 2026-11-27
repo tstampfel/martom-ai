@@ -78,8 +78,12 @@ the two models taking turns on each question.
   The understand stage (parse and embedding in parallel) was p95 ~1,504 ms, i.e. the limit. The
   limit is now 2.5 s, and the embedding and the unfiltered search run during the parse, so the
   live rows and the latency above are from **before** that change and should be re-run.
-- **p95 total ~2.2 s misses the plan's "p95 retrieval < 800 ms"**: the Haiku parse alone is p50
-  1.3 s on the critical path. Recall@5 0.95 meets "≥ 90%".
+- **Latency target:** p95 total ~2.2 s missed the plan's original "p95 retrieval < 800 ms", because
+  the Haiku parse alone is p50 1.3 s on the critical path. Tomislav's decision (27 Nov): the M3-4
+  target is now **p95 retrieval < 2.5 s with Haiku on the path**, rechecked when the Redis cache
+  lands (M3-5); docs/PLAN.md says so. The latency above predates 2967f5a (2.5 s parse limit,
+  embedding and unfiltered search during the parse); fresh numbers follow from his run on the
+  final commit. Recall@5 0.95 meets "≥ 90%".
 
 ## Weak cases
 
