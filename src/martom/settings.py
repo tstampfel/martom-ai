@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # The provider's model; None = the provider's default (src/martom/embeddings.py).
     embedding_model: str | None = None
     cohere_api_key: SecretStr | None = None
+    # Cohere rerank model for search (M3-4), using COHERE_API_KEY. Without the key, results
+    # stay in hybrid (RRF) order. Default: Rerank 4 Fast.
+    rerank_model: str = "rerank-v4.0-fast"
 
     # Bearer token for the /admin endpoints (M2-3), e.g. GET /admin/review-issues.
     # Unset (the default) turns them off: they answer 404, never open. The API checks the
