@@ -40,6 +40,8 @@ def print_scores(
     print(f"{'question':<32} {'R@5':>5} {'R@10':>5} {'RR':>5}  top 3 ids")
     for question in questions:
         top = ", ".join(str(i) for i in results[question.id][:3]) or "-"
+        if question.id in scores.forbidden_hit_ids:
+            top += "  FORBIDDEN id in top 10"
         score = scores.per_question.get(question.id)
         if score is None:
             print(f"{question.id:<32} {'n/a':>5} {'n/a':>5} {'n/a':>5}  {top}  (no expected ids)")
@@ -53,6 +55,12 @@ def print_scores(
     print(f"recall@5  {scores.recall_at_5:.3f}")
     print(f"recall@10 {scores.recall_at_10:.3f}")
     print(f"MRR       {scores.mrr:.3f}")
+    if scores.forbidden_hit_rate is not None:
+        hits = ", ".join(scores.forbidden_hit_ids) or "none"
+        print(
+            f"forbidden hit rate {scores.forbidden_hit_rate:.3f}"
+            f" ({len(scores.forbidden_hit_ids)} of {scores.forbidden_checked}: {hits})"
+        )
 
 
 async def main(eval_set: Path, mode: str, limit: int) -> None:
