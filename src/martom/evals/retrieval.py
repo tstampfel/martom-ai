@@ -191,6 +191,21 @@ def score_run(questions: Sequence[EvalQuestion], results: Mapping[str, Sequence[
     )
 
 
+def case_status(scores: RunScores, question_id: str) -> str:
+    """One question's result in a few characters, for a comparison table: "ok" (full recall@10
+    and no forbidden id in the top 10), else "FORBIDDEN" and/or "R@10 0.50"; "-" when the run
+    has no such question (another eval set)."""
+    score = scores.per_question.get(question_id)
+    if score is None and question_id not in scores.no_answer_ids:
+        return "-"
+    problems: list[str] = []
+    if question_id in scores.forbidden_hit_ids:
+        problems.append("FORBIDDEN")
+    if score is not None and score.recall_at_10 < 1:
+        problems.append(f"R@10 {score.recall_at_10:.2f}")
+    return ", ".join(problems) or "ok"
+
+
 # A search under test: question text -> ranked listing ids (like a TS
 # `(text: string) => Promise<number[]>`).
 SearchIds = Callable[[str], Awaitable[list[int]]]
@@ -246,20 +261,3 @@ async def run_search_eval(
     if mode not in searches:
         raise ValueError(f"unknown search mode {mode!r}")
     return await run_eval(questions, searches[mode])
-
-
-async def issue_102_hits(
-    conn: psycopg.AsyncConnection, embedder: Embedder
-) -> tuple[list[int], list[int]]:
-    """Hybrid results for the two #102 cases: ("kolica" ids, "panelan" ids).
-
-    "kolica" must not return the grinder 52889522; "panelan" must still find the panels.
-    fallback=False, like the eval: if a query can't be embedded this raises, instead of
-    answering with keyword results (where "kolica" returns the grinder for the wrong reason).
-    """
-
-    async def ids(query: str) -> list[int]:
-        hits = await search_hybrid(conn, query, embedder=embedder, fallback=False)
-        return [hit.listing_id for hit in hits]
-
-    return await ids("kolica"), await ids("panelan")

@@ -148,8 +148,8 @@ description; Toni has been asked to add sizes and prices. It stays at R@10 0.50 
 - n = 10 scored questions, so each difference between rows is one question.
 - `seed-06-anker-m8x80`: R@10 0.50 in every mode and for every embedding model compared; the
   anchor listing 40021189 is still missing from the top 10.
-- The #102 checks (`issue_102_hits`, hybrid): "kolica" no longer returns the grinder, and
-  "panelan" still finds the panels.
+- The #102 checks (hybrid; then `issue_102_hits`, since #114 the seed-12/13/14 eval cases):
+  "kolica" no longer returns the grinder, and "panelan" still finds the panels.
 
 ### Keyword, 11-line set (2026-11-27)
 
