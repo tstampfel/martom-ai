@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     # Listings extracted at the same time (one Claude call each).
     extraction_concurrency: int = Field(default=4, ge=1, le=16)
 
+    # Embeddings for hybrid search (M3-3), read by `martom embed` and search. None (the
+    # default) means not configured: `martom embed` refuses to run instead of guessing a
+    # provider. "cohere" calls Cohere's API (needs COHERE_API_KEY); "local" runs an open
+    # sentence-transformers model on this machine (`uv sync --group local-embeddings`);
+    # "fake" gives meaningless deterministic vectors, for trying the commands locally.
+    embedding_provider: Literal["cohere", "local", "fake"] | None = None
+    # The provider's model; None = the provider's default (src/martom/embeddings.py).
+    embedding_model: str | None = None
+    cohere_api_key: SecretStr | None = None
+
     # Bearer token for the /admin endpoints (M2-3), e.g. GET /admin/review-issues.
     # Unset (the default) turns them off: they answer 404, never open. The API checks the
     # 32-character minimum at startup (`check_admin_token`), not this class, so a short token
