@@ -87,7 +87,8 @@ the two models taking turns on each question.
   target is now **p95 retrieval < 2.5 s with Haiku on the path**, rechecked when the Redis cache
   lands (M3-5); docs/PLAN.md says so. The latency above predates 2967f5a (2.5 s parse limit,
   embedding and unfiltered search during the parse); fresh numbers follow from his run on the
-  final commit. Recall@5 0.95 meets "≥ 90%".
+  final commit. Recall@5 0.95 on this 10-question set met "≥ 90%"; the final 14-question run is
+  0.891, just under it, accepted by Tomislav (see M3-4 baseline below).
 
 ## M3-4 baseline (#16 final, 2026-11-27)
 
