@@ -1830,6 +1830,8 @@ async def test_a_detail_older_than_8_days_logs_a_warning_and_flags_the_run(
     assert float(run["oldest_detail_age_days"]) > 8
     [record] = [r for r in caplog.records if getattr(r, "event", None) == "detail_refresh_overdue"]
     assert record.levelno == logging.WARNING
+    assert record.overdue_listing_ids == [3]  # type: ignore[attr-defined]
+    assert record.getMessage().endswith("oldest listings: 3")
 
 
 async def test_a_listing_never_fetched_counts_from_when_it_was_first_seen(
@@ -1862,6 +1864,130 @@ async def test_a_run_olx_stopped_early_still_records_the_oldest_age(
 
     assert stats.status == "partial"
     assert stats.detail_refresh_overdue is True
+
+
+async def test_an_olx_stop_inside_the_rolling_slice_still_rechecks_and_deactivates(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    await age_by_one_day(conn)
+    del server.listed[5]  # sold: GET /listings/5 answers 404
+    server.abort_on = "/listings/1"  # the slice's first GET (listing 1, the oldest)
+    server.requests.clear()
+
+    stats = await sync(conn, server, refresh_days=7)
+
+    assert stats.status == "partial"
+    assert server.detail_requests() == [5, 1]  # the re-check ran before the slice
+    assert (await listings(conn))[5]["active"] is False
+    assert stats.deactivated == 1
+    assert stats.allowlist_warnings == []  # the guard ran too
+    assert stats.failed_listing_ids == [1, 2]  # the slice goes to the next run
+
+
+async def test_a_still_active_listing_off_the_pages_is_refreshed_by_its_recheck(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    # Listing 3 left every synced category but is still for sale: never in the slice.
+    del server.listed[3]
+    server.off_list[3] = "active"
+    await conn.execute(
+        "UPDATE olx_listing SET detail_fetched_at = now() - interval '9 days' WHERE id = 3"
+    )
+    summary_hash_before = (await listings(conn))[3]["summary_hash"]
+
+    stats = await sync(conn, server, refresh_days=7)
+
+    stored = (await listings(conn))[3]
+    assert stored["active"] is True
+    assert stored["title"] == "Old listing 3"  # saved from the re-check body
+    assert stored["summary_hash"] == summary_hash_before  # no listing-page row this run
+    assert stats.detail_refresh_overdue is False
+    assert stats.oldest_detail_age_days == pytest.approx(0, abs=0.01)
+
+
+async def test_a_failed_rolling_id_is_fetched_first_even_when_the_cap_is_full(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    await age_by_one_day(conn)
+    server.detail_errors[1] = 500
+    await sync(conn, server, refresh_days=7)  # slice [1, 2]: 1 fails
+    del server.detail_errors[1]
+    server.listed[9] += " (edited)"
+    server.requests.clear()
+
+    stats = await sync(conn, server, refresh_days=7, detail_cap=1)
+
+    assert server.detail_requests() == [1, 9]  # 1 first, though the cap is already full
+    assert stats.failed_listing_ids is None
+    assert (stats.rolling_refreshed, stats.rolling_deferred) == (0, 2)
+
+
+async def test_deferred_counts_only_listings_the_slice_could_have_taken(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    for listing_id in range(1, 10):  # 9 of 10 changed: the pool holds only listing 10
+        server.listed[listing_id] += " (edited)"
+
+    # The slice wants 2, the cap leaves room for 1, and the pool has only 1: nothing waited.
+    stats = await sync(conn, server, refresh_days=7, detail_cap=10)
+
+    assert (stats.rolling_refreshed, stats.rolling_deferred) == (1, 0)
+
+
+async def test_a_never_fetched_listing_comes_first_in_the_slice(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    await age_by_one_day(conn)
+    await conn.execute("UPDATE olx_listing SET detail_fetched_at = NULL WHERE id = 7")
+    server.requests.clear()
+
+    await sync(conn, server, refresh_days=7)
+
+    assert server.detail_requests() == [7, 1]
+
+
+async def test_the_refresh_catches_up_after_several_deferred_nights(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({i: f"Listing {i}" for i in range(1, 15)})  # 14 listings: 2 a night
+    await sync(conn, server)
+    for _ in range(9):  # nine nights where changed listings would fill the cap
+        await age_by_one_day(conn)
+        stats = await sync(conn, server, refresh_days=7, detail_cap=0)
+    assert stats.detail_refresh_overdue is True
+    assert stats.rolling_deferred == 2
+
+    for _ in range(7):  # then seven normal nights
+        await age_by_one_day(conn)
+        stats = await sync(conn, server, refresh_days=7)
+
+    assert stats.detail_refresh_overdue is False
+    assert stats.oldest_detail_age_days is not None and stats.oldest_detail_age_days < 7
+
+
+async def test_an_age_query_error_never_fails_a_clean_run(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def broken(_conn: psycopg.AsyncConnection) -> float | None:
+        raise psycopg.errors.QueryCanceled("statement timeout")
+
+    monkeypatch.setattr(job.store, "oldest_detail_age_days", broken)
+
+    stats = await sync(conn, FakeShop(ten_listings()))
+
+    assert stats.status == "succeeded"
+    assert stats.oldest_detail_age_days is None
+    assert (await last_run(conn))["status"] == "succeeded"
 
 
 def test_cli_passes_the_detail_cap_and_refresh_days_settings(
