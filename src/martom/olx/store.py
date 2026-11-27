@@ -163,6 +163,37 @@ async def count_active(conn: psycopg.AsyncConnection) -> int:
     return int(row[0])
 
 
+async def oldest_detail_ids(
+    conn: psycopg.AsyncConnection, among: Collection[int], limit: int
+) -> list[int]:
+    """Up to `limit` active listings of `among` whose detail was fetched longest ago.
+
+    Never fetched (NULL) first, then oldest `detail_fetched_at` first; ties by id, so the
+    order is the same every time. The rolling refresh (#135) re-fetches these.
+    """
+    if limit <= 0 or not among:
+        return []
+    cursor = await conn.execute(
+        "SELECT id FROM olx_listing WHERE active AND id = ANY(%s) "
+        "ORDER BY detail_fetched_at ASC NULLS FIRST, id LIMIT %s",
+        (sorted(among), limit),
+    )
+    return [row[0] for row in await cursor.fetchall()]
+
+
+async def oldest_detail_age_days(conn: psycopg.AsyncConnection) -> float | None:
+    """Days since the oldest detail fetch among the active listings; None if none is active.
+
+    A listing whose detail was never fetched counts from `first_seen_at`.
+    """
+    cursor = await conn.execute(
+        "SELECT extract(epoch FROM now() - min(coalesce(detail_fetched_at, first_seen_at)))"
+        " / 86400 FROM olx_listing WHERE active"
+    )
+    row = await cursor.fetchone()
+    return None if row is None or row[0] is None else round(float(row[0]), 2)
+
+
 async def deactivate(conn: psycopg.AsyncConnection, listing_ids: Collection[int]) -> list[int]:
     """Mark these listings inactive (never deleted); return the ids that actually changed.
 
@@ -209,6 +240,8 @@ RUN_COLUMNS = frozenset(
         "deactivation_skipped", "would_deactivate", "skipped_listing_ids",
         "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
         "final_request_interval", "error", "extracted", "allowlist_warnings",
+        "rolling_refreshed", "rolling_deferred", "oldest_detail_age_days",
+        "detail_refresh_overdue",
     }
 )  # fmt: skip
 
@@ -268,7 +301,7 @@ async def previous_skipped_run(
     `apply_skipped`) neither makes nor breaks a streak. Any other scheduled run in
     between (succeeded, partial, failed or crashed) breaks it, so the two scheduled trips
     must be consecutive. If the previous scheduled run started less than 12 h earlier
-    (say, the weekly full run two hours after the nightly), there is no auto-apply.
+    (say, a full run two hours after the nightly), there is no auto-apply.
     """
     cursor = await conn.execute(
         _PREVIOUS_SCHEDULED_RUN,

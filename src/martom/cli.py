@@ -75,7 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sync_mode.add_argument(
         "--full",
         action="store_true",
-        help="weekly full pass: fetch every listing's details, changed or not",
+        help="manual full pass: fetch every listing's details, changed or not (no cap)",
     )
     sync_mode.add_argument(
         "--apply-skipped",
@@ -363,7 +363,14 @@ def run_sync_command(
         ):
             if apply_skipped is not None:
                 return await apply_skipped_run(conn, olx, apply_skipped)
-            return await run_sync(conn, olx, kind=kind, scheduled=scheduled)
+            return await run_sync(
+                conn,
+                olx,
+                kind=kind,
+                scheduled=scheduled,
+                detail_cap=settings.olx_nightly_detail_cap,
+                refresh_days=settings.olx_rolling_refresh_days,
+            )
 
     try:
         stats = asyncio.run(sync())
