@@ -26,10 +26,13 @@ recall and MRR.
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full: Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, live parser (1.5 s), 1/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run), scored on the original 11 lines only | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, batch parser (no time limit), 0 parse fallbacks | 11 lines (seed-01 … seed-11), same ids and expected listings as the dcd5ae4 rows | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run), scored on the original 11 lines only | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, live parser (2.5 s), 0 parse fallbacks | 11 lines (seed-01 … seed-11), same ids and expected listings as the dcd5ae4 rows | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid (same run, baseline) | 14 lines (seed-01 … seed-14) | 13 | 0.814 | 0.917 | 0.910 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, rerank-v5.0-fast, live parser (2.5 s), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
+| 2026-11-27 | #112, branch m3-4b-manual-products-search (review round 1 fixes, agent run) | 2,570 active listings, extraction run 4, plus manual_products.toml (1 entry) | keyword | 15 lines (+ seed-15 anker M8x70, expects the manual entry) | 14 | 0.685 | 0.756 | 0.648 | 0.000 (0 of 2) |
 
 Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them by
 hand. **Tomislav only:** agents never pass `--env-file .env` (CLAUDE.md); an agent that needs a
@@ -114,6 +117,15 @@ parse. **14 questions (13 scored) against 10 scored before, so the numbers are n
 - #102, full pipeline: "kolica" top 5 has no grinder 52889522; "panelan" puts the panels 63996799
   and 1199211 first (relevance 0.30 and 0.27, low for v5.0 on a one-word typo).
 
+- **Apples-to-apples check on the original 10 scored questions** (Tomislav asked for it): taken
+  from the per-question rows of the final run, no new calls. The 11 lines and their expected ids are
+  unchanged since the dcd5ae4 run (#102 only added seed-12 … seed-14). Batch and live 2.5 s parser
+  both give recall@5 0.950, recall@10 0.950, MRR 0.900, with the same top 5 for every question as
+  the earlier rerank-v5.0-fast run, so the final changes (2.5 s limit, parallel unfiltered search,
+  TaskGroup) regressed nothing. Against the 0.95/0.95/0.95 row (rerank-v4.0-fast), the only
+  difference is `seed-09-no-height-kokosi`, RR 0.50: v5.0 ranks the PVC chicken mesh 73950900
+  before the expected 68378185. That's the model choice, not the final changes.
+
 ### Misses (full pipeline, rerank-v5.0-fast)
 
 - `seed-06-anker-m8x80` (R@10 0.50): 40021189 "TIPLO SIDRO ANKER ANKERI SVE MJERE" is "Na upit"
@@ -148,8 +160,8 @@ description; Toni has been asked to add sizes and prices. It stays at R@10 0.50 
 - n = 10 scored questions, so each difference between rows is one question.
 - `seed-06-anker-m8x80`: R@10 0.50 in every mode and for every embedding model compared; the
   anchor listing 40021189 is still missing from the top 10.
-- The #102 checks (`issue_102_hits`, hybrid): "kolica" no longer returns the grinder, and
-  "panelan" still finds the panels.
+- The #102 checks (hybrid; then `issue_102_hits`, since #114 the seed-12/13/14 eval cases):
+  "kolica" no longer returns the grinder, and "panelan" still finds the panels.
 
 ### Keyword, 11-line set (2026-11-27)
 
@@ -179,3 +191,13 @@ The four cases above, plus:
   then other "građevinsk…" products (builder's line, plastic sheeting, crowbar); 57362536 and
   47382791 are not in the top 10. The hand truck 35992113 and the grinder 52889522 are not
   returned, so the forbidden check passes.
+
+### #112 manual products, keyword (2026-11-27)
+
+The 13 earlier scored questions score exactly as in the bcb165e keyword row (0.814 × 13 / 14 =
+0.756), seed-06 (M8×80 anchors) included: adding the manual index moved none of them. The new
+seed-15 ("Trebaju mi ankeri M8x70 za stupove sa stopom na betonskom zidu") scores 0 in keyword
+mode: the manual text is only "Anker M8×70 M8x70", so it matches 2 of the question's words while
+the foot-plate post listings match "stupove", "stopom", "betonskom" and more (top 3: 81645615,
+32555852, 63996799). Vector and hybrid (Cohere) weren't run: they need the API key. Whether
+seed-15 passes in hybrid and the full pipeline is for Tomislav's run.

@@ -4,7 +4,7 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it.
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it.
 
 | Canvas | Repo |
 | --- | --- |
@@ -51,6 +51,7 @@ Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "St
 | Strong border | `#D5D6D1` | Outlined icon buttons (phone button on mobile) |
 | Subtle divider / chip hover | `#ECECE8` | Quick-start chip hover (background and border), cart row dividers on web. Not in `tokens.css` yet; add it with the React issue that builds the chip hover |
 | Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Kako savjetnik radi" card) |
+| Small print on dark | `#A9AEB6` | The privacy notice in the web start footer (6.5:1 on charcoal) |
 | Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
 | Agent card | `#4A4F57` (border), `#5A5F68` ("primjer" badge border), `#34C46A` (step done), `#F5A623` (step working) | "Kako savjetnik radi" card on charcoal. Since canvas version 26 the start screens show only done steps, so no mockup uses `#F5A623` now |

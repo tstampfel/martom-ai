@@ -194,6 +194,18 @@ export const copy = {
       connection: `Veza sa savjetnikom je prekinuta. Pokušajte ponovo ili nazovite Martom: ${shop.phone}.`,
     },
   },
+  // Canvas version 1795793205-4582 (Tomislav, 27 Nov 2026). Chats are kept
+  // 90 days, then deleted by #129's job; orders are kept separately.
+  // `chatNotice` is the web start-screen footer, `chatNoticeShort` the phone
+  // one (docs/mockups/{web,mobile}/1-start.html). `orderNotice` goes under the
+  // order form checkbox (4-cart-order.html); #27 renders it.
+  privacy: {
+    chatNotice:
+      'Razgovore sa savjetnikom čuvamo 90 dana kako bismo poboljšali odgovore, zatim se brišu. Ne upisujte osobne podatke u razgovor.',
+    chatNoticeShort: 'Razgovore čuvamo 90 dana radi poboljšanja savjetnika. Ne upisujte osobne podatke.',
+    orderNotice: 'Ime, telefon i adresu koristimo samo za ovu narudžbu.',
+    link: 'Privatnost',
+  },
   about: {
     label: 'O Martomu',
     badges: [

@@ -54,6 +54,19 @@ describe('copy', () => {
     expect(copy.agentCard.steps.map((step) => step.text)).toEqual(canvasSteps)
   })
 
+  // Canvas version 1795793205-4582 (Tomislav, 27 Nov 2026): docs/mockups/web
+  // and mobile 1-start.html (footer) and 4-cart-order.html (order form).
+  it('uses the canvas wording for the privacy texts', () => {
+    expect(copy.privacy.chatNotice).toBe(
+      'Razgovore sa savjetnikom čuvamo 90 dana kako bismo poboljšali odgovore, zatim se brišu. Ne upisujte osobne podatke u razgovor.',
+    )
+    expect(copy.privacy.chatNoticeShort).toBe(
+      'Razgovore čuvamo 90 dana radi poboljšanja savjetnika. Ne upisujte osobne podatke.',
+    )
+    expect(copy.privacy.orderNotice).toBe('Ime, telefon i adresu koristimo samo za ovu narudžbu.')
+    expect(copy.privacy.link).toBe('Privatnost')
+  })
+
   // Bosnian plural: 1 stavka, 2–4 stavke, 5+ stavki (21 stavka, 11–14 stavki).
   it('counts the "na upit" lines under the total with the right plural', () => {
     const { unpriced } = copy.chat.bom
