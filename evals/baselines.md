@@ -21,14 +21,25 @@ recall and MRR.
 | 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (same) | hybrid | 11 lines (seed-01 … seed-11) | 10 | 0.900 | 0.950 | 0.933 | n/a |
 
 Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them. The
-14-line rows come from:
+14-line rows come from his main database, run from the root of the main checkout once
+migration 007 (the embedding columns) is on `main`:
 
 ```sh
-DATABASE_URL=postgresql://martom:martom@localhost:5433/martom_m33 EMBEDDING_PROVIDER=cohere EMBEDDING_MODEL=embed-multilingual-v3.0 uv run --env-file .env python scripts/eval_retrieval.py --search hybrid
-DATABASE_URL=postgresql://martom:martom@localhost:5433/martom_m33 EMBEDDING_PROVIDER=cohere EMBEDDING_MODEL=embed-multilingual-v3.0 uv run --env-file .env python scripts/eval_retrieval.py --search vector
+DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run martom migrate
+DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run --env-file .env martom embed
+DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run --env-file .env python scripts/eval_retrieval.py --search hybrid
+DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run --env-file .env python scripts/eval_retrieval.py --search vector
 ```
 
-(`--env-file` only fills variables that aren't set already, so the inline `DATABASE_URL` wins.)
+- `martom embed` embeds every active product and knowledge chunk the first time: about 28
+  Cohere batch calls of 96 texts, roughly 0.2 M tokens at $0.10 per million, so under $0.05
+  (#15's run; free on the trial key). #15 recorded no duration. Later runs only re-embed
+  changed rows. Each eval run adds one query embedding per question (14).
+- `EMBEDDING_PROVIDER` defaults to `cohere` and `EMBEDDING_MODEL` to
+  `embed-multilingual-v3.0` (`Settings`, `martom.embeddings`), so neither is passed, as long as
+  `.env` doesn't set them to something else.
+- `--env-file` only fills variables that aren't set already, so the inline `DATABASE_URL` wins
+  over any `DATABASE_URL` in `.env`.
 
 ## Weak cases
 
