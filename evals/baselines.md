@@ -16,7 +16,7 @@ recall and MRR.
 | Date | Commit | Catalogue | Search mode | Eval set | Scored | recall@5 | recall@10 | MRR | Forbidden hit rate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-27 | b3b1dcf (Tomislav's run) | 2,570 active listings, extraction run 4 | keyword | 11 lines (seed-01 … seed-11) | 10 | 0.850 | 0.900 | 0.694 | n/a |
-| 2026-11-27 | branch m3-2b-eval-cases @ 07e2164 (on top of b3b1dcf) | 2,570 active listings, extraction run 4 | keyword | 13 lines (+ seed-12 kolica, seed-13 panelan) | 12 | 0.771 | 0.854 | 0.672 | 0.000 (0 of 1) |
+| 2026-11-27 | branch m3-2b-eval-cases @ a55d184 (on top of b3b1dcf) | 2,570 active listings, extraction run 4 | keyword | 14 lines (+ seed-12 kolica, seed-13 panelan, seed-14 građevinska kolica) | 13 | 0.737 | 0.814 | 0.698 | 0.000 (0 of 2) |
 
 ## Weak cases
 
@@ -31,7 +31,7 @@ Tomislav's run and a re-run for #102 gave the same numbers.
 - `seed-05-zatezac`: RR 0.33. The BOM tensioner 18129143 comes 3rd.
 - `seed-01-panel-153-dvoriste`: RR 0.50. Garden Light (25070880) comes first.
 
-### Keyword, 13-line set (2026-11-27)
+### Keyword, 14-line set (2026-11-27)
 
 The four cases above, plus:
 
@@ -44,3 +44,7 @@ The four cases above, plus:
   0.43, under the 0.55 threshold. The 0.57 false positive from #101 comes from the recorded
   fixture text, where "brusilica kutna" sits next to each other. The case stays as a guard,
   because a re-extraction could write the words in that order again.
+- `seed-14-gradjevinska-kolica` ("građevinska kolica"): R@5 0.33, RR 1.00. Wheelbarrow 53055264 comes first,
+  then other "građevinsk…" products (builder's line, plastic sheeting, crowbar); 57362536 and
+  47382791 are not in the top 10. The hand truck 35992113 and the grinder 52889522 are not
+  returned, so the forbidden check passes.
