@@ -144,10 +144,25 @@ class KeywordHit:
     slug: str | None
     product_type: str
     score: float
+    # False when only trigram similarity (a typo match) found it, which is the weakest
+    # evidence: hybrid search keeps such a hit only when vector search agrees (#102).
+    text_match: bool = True
 
     @property
     def url(self) -> str | None:
         return LISTING_URL.format(slug=self.slug) if self.slug else None
+
+
+def filter_params(filters: SearchFilters) -> dict[str, object]:
+    """The psycopg parameters FILTERS_SQL reads."""
+    return {
+        "product_type": filters.product_type,
+        "colour": filters.colour,
+        "height_cm": filters.height_cm,
+        "tolerance": HEIGHT_TOLERANCE_CM,
+        "min_price": filters.min_price,
+        "max_price": filters.max_price,
+    }
 
 
 def strip_filler_words(query: str) -> str:
@@ -163,6 +178,59 @@ def strip_filler_words(query: str) -> str:
             words.append(word.strip(_PUNCTUATION))
     return " ".join(words)
 
+
+# The filters, shared by keyword and vector search (search/vector.py) so both narrow the
+# candidates the same way. Needs the aliases `p` (product) and `l` (active_olx_listing) and
+# the parameters from `filter_params`.
+FILTERS_SQL = """
+    (%(product_type)s::text IS NULL
+     OR to_tsvector('martom', martom_search_normalize(p.product_type))
+        @@ plainto_tsquery('martom', martom_search_normalize(%(product_type)s::text)))
+    AND (%(colour)s::text IS NULL
+     OR to_tsvector('martom', martom_search_normalize(
+            array_to_string(p.colours, ' ') || ' ' || coalesce(
+                (SELECT string_agg(v.colour, ' ') FROM product_variant AS v
+                 WHERE v.listing_id = p.listing_id), '')))
+        @@ plainto_tsquery('martom', martom_search_normalize(%(colour)s::text)))
+    AND (
+        (%(height_cm)s::numeric IS NULL
+         AND %(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
+        -- Height and price must hold for the same variant (a 200 cm roll at 107 KM
+        -- does not pass "200 cm, under 100 KM" because the 100 cm roll costs 57 KM).
+        OR EXISTS (
+            SELECT 1 FROM product_variant AS v
+            WHERE v.listing_id = p.listing_id
+              AND (%(height_cm)s::numeric IS NULL
+                   OR abs(martom_height_cm(v.height) - %(height_cm)s::numeric)
+                      <= %(tolerance)s::numeric)
+              AND (
+                  (%(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
+                  -- A price filter needs a real price: a 0 KM variant never
+                  -- matches (R3-1). A variant price comes from the description, so
+                  -- it counts even when the listing itself is "Na upit".
+                  OR (v.price > 0
+                      AND (%(min_price)s::numeric IS NULL
+                           OR v.price >= %(min_price)s::numeric)
+                      AND (%(max_price)s::numeric IS NULL
+                           OR v.price <= %(max_price)s::numeric))
+              )
+        )
+        -- A listing that sells one thing has no variants; its price is on the listing
+        -- (R2-1). A height filter can't match it: there is no height to read. A
+        -- listing price of 0 (how OLX stores "Na upit") or a listing sold by
+        -- agreement is not a real price, so it never matches (R3-1).
+        OR (
+            %(height_cm)s::numeric IS NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM product_variant AS v WHERE v.listing_id = p.listing_id
+            )
+            AND l.price > 0
+            AND NOT coalesce(l.price_by_agreement, false)
+            AND (%(min_price)s::numeric IS NULL OR l.price >= %(min_price)s::numeric)
+            AND (%(max_price)s::numeric IS NULL OR l.price <= %(max_price)s::numeric)
+        )
+    )
+"""
 
 # %(...)s are psycopg parameters (values are sent separately, never pasted into the SQL).
 #
@@ -187,7 +255,8 @@ def strip_filler_words(query: str) -> str:
 # (like a correlated subquery): `trigram` is the mean similarity of all query words, for
 # ranking; `best_word` the best similarity of a typo word, checked again at the end so the
 # threshold holds even if the setting differs.
-_SEARCH = """
+_SEARCH = (
+    """
 WITH query AS (
     SELECT
         replace(
@@ -238,60 +307,19 @@ scored AS (
         FROM unnest(query.words) AS word
     ) AS similarity
     WHERE
-        (%(product_type)s::text IS NULL
-         OR to_tsvector('martom', martom_search_normalize(p.product_type))
-            @@ plainto_tsquery('martom', martom_search_normalize(%(product_type)s::text)))
-        AND (%(colour)s::text IS NULL
-         OR to_tsvector('martom', martom_search_normalize(
-                array_to_string(p.colours, ' ') || ' ' || coalesce(
-                    (SELECT string_agg(v.colour, ' ') FROM product_variant AS v
-                     WHERE v.listing_id = p.listing_id), '')))
-            @@ plainto_tsquery('martom', martom_search_normalize(%(colour)s::text)))
-        AND (
-            (%(height_cm)s::numeric IS NULL
-             AND %(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
-            -- Height and price must hold for the same variant (a 200 cm roll at 107 KM
-            -- does not pass "200 cm, under 100 KM" because the 100 cm roll costs 57 KM).
-            OR EXISTS (
-                SELECT 1 FROM product_variant AS v
-                WHERE v.listing_id = p.listing_id
-                  AND (%(height_cm)s::numeric IS NULL
-                       OR abs(martom_height_cm(v.height) - %(height_cm)s::numeric)
-                          <= %(tolerance)s::numeric)
-                  AND (
-                      (%(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
-                      -- A price filter needs a real price: a 0 KM variant never
-                      -- matches (R3-1). A variant price comes from the description, so
-                      -- it counts even when the listing itself is "Na upit".
-                      OR (v.price > 0
-                          AND (%(min_price)s::numeric IS NULL
-                               OR v.price >= %(min_price)s::numeric)
-                          AND (%(max_price)s::numeric IS NULL
-                               OR v.price <= %(max_price)s::numeric))
-                  )
-            )
-            -- A listing that sells one thing has no variants; its price is on the listing
-            -- (R2-1). A height filter can't match it: there is no height to read. A
-            -- listing price of 0 (how OLX stores "Na upit") or a listing sold by
-            -- agreement is not a real price, so it never matches (R3-1).
-            OR (
-                %(height_cm)s::numeric IS NULL
-                AND NOT EXISTS (
-                    SELECT 1 FROM product_variant AS v WHERE v.listing_id = p.listing_id
-                )
-                AND l.price > 0
-                AND NOT coalesce(l.price_by_agreement, false)
-                AND (%(min_price)s::numeric IS NULL OR l.price >= %(min_price)s::numeric)
-                AND (%(max_price)s::numeric IS NULL OR l.price <= %(max_price)s::numeric)
-            )
-        )
+"""
+    + FILTERS_SQL
+    + """
 )
-SELECT listing_id, title, slug, product_type, text_rank + %(trigram_weight)s * trigram AS score
+SELECT
+    listing_id, title, slug, product_type, text_rank + %(trigram_weight)s * trigram AS score,
+    text_match
 FROM scored
 WHERE text_match OR best_word >= %(min_trigram)s
 ORDER BY score DESC, listing_id
 LIMIT %(limit)s
 """
+)
 
 
 async def search_keyword(
@@ -323,6 +351,7 @@ async def search_keyword(
             slug=row[2],
             product_type=row[3],
             score=float(row[4]),
+            text_match=bool(row[5]),
         )
         for row in rows
     ]
@@ -335,12 +364,7 @@ async def _run_search(
         _SEARCH,
         {
             "text": text,
-            "product_type": filters.product_type,
-            "colour": filters.colour,
-            "height_cm": filters.height_cm,
-            "tolerance": HEIGHT_TOLERANCE_CM,
-            "min_price": filters.min_price,
-            "max_price": filters.max_price,
+            **filter_params(filters),
             "trigram_weight": TRIGRAM_WEIGHT,
             "min_trigram": MIN_TRIGRAM_SIMILARITY,
             "min_len": TRIGRAM_MIN_WORD_LENGTH,
