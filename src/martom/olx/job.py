@@ -61,7 +61,7 @@ import httpx
 import psycopg
 
 from martom.olx import store
-from martom.olx.client import OlxApiError, OlxClient, OlxRateLimitAbortError
+from martom.olx.client import OlxApiError, OlxClient, OlxCounters, OlxRateLimitAbortError
 from martom.olx.detail import (
     DetailFetchAbortedError,
     DetailFetchResult,
@@ -387,11 +387,14 @@ async def _recorded(
     """Open a `sync_run` row, run `body`, and record how it ended."""
     stats = RunStats(kind=kind, scheduled=scheduled)
     stats.run_id = await store.start_run(conn, kind, scheduled=scheduled, started_at=started_at)
-    recovered_at_start = olx.recovered_requests
+    # The client's counters are running totals; this run's numbers are the difference (R1-3).
+    at_start = olx.counters()
 
-    def take_client_counters() -> None:
-        stats.retried_count = olx.recovered_requests - recovered_at_start
+    def take_client_counters() -> OlxCounters:
+        run_counters = olx.counters() - at_start
+        stats.retried_count = run_counters.recovered_requests
         stats.final_request_interval = olx.request_interval
+        return run_counters
 
     logger.info("sync run %d (%s) started", stats.run_id, kind)
     try:
@@ -414,12 +417,14 @@ async def _recorded(
     except Exception as exc:
         stats.status = "failed"
         stats.error = f"{type(exc).__name__}: {exc}"
-        take_client_counters()
+        # Log first: the summary is the only record of the OLX numbers, and it must not
+        # depend on the database still working.
+        _log_summary(stats, take_client_counters())
         await _finish_quietly(conn, stats)
         raise
-    take_client_counters()
+    run_counters = take_client_counters()
     await store.finish_run(conn, stats.run_id, stats.columns())
-    _log_summary(stats, olx)
+    _log_summary(stats, run_counters)
     return stats
 
 
@@ -574,18 +579,19 @@ async def _finish_quietly(conn: psycopg.AsyncConnection, stats: RunStats) -> Non
         logger.exception("could not record sync run %d as failed", stats.run_id)
 
 
-def _log_summary(stats: RunStats, olx: OlxClient) -> None:
-    """One line per run. Besides the `sync_run` columns it carries the OLX timing
-    (requests, 429s, the wait OLX asked for, elapsed) that #105 needs and that has no
-    column. `olx_429_requested_wait_seconds` is the sum of the 429 waits OLX asked for
-    (Retry-After, or our backoff), not time actually slept.
+def _log_summary(stats: RunStats, olx: OlxCounters) -> None:
+    """One line per run, also for a run that crashed. Besides the `sync_run` columns it
+    carries the OLX timing (requests, 429s, the wait OLX asked for, elapsed) that #105
+    needs and that has no column. `olx_429_requested_wait_seconds` is the sum of the 429
+    waits OLX asked for (Retry-After, or our backoff), not time actually slept.
 
-    The counters are the client's totals; `martom sync` uses one client per run.
+    `olx` holds this run's numbers only (counters at the end minus at the start), so a
+    client reused across runs still reports each run on its own.
     """
     timing = {
         "olx_requests_sent": olx.requests_sent,
-        "olx_429_count": olx.rate_limited_count,
-        "olx_429_requested_wait_seconds": olx.rate_limit_requested_wait_seconds,
+        "olx_429_count": olx.rate_limited,
+        "olx_429_requested_wait_seconds": olx.requested_wait_seconds,
         "olx_elapsed_seconds": olx.elapsed_seconds,
     }
     log = logger.info if stats.status == "succeeded" else logger.error
@@ -606,8 +612,8 @@ def _log_summary(stats: RunStats, olx: OlxClient) -> None:
         "n/a" if stats.coverage is None else f"{stats.coverage:.2%}",
         olx.requests_sent,
         olx.elapsed_seconds,
-        olx.rate_limited_count,
-        olx.rate_limit_requested_wait_seconds,
+        olx.rate_limited,
+        olx.requested_wait_seconds,
         extra={
             "event": "sync_run",
             **stats.columns(),
