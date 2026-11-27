@@ -1,10 +1,13 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import type { BomRecalculator } from '../api/bomRecalculator'
 import type { ChatClient, RequestAnswers } from '../api/chatClient'
 import type { ChatError, Turn } from '../chat'
 import { answerSummary, initialAnswers, requestAnswers, type ClarifyAnswers } from '../clarify'
 import { copy } from '../copy'
+import { useMediaQuery } from '../hooks'
+import { useBomEditor } from '../useBomEditor'
 import { useChat } from '../useChat'
-import { BomPreview } from './BomPreview'
+import { BomCard } from './BomCard'
 import { ClarifyForm, type UpdateAnswers } from './ClarifyForm'
 import { ArrowIcon } from './Icons'
 import { ProductCards } from './ProductCards'
@@ -16,17 +19,24 @@ type ChatViewProps = {
   /** The message that opened the chat (question box, chip or header category). */
   firstMessage: string
   client: ChatClient
+  /** Where a quantity edit on the materials list is recalculated. */
+  recalculator: BomRecalculator
   onBack: () => void
 }
+
+/** Wide screens: the layout of docs/mockups/web/ (ChatView.css switches at 767 px). */
+const WIDE_QUERY = '(min-width: 768px)'
 
 /**
  * The conversation (2-clarify.html, 3-results.html): the customer's
  * messages, and for each reply its steps, streaming text, clarify chips,
  * product cards, materials list or error. On wide screens the "Vaš projekt"
- * panel sits beside open clarify questions.
+ * panel sits beside open clarify questions, and otherwise the materials list
+ * sits there as the charcoal panel; on phones the list is a card in the reply.
  */
-export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
+export function ChatView({ firstMessage, client, recalculator, onBack }: ChatViewProps) {
   const { state, send } = useChat(client, firstMessage)
+  const wide = useMediaQuery(WIDE_QUERY)
   // Answers to the newest reply's chips; null until the customer touches
   // them, and again after every message, so new chips start afresh.
   const [answersState, setAnswersState] = useState<ClarifyAnswers | null>(null)
@@ -43,6 +53,25 @@ export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
   const openChips = lastReply.error ? null : lastReply.chips
   const busy = lastReply.streaming
   const answers = answersState ?? (openChips ? initialAnswers(openChips) : null)
+
+  // One materials list: the newest bom event. Its edits live here, so they
+  // survive moving between the panel and the card when the window resizes.
+  const bomTurn = state.turns.findLastIndex((turn) => turn.reply.bom !== null)
+  const bomEditor = useBomEditor(bomTurn === -1 ? null : state.turns[bomTurn].reply.bom, recalculator)
+  const bomInPanel = wide && !openChips
+  const bomCard = (variant: 'card' | 'panel') =>
+    bomEditor ? (
+      <BomCard
+        bom={bomEditor.bom}
+        quantities={bomEditor.quantities}
+        pending={bomEditor.pending}
+        failed={bomEditor.failed}
+        variant={variant}
+        onQuantityChange={bomEditor.setQuantity}
+        // The cart is #27; until then the button has nothing to fill.
+        onAddAll={() => {}}
+      />
+    ) : null
 
   const updateAnswers: UpdateAnswers = (update) => {
     if (!openChips) return
@@ -67,6 +96,7 @@ export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
           <TurnView
             key={index}
             turn={turn}
+            bom={index === bomTurn && !bomInPanel ? bomCard('card') : null}
             clarify={
               index === lastIndex && openChips && answers
                 ? { answers, onChange: updateAnswers, onSubmit: submitAnswers, canSubmit: !busy }
@@ -82,6 +112,7 @@ export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
       {openChips && answers ? (
         <ProjectPanel fallbackTitle={state.turns[0].text} chips={openChips} answers={answers} />
       ) : null}
+      {bomInPanel ? bomCard('panel') : null}
     </div>
   )
 }
@@ -94,7 +125,7 @@ type ClarifyControls = {
 }
 
 /** One customer message and the advisor's reply to it. */
-function TurnView({ turn, clarify }: { turn: Turn; clarify: ClarifyControls | null }) {
+function TurnView({ turn, bom, clarify }: { turn: Turn; bom: ReactNode; clarify: ClarifyControls | null }) {
   const { reply } = turn
   const waiting = reply.streaming && !reply.text && !reply.chips && reply.cards.length === 0 && !reply.error
   // Old chips are no longer answerable; their question text stays as plain text.
@@ -118,7 +149,7 @@ function TurnView({ turn, clarify }: { turn: Turn; clarify: ClarifyControls | nu
           <p className="chat__text">{plainText}</p>
         ) : null}
         {reply.cards.length > 0 ? <ProductCards cards={reply.cards} /> : null}
-        {reply.bom ? <BomPreview bom={reply.bom} /> : null}
+        {bom}
         {reply.error ? <ReplyError error={reply.error} /> : null}
       </div>
     </>

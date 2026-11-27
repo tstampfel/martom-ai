@@ -487,49 +487,284 @@
   text-underline-offset: 4px;
 }
 
-/* Interim materials list (the full card is #74) */
+/* Materials list (3-results.html). The white card is the phone layout
+   (mobile/3-results.html); the charcoal panel beside the conversation is the
+   wide one (web/3-results.html). No red text on charcoal; the red button is
+   fine there (Tomislav, 26 Nov 2026). */
 
-.bom-preview {
+.bom-card {
   background: var(--color-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card-lg);
-  padding: 20px;
+  border-radius: 16px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.bom-preview__title {
-  margin: 0;
-  font-size: 18px;
+.bom-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
-.bom-preview__summary,
-.bom-preview__note {
+.bom-card__title {
   margin: 0;
-  font-size: 13px;
+  font-family: var(--font-heading);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.bom-card__summary {
+  font-size: 12px;
   color: var(--color-muted);
 }
 
-.bom-preview__lines {
+.bom-card__lines {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.bom-preview__lines li {
+.bom-card__line {
   display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  align-items: center;
+  gap: 10px;
   padding: 10px 0;
   border-top: 1px solid var(--color-border);
-  font-size: 14px;
-  font-weight: 600;
 }
 
-.bom-preview__qty {
-  white-space: nowrap;
+.bom-card__line-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bom-card__line-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.bom-card__line-detail {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.bom-card__stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+}
+
+.bom-card__stepper button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 18px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bom-card__stepper button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.bom-card__stepper output {
+  min-width: 28px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.bom-card__line-total {
+  min-width: 64px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.bom-card__total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 2px solid var(--color-ink);
+}
+
+/* While the recalculated bom event is on its way the shown totals are the old ones. */
+.bom-card__total[aria-busy='true'],
+.bom-card:has(.bom-card__total[aria-busy='true']) .bom-card__line-total {
+  opacity: 0.5;
+}
+
+.bom-card__total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.bom-card__total-label {
+  flex: none;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.bom-card__total-value {
+  min-width: 0;
+  font-size: 22px;
+  font-weight: 800;
+  text-align: right;
+}
+
+/* On narrow phones "+ dostava" drops under the amount instead of the label wrapping. */
+.bom-card__after-total {
+  display: inline-block;
+  margin-left: 4px;
+}
+
+.bom-card__after-total,
+.bom-card__unpriced {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.bom-card__unpriced,
+.bom-card__footnote {
+  text-align: right;
+}
+
+.bom-card__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  background: var(--color-page);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.bom-card__error {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-red);
+}
+
+.bom-card__add {
+  height: 48px;
+  border-radius: 24px;
+  border: 0;
+  background: var(--color-red);
+  color: var(--color-on-brand);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.bom-card__add:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Wide screens: the charcoal panel beside the conversation. */
+
+.bom-card--panel {
+  flex: 1 1 360px;
+  background: var(--color-charcoal);
+  color: var(--color-on-brand);
+  border: 0;
+  border-radius: var(--radius-card-lg);
+  padding: 24px;
+  gap: 6px;
+}
+
+.bom-card--panel .bom-card__head {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.bom-card--panel .bom-card__title {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--color-on-dark);
+}
+
+.bom-card--panel .bom-card__summary {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--color-on-brand);
+}
+
+.bom-card--panel .bom-card__line {
+  padding: 12px 0;
+  border-top-color: var(--color-dark-border);
+}
+
+.bom-card--panel .bom-card__line-detail,
+.bom-card--panel .bom-card__unpriced,
+.bom-card--panel .bom-card__footnote {
+  color: var(--color-on-dark);
+}
+
+.bom-card--panel .bom-card__footnote {
+  font-size: 12px;
+}
+
+.bom-card--panel .bom-card__stepper {
+  border-color: var(--color-dark-border-soft);
+}
+
+.bom-card--panel .bom-card__line-total {
+  min-width: 70px;
+}
+
+.bom-card--panel .bom-card__total {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top-color: var(--color-on-brand);
+}
+
+.bom-card--panel .bom-card__total-label {
+  font-size: 16px;
+}
+
+.bom-card--panel .bom-card__total-value {
+  font-family: var(--font-heading);
+  font-size: 30px;
+}
+
+/* Errors and notes on charcoal: light text, never red (2.8:1 there). */
+.bom-card--panel .bom-card__error,
+.bom-card--panel .bom-card__note {
+  background: none;
+  padding: 0;
+  color: var(--color-on-dark);
+}
+
+.bom-card--panel .bom-card__add {
+  margin-top: 14px;
+  height: 52px;
+  border-radius: 26px;
 }
 
 /* "Vaš projekt": charcoal panel, no red text on it (docs/mockups/README.md). */

@@ -53,4 +53,17 @@ describe('copy', () => {
     ]
     expect(copy.agentCard.steps.map((step) => step.text)).toEqual(canvasSteps)
   })
+
+  // Bosnian plural: 1 stavka, 2–4 stavke, 5+ stavki (21 stavka, 11–14 stavki).
+  it('counts the "na upit" lines under the total with the right plural', () => {
+    const { unpriced } = copy.chat.bom
+    expect(unpriced(1)).toBe('+ 1 stavka na upit')
+    expect(unpriced(2)).toBe('+ 2 stavke na upit')
+    expect(unpriced(4)).toBe('+ 4 stavke na upit')
+    expect(unpriced(5)).toBe('+ 5 stavki na upit')
+    expect(unpriced(11)).toBe('+ 11 stavki na upit')
+    expect(unpriced(12)).toBe('+ 12 stavki na upit')
+    expect(unpriced(21)).toBe('+ 21 stavka na upit')
+    expect(unpriced(22)).toBe('+ 22 stavke na upit')
+  })
 })

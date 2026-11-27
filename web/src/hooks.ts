@@ -1,24 +1,32 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { nextAgentStep } from './agentSteps'
 import { INITIAL_TYPING_STATE, nextTypingStep, typingText } from './typing'
 
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  if (typeof window.matchMedia !== 'function') return () => {}
-  const query = window.matchMedia(REDUCED_MOTION_QUERY)
-  query.addEventListener('change', onChange)
-  return () => query.removeEventListener('change', onChange)
+/**
+ * True while the CSS media query matches. Follows live changes. jsdom and
+ * very old browsers have no matchMedia: there it is always false.
+ */
+export function useMediaQuery(query: string): boolean {
+  // Stable per query, so React subscribes once instead of on every render.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (typeof window.matchMedia !== 'function') return () => {}
+      const list = window.matchMedia(query)
+      list.addEventListener('change', onChange)
+      return () => list.removeEventListener('change', onChange)
+    },
+    [query],
+  )
+  return useSyncExternalStore(
+    subscribe,
+    () => typeof window.matchMedia === 'function' && window.matchMedia(query).matches,
+    () => false,
+  )
 }
 
-function getReducedMotion(): boolean {
-  // jsdom and very old browsers have no matchMedia: assume motion is fine.
-  return typeof window.matchMedia === 'function' && window.matchMedia(REDUCED_MOTION_QUERY).matches
-}
-
-/** True when the visitor asked the OS for less motion. Follows live changes. */
+/** True when the visitor asked the OS for less motion (false without matchMedia: motion is fine). */
 export function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeReducedMotion, getReducedMotion, () => false)
+  return useMediaQuery('(prefers-reduced-motion: reduce)')
 }
 
 /**

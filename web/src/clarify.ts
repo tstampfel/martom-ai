@@ -6,9 +6,14 @@ import { MAX_SIDE_M, type RequestAnswers } from './api/chatClient'
 import type { ChipQuestion, ChipsEvent, Price } from './api/events'
 import { copy } from './copy'
 
+/** "53.00" (API) → "53,00", for columns that say KM elsewhere. */
+export function formatAmount(price: Price): string {
+  return price.replace('.', ',')
+}
+
 /** "53.00" (API) → "53,00 KM" (customer). */
 export function formatPrice(price: Price): string {
-  return `${price.replace('.', ',')} KM`
+  return `${formatAmount(price)} KM`
 }
 
 /** "7,5" or "7.5" → 7.5; null when empty, not a number or not above 0. */
