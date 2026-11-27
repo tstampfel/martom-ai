@@ -301,7 +301,7 @@ def _sto_is_number(
     rest = text[token.end() :]
     if re.match(rf"\s+{_CURRENCY}", rest, re.IGNORECASE):
         return True
-    if re.match(r"\s+i\s", rest) and index + 2 < len(tokens):
+    if re.match(r"\s+i\s", rest, re.IGNORECASE) and index + 2 < len(tokens):
         index += 1  # "sto i pedeset": the joiner the parser allows elsewhere (R3a-2)
         token = tokens[index]
     following = tokens[index + 1] if index + 1 < len(tokens) else None

@@ -301,3 +301,45 @@ def test_numbered_list_still_checks_the_numbers_inside() -> None:
 
 def test_suggestion_count_over_ten_is_checked() -> None:
     assert not check_grounding("Imam 12 prijedloga.", facts()).ok
+
+
+# R3a2-1: every number-word and currency check ignores case.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "STO I PEDESET KM.",
+        "Sto I pedeset KM.",
+        "PANEL KOŠTA STO KM.",
+        "PANEL KOŠTA STO PEDESET KM.",
+        "CIJENA JE ČETRDESET I DEVET KM.",
+        "PANEL KOŠTA PEDESET ČETIRI MARAKA.",
+        "PANEL KOŠTA 49 MARAKA.",
+        "PANEL KOŠTA 49,00 KONVERTIBILNIH MARAKA.",
+        "CIJENA: 53 EUR.",
+        "PANEL JE 53 EURA.",
+        "PANEL KOŠTA bam 49.",
+        "PANEL KOŠTA PEDESETAK KM.",
+        "KOŠTA POLA KM.",
+        "TREBATE DVANAEST STUBOVA.",
+        "TREBATE 13 STUBOVA.",
+    ],
+)
+def test_upper_case_prices_and_counts_fail(text: str) -> None:
+    found = facts().merge(Facts(prices=["50"]))
+    assert not check_grounding(text, found).ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "STO SE TIČE BOJE, IMAMO ANTRACIT.",
+        "IMAM DVA PRIJEDLOGA.",
+        "ROK JE 10–15 DANA.",
+        "ANTRACIT (ral 7016).",
+        "UKUPNO STO I PEDESET KM.",
+        "PANEL JE 53,00 km.",
+    ],
+)
+def test_upper_case_grounded_text_passes(text: str) -> None:
+    found = facts().merge(Facts(prices=["150"]))
+    assert check_grounding(text, found).ok, check_grounding(text, found).problems
