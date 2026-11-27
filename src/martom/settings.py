@@ -15,7 +15,6 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # CORS may only ever allow the public customer site and local development servers.
 PAGES_DEV_ORIGIN = "https://martom-savjetnik.pages.dev"
-ADMIN_TOKEN_MIN_LENGTH = 32
 LOCAL_ORIGIN = re.compile(r"http://(localhost|127\.0\.0\.1)(:\d{1,5})?")
 
 
@@ -57,9 +56,9 @@ class Settings(BaseSettings):
     extraction_concurrency: int = Field(default=4, ge=1, le=16)
 
     # Bearer token for the /admin endpoints (M2-3), e.g. GET /admin/review-issues.
-    # Unset (the default) turns them off: they answer 404, never open. At least 32
-    # characters, so a short guessable token is rejected at startup (every command fails
-    # fast, without printing the value).
+    # Unset (the default) turns them off: they answer 404, never open. The API checks the
+    # 32-character minimum at startup (`check_admin_token`), not this class, so a short token
+    # never stops commands that don't serve /admin (sync, extract, scripts).
     admin_token: SecretStr | None = None
 
     # mode="before" runs on the raw env value, before pydantic checks the type.
@@ -67,17 +66,6 @@ class Settings(BaseSettings):
     @classmethod
     def _upper_case_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
-
-    @field_validator("admin_token")
-    @classmethod
-    def _long_admin_token(cls, token: SecretStr | None) -> SecretStr | None:
-        if token is not None and len(token.get_secret_value()) < ADMIN_TOKEN_MIN_LENGTH:
-            # The message must never include the value (see hide_input_in_errors).
-            raise ValueError(
-                f"ADMIN_TOKEN must be at least {ADMIN_TOKEN_MIN_LENGTH} characters "
-                "(generate one with `openssl rand -hex 32`)"
-            )
-        return token
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

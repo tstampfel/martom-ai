@@ -46,7 +46,7 @@ def create_app(
     review_issue_source: ReviewIssueSource | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
-    # Raises in production without ADMIN_TOKEN, so the server doesn't start (#11).
+    # Raises for a short ADMIN_TOKEN, or none in production: the server doesn't start.
     check_admin_token(settings)
     warn_if_admin_disabled(settings)
     if health_checks is None:

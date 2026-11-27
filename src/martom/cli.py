@@ -13,7 +13,7 @@ import psycopg
 import uvicorn
 from pydantic import ValidationError
 
-from martom.api.admin import AdminTokenMissingError, check_admin_token
+from martom.api.admin import AdminTokenError, check_admin_token
 from martom.extract.extractor import (
     Extractor,
     MissingApiKeyError,
@@ -281,7 +281,7 @@ def run_api(host: str, port: int, *, reload: bool) -> int:
     try:
         settings = Settings()
         check_admin_token(settings)
-    except (ValidationError, AdminTokenMissingError) as exc:
+    except (ValidationError, AdminTokenError) as exc:
         print(f"invalid settings: {exc}", file=sys.stderr)
         return 1
     # The app is passed as an import string with factory=True: uvicorn imports

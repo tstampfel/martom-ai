@@ -23,18 +23,36 @@ from martom.settings import Settings
 logger = logging.getLogger(__name__)
 
 
-class AdminTokenMissingError(ValueError):
-    """APP_ENV=production but ADMIN_TOKEN is unset: the API must not start."""
+ADMIN_TOKEN_MIN_LENGTH = 32
+
+
+class AdminTokenError(ValueError):
+    """ADMIN_TOKEN breaks one of the API's startup rules: the API must not start."""
+
+
+class AdminTokenMissingError(AdminTokenError):
+    """APP_ENV=production but ADMIN_TOKEN is unset."""
+
+
+class AdminTokenTooShortError(AdminTokenError):
+    """ADMIN_TOKEN is set but shorter than ADMIN_TOKEN_MIN_LENGTH (any APP_ENV)."""
 
 
 def check_admin_token(settings: Settings) -> None:
-    """Tomislav's rule (27 Nov): production needs ADMIN_TOKEN; local and test may skip it.
+    """Tomislav's rules (#11): a token shorter than 32 characters stops the API in every
+    APP_ENV; an unset token stops it only in production (local and test may skip it).
 
-    Only the API calls this (`create_app`, `martom api`), so a missing token never stops
-    `martom sync` or `martom extract`. A token that is set but too short is rejected
-    earlier, by `Settings` itself, in every APP_ENV.
+    Only the API calls this (`create_app`, `martom api`), so ADMIN_TOKEN never stops
+    `martom sync`, `martom extract` or the scripts (#108). The messages never include the
+    value.
     """
-    if settings.admin_token is None and settings.app_env == "production":
+    token = settings.admin_token
+    if token is not None and len(token.get_secret_value()) < ADMIN_TOKEN_MIN_LENGTH:
+        raise AdminTokenTooShortError(
+            f"ADMIN_TOKEN must be at least {ADMIN_TOKEN_MIN_LENGTH} characters "
+            "(generate one with `openssl rand -hex 32`)"
+        )
+    if token is None and settings.app_env == "production":
         raise AdminTokenMissingError(
             "ADMIN_TOKEN is not set; APP_ENV=production needs it for the /admin endpoints "
             "(generate one with `openssl rand -hex 32`)"
