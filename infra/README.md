@@ -149,7 +149,7 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `OLX_API_BASE_URL` | not set | `https://api.olx.ba` | plain |
 | `OLX_SHOP_USERNAME` | not set | `martom` | plain |
 | `OLX_REQUEST_INTERVAL` | not set | `2.8` (`var.sync_request_interval`, at least 1.3), for the nightly sync and one-off syncs | plain |
-| `OLX_NIGHTLY_DETAIL_CAP` | not set | `1000` detail GETs a night (changed listings + rolling slice) | plain |
+| `OLX_NIGHTLY_REQUEST_BUDGET` | not set | `950` OLX requests of every kind a night (only the rolling slice gives way) | plain |
 | `OLX_ROLLING_REFRESH_DAYS` | not set | `7` nights | plain |
 | `ANTHROPIC_API_KEY` | `martom/production/app` → `ANTHROPIC_API_KEY` | same | secret (by hand) |
 | `FAST_MODEL` | `claude-haiku-5-5` | `claude-haiku-5-5` | plain |
@@ -259,7 +259,7 @@ One scheduled task a night, at 01:00 Europe/Sarajevo (00:00 UTC in winter, 23:00
 | --- | --- | --- |
 | every night (cron `* * ?`) | `nightly-sync` | `sync --scheduled` → `extract` → `embed` |
 
-There is no weekly full run any more (#135). #105's full run made 2,719 OLX requests in 2 h 37 min, found no changed listing and still got 429s, so the nightly sync now does a **rolling refresh** instead: besides the listings whose list-page fields changed, it re-fetches the details of about 1/7 of the active listings (the ones fetched longest ago), so every listing is refreshed within 7 nights. The night's detail GETs are capped at 1,000 (`OLX_NIGHTLY_DETAIL_CAP`); changed listings always go through, and the rolling slice gets what is left (`sync_run.rolling_deferred` counts what waited). The slice runs last in the sync, after the allowlist guard and the deactivation re-check, so an OLX stop inside it can't skip those. An active listing that has left the listing pages is never in the slice; its deactivation re-check saves its detail when OLX says it is still active. `sync_run.oldest_detail_age_days` records the oldest detail among the active listings after each run, and `detail_refresh_overdue` is set when it is over 8 days, with a WARNING in the log that names the overdue listing ids (`overdue_listing_ids`): that is what the M6-3 alarm watches. `martom sync --full` still works as a one-off task (`run_once martom sync --full`, which runs at the task's 2.8 s too).
+There is no weekly full run any more (#135). #105's full run made 2,719 OLX requests in 2 h 37 min, found no changed listing and still got 429s, so the nightly sync now does a **rolling refresh** instead: besides the listings whose list-page fields changed, it re-fetches the details of about 1/7 of the active listings (the ones fetched longest ago), so every listing is refreshed within 7 nights. OLX allows 1,000 requests per fixed hourly window (#105), so a nightly run sends at most 950 OLX requests of every kind (`OLX_NIGHTLY_REQUEST_BUDGET`): discovery and list pages, the shop profile, allowlist and re-check GETs, new, changed and last run's failed details all go through first, even past the budget (a WARNING, `request_budget_exceeded`), and the rolling slice gets what is left (`sync_run.rolling_deferred` counts what waited). A manual `--full` run has no budget. The slice runs last in the sync, after the allowlist guard and the deactivation re-check, so an OLX stop inside it can't skip those. An active listing that has left the listing pages is never in the slice; its deactivation re-check saves its detail when OLX says it is still active. `sync_run.oldest_detail_age_days` records the oldest detail among the active listings after each run, and `detail_refresh_overdue` is set when it is over 8 days, with a WARNING in the log that names the overdue listing ids (`overdue_listing_ids`): that is what the M6-3 alarm watches. `martom sync --full` still works as a one-off task (`run_once martom sync --full`, which runs at the task's 2.8 s too).
 
 `martom sync` has no lock of its own. Two tasks can't overlap: each is killed after 16 h (`timeout`, `job_timeout_seconds` in `ecs.tf`) and the next one starts 24 h after it. Don't start a one-off `martom sync --full` while the nightly task is running.
 
@@ -267,12 +267,12 @@ Worst-case timeline for one night's task:
 
 | Step | Normal | Worst case | What bounds it |
 | --- | --- | --- | --- |
-| `sync --scheduled` | ~20–25 min: ~372 slice GETs + the changed listings + ~50 list and discovery requests at 2.8 s; a night that fills the 1,000 cap ≈ 50 min | 3 h | the sync's own 3 h deadline |
+| `sync --scheduled` | ~20–25 min: ~372 slice GETs + the changed listings + ~50 list and discovery requests at 2.8 s; a night that uses the whole 950-request budget ≈ 44 min | 3 h | the sync's own 3 h deadline |
 | `extract` | minutes (changed listings only) | ~2 h | every listing changed: ~2,600 Haiku calls, 4 at a time, with retries |
 | `embed` | minutes | ~3 h | ~28 Cohere batches × 6 attempts × 60 s |
 | **Total** | **~30 min** | **~8 h**; 16 h is the hard stop | `timeout` kills the task |
 
-The job task runs every sync at `sync_request_interval` (2.8 s by default, never below 1.3): OLX allows about 1,400 requests before a ~1,600 s 429 penalty (#105), and a nightly run that fills the detail cap makes about 1,050 plus the re-check GETs (a typical night about 420). A sync started by hand outside the task uses the Settings default of 2.0 s unless `OLX_REQUEST_INTERVAL` says otherwise.
+The job task runs every sync at `sync_request_interval` (2.8 s by default, never below 1.3): OLX allows 1,000 requests per fixed hourly window (#105), and a nightly run sends at most 950 (a typical night about 420). A `--full` run (~2,700 requests) has no budget, so expect 429 waits in it. A sync started by hand outside the task uses the Settings default of 2.0 s unless `OLX_REQUEST_INTERVAL` says otherwise.
 
 So the latest a task can still be running is 17:00 UTC (a 01:00 UTC start after an hour of start retries, plus 16 h). The RDS backup window (18:00–18:30 UTC daily) and maintenance window (Wed 19:00–20:00 UTC) come after that, in summer and winter time alike.
 

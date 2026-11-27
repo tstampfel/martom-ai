@@ -368,7 +368,7 @@ def run_sync_command(
                 olx,
                 kind=kind,
                 scheduled=scheduled,
-                detail_cap=settings.olx_nightly_detail_cap,
+                request_budget=settings.olx_nightly_request_budget,
                 refresh_days=settings.olx_rolling_refresh_days,
             )
 

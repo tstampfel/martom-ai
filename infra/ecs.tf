@@ -15,7 +15,7 @@
 # | OLX_API_BASE_URL         | not set (Settings default)        | https://api.olx.ba          |
 # | OLX_SHOP_USERNAME        | not set                           | martom                      |
 # | OLX_REQUEST_INTERVAL     | not set                           | var.sync_request_interval (2.8) |
-# | OLX_NIGHTLY_DETAIL_CAP   | not set                           | 1000                        |
+# | OLX_NIGHTLY_REQUEST_BUDGET | not set                         | 950                         |
 # | OLX_ROLLING_REFRESH_DAYS | not set                           | 7                           |
 # | ANTHROPIC_API_KEY        | secret app:ANTHROPIC_API_KEY      | secret app:ANTHROPIC_API_KEY|
 # | FAST_MODEL               | claude-haiku-5-5                  | claude-haiku-5-5            |
@@ -67,15 +67,16 @@ locals {
   job_environment = merge(local.common_environment, {
     OLX_API_BASE_URL  = "https://api.olx.ba"
     OLX_SHOP_USERNAME = "martom"
-    # The nightly sync (with its rolling refresh, up to ~1,000 detail GETs) and any
-    # one-off `martom sync --full` in this task run at this interval (#135).
+    # The nightly sync (at most 950 OLX requests, below) and any one-off
+    # `martom sync --full` in this task run at this interval (#135).
     OLX_REQUEST_INTERVAL = tostring(var.sync_request_interval)
-    # Rolling refresh of the nightly sync (#135, Tomislav): at most 1,000 detail GETs a
-    # night, every active listing re-fetched within 7 nights. Same as the Settings
-    # defaults, set here so production doesn't depend on them silently.
-    OLX_NIGHTLY_DETAIL_CAP   = "1000"
-    OLX_ROLLING_REFRESH_DAYS = "7"
-    EXTRACTION_CONCURRENCY   = "4"
+    # Rolling refresh of the nightly sync (#135, Tomislav): at most 950 OLX requests of
+    # every kind a night (OLX allows 1,000 per fixed hourly window), every active listing
+    # re-fetched within 7 nights. Same as the Settings defaults, set here so production
+    # doesn't depend on them silently. `--full` has no budget.
+    OLX_NIGHTLY_REQUEST_BUDGET = "950"
+    OLX_ROLLING_REFRESH_DAYS   = "7"
+    EXTRACTION_CONCURRENCY     = "4"
   })
 
   # ECS wants lists of {name, value} / {name, valueFrom}; build them from the maps above.

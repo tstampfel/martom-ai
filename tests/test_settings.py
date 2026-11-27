@@ -17,7 +17,7 @@ ENV_VARS = [
     "OLX_API_BASE_URL",
     "OLX_SHOP_USERNAME",
     "OLX_REQUEST_INTERVAL",
-    "OLX_NIGHTLY_DETAIL_CAP",
+    "OLX_NIGHTLY_REQUEST_BUDGET",
     "OLX_ROLLING_REFRESH_DAYS",
 ]
 
@@ -52,12 +52,12 @@ def test_olx_defaults_match_the_politeness_rule() -> None:
 def test_rolling_refresh_defaults_match_the_sync_job() -> None:
     settings = Settings()
 
-    assert settings.olx_nightly_detail_cap == job.NIGHTLY_DETAIL_CAP == 1000
+    assert settings.olx_nightly_request_budget == job.NIGHTLY_REQUEST_BUDGET == 950
     assert settings.olx_rolling_refresh_days == job.ROLLING_REFRESH_DAYS == 7
 
 
 @pytest.mark.parametrize(
-    ("name", "value"), [("OLX_NIGHTLY_DETAIL_CAP", "-1"), ("OLX_ROLLING_REFRESH_DAYS", "0")]
+    ("name", "value"), [("OLX_NIGHTLY_REQUEST_BUDGET", "-1"), ("OLX_ROLLING_REFRESH_DAYS", "0")]
 )
 def test_rejects_a_negative_cap_or_zero_refresh_days(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str

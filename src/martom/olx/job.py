@@ -29,12 +29,16 @@ One run (kind `nightly`, or `full`, a manual pass that re-fetches everything), i
    whose detail was fetched longest ago (never fetched first), about 1/7 of the active
    ones (`rolling_slice_size`: ceil(active / ROLLING_REFRESH_DAYS)), so every listing is
    re-fetched within 7 nights and a description-only edit is caught without a weekly
-   full run. The slice gets only what is left of the nightly cap (NIGHTLY_DETAIL_CAP
-   detail GETs) after step 3: those are never deferred, the slice is
-   (`rolling_deferred`; it doesn't change the status). Its GETs follow the same rules as
-   step 3 (failures go to `failed_listing_ids`; a detail GET never deactivates). An
-   active listing that isn't on the listing pages can't be in the slice; the step 5
-   re-check saves its detail when OLX says it is still active, so it stays fresh too.
+   full run. A nightly run sends at most NIGHTLY_REQUEST_BUDGET (950) OLX requests in
+   all (OLX allows 1,000 per fixed hourly window, #105): list pages, profile, allowlist
+   and re-check GETs and the details of step 3 always go through, even past the budget
+   (logged as `request_budget_exceeded`); the slice gets only what is left and is
+   trimmed or deferred (`rolling_deferred`; it doesn't change the status). Its GETs
+   follow the same rules as step 3 (failures go to `failed_listing_ids`; a detail GET
+   never deactivates). The budget is checked before each batch, so only retries or 429s
+   inside the last batch can push past it. An active listing that isn't on the listing
+   pages can't be in the slice; the step 5 re-check saves its detail when OLX says it is
+   still active, so it stays fresh too.
 8. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
    'partial' below 100% coverage or when a GET still failed after its retries (those ids
    go in `failed_listing_ids`, and the next run fetches and re-checks them first),
@@ -106,11 +110,12 @@ MAX_DEACTIVATION_PERCENT = 10
 MAX_RECHECK_FAILURE_PERCENT = 20
 # Fetched details are saved every this many listings (about 7 minutes at 2.0 s each).
 DETAIL_BATCH_SIZE = 200
-# Rolling refresh (#135, Tomislav 27 Nov): at most this many detail GETs per nightly run
-# (changed listings plus the rolling slice; ~47 min at 2.8 s), and every active listing
-# re-fetched within this many nights. `martom sync` reads both from Settings
-# (OLX_NIGHTLY_DETAIL_CAP, OLX_ROLLING_REFRESH_DAYS), whose defaults are these.
-NIGHTLY_DETAIL_CAP = 1000
+# Rolling refresh (#135, Tomislav 27 Nov): a nightly run sends at most this many OLX
+# requests of every kind (OLX allows 1,000 per fixed hourly window, #105; ~44 min at
+# 2.8 s), and every active listing is re-fetched within this many nights. Only the
+# rolling slice gives way to the budget. `martom sync` reads both from Settings
+# (OLX_NIGHTLY_REQUEST_BUDGET, OLX_ROLLING_REFRESH_DAYS), whose defaults are these.
+NIGHTLY_REQUEST_BUDGET = 950
 ROLLING_REFRESH_DAYS = 7
 # A detail older than this (days) means the rolling refresh fell behind: alert (M6-3).
 MAX_DETAIL_AGE_DAYS = 8
@@ -146,7 +151,7 @@ class RunStats:
     # None: the guard didn't run; []: it ran and found nothing (see migration 008).
     allowlist_warnings: list[dict[str, Any]] | None = None
     rolling_refreshed: int = 0  # rolling-slice detail GETs that succeeded
-    rolling_deferred: int = 0  # rolling-slice listings the cap left for later nights
+    rolling_deferred: int = 0  # rolling-slice listings the request budget left for later
     oldest_detail_age_days: float | None = None
     detail_refresh_overdue: bool = False
     error: str | None = None
@@ -377,7 +382,7 @@ async def run_sync(
     scheduled: bool = False,
     now: Callable[[], datetime] | None = None,
     allowlist: Allowlist | None = None,
-    detail_cap: int = NIGHTLY_DETAIL_CAP,
+    request_budget: int = NIGHTLY_REQUEST_BUDGET,
     refresh_days: int | None = ROLLING_REFRESH_DAYS,
 ) -> RunStats:
     """Run one sync (`nightly` or `full`) and record it in `sync_run`; return its stats.
@@ -385,8 +390,9 @@ async def run_sync(
     `scheduled`: started by the scheduler, so it may auto-apply (module docstring).
     `now` stamps `sync_run.started_at` (default: the database's now()); tests pass a fake.
     `allowlist`: the listings the guard checks (default: the committed `allowlist.toml`).
-    `detail_cap` and `refresh_days`: the nightly rolling refresh (step 3b); `refresh_days`
-    None turns it off. A `full` run ignores both: it fetches every listing.
+    `request_budget` and `refresh_days`: the nightly rolling refresh (step 7);
+    `refresh_days` None turns it off. A `full` run ignores both: it fetches every
+    listing, with no budget.
 
     OLX failures don't raise: they end the run as 'partial' (OLX stopped it early) or
     'failed' (see the module docstring). Anything else (a database error, a bug) is
@@ -401,7 +407,7 @@ async def run_sync(
         olx,
         kind,
         lambda stats: _sync(
-            conn, olx, stats, checked, detail_cap=detail_cap, refresh_days=refresh_days
+            conn, olx, stats, checked, request_budget=request_budget, refresh_days=refresh_days
         ),
         scheduled=scheduled,
         started_at=None if now is None else now(),
@@ -498,7 +504,7 @@ async def _sync(
     stats: RunStats,
     allowlist: Allowlist,
     *,
-    detail_cap: int,
+    request_budget: int,
     refresh_days: int | None,
 ) -> None:
     """One nightly/full run; when it stops early, carry over the ids still to do.
@@ -514,7 +520,7 @@ async def _sync(
     # Ids that still need a GET this run (detail fetch or re-check), kept up to date as
     # the run goes, for the case that it stops early: those go to the next run.
     todo = set(failed_last_run)
-    rolling = (detail_cap, refresh_days) if stats.kind == "nightly" and refresh_days else None
+    rolling = (request_budget, refresh_days) if stats.kind == "nightly" and refresh_days else None
     try:
         await _sync_steps(conn, olx, stats, failed_last_run, todo, allowlist, rolling)
     except (OlxApiError, _RunFailedError):  # OLX stopped or failed the run
@@ -572,8 +578,10 @@ async def _sync_steps(
     allowlist: Allowlist,
     rolling: tuple[int, int] | None,
 ) -> None:
-    """The steps of one run. `rolling`: (detail cap, refresh days), None for no slice."""
+    """The steps of one run. `rolling`: (request budget, refresh days), None for no slice."""
     assert stats.run_id is not None
+    # The client's counter is a running total (it may be reused); count from here.
+    sent_at_start = olx.requests_sent
     result = await sync_shop(olx)
     stats.shop_total = result.shop_total
     stats.coverage = result.coverage
@@ -583,7 +591,7 @@ async def _sync_steps(
     # A full run pretends no hash is stored, so every listing is fetched again. A nightly
     # run leaves out the hashes of last run's failed or carried-over ids too, so they are
     # fetched first whatever their summary says (a failed rolling GET has an unchanged
-    # summary); they are never deferred by the cap.
+    # summary); they are never deferred by the request budget.
     stored_hashes = (
         {}
         if stats.kind == "full"
@@ -598,7 +606,7 @@ async def _sync_steps(
     await store.save_summaries(conn, result.listings)
     stats.new = sum(1 for i in result.listings if i not in stored)
     stats.reactivated = sum(1 for i in result.listings if i in stored and not stored[i].active)
-    # New, changed, or failed last run: always fetched, never trimmed by the cap.
+    # New, changed, or failed last run: always fetched, never trimmed by the request budget.
     due = {i for i, row in result.listings.items() if needs_detail_fetch(row, stored_hashes.get(i))}
     todo.update(due)
     for batch in itertools.batched(
@@ -620,7 +628,7 @@ async def _sync_steps(
     # Last (R1-1): the rolling slice is upkeep, so an OLX stop inside it (up to ~1,000
     # GETs) must not cost the allowlist guard or the deactivation re-check above.
     if rolling is not None:
-        detail_cap, refresh_days = rolling
+        request_budget, refresh_days = rolling
         await _rolling_refresh(
             conn,
             olx,
@@ -629,7 +637,8 @@ async def _sync_steps(
             due,
             stored,
             todo,
-            detail_cap=detail_cap,
+            sent_this_run=lambda: olx.requests_sent - sent_at_start,
+            request_budget=request_budget,
             refresh_days=refresh_days,
         )
 
@@ -721,38 +730,46 @@ async def _rolling_refresh(
     stored: Mapping[int, store.StoredListing],
     todo: set[int],
     *,
-    detail_cap: int,
+    sent_this_run: Callable[[], int],
+    request_budget: int,
     refresh_days: int,
 ) -> None:
-    """Step 6, the run's last: re-fetch the details fetched longest ago (#135).
+    """Step 7, the run's last: re-fetch the details fetched longest ago (#135).
 
     Only listings seen this run (a detail is saved with the summary hash of the row it
     belongs to) and not already fetched in step 3 (`due`). The slice is
-    ceil(active / days), trimmed to what `due` left of `detail_cap`; the listings the
-    trim left out are `rolling_deferred` (never more than the pool had).
+    ceil(active / days), trimmed to what the run's earlier requests of every kind left of
+    `request_budget`. The budget is checked again before each batch, so a retry or a 429
+    inside the slice shrinks the rest of it; the listings left out are `rolling_deferred`
+    (never more than the pool had) and are not carried over as failed.
     """
     wanted = rolling_slice_size(await store.count_active(conn), refresh_days=refresh_days)
-    room = max(0, detail_cap - len(due))
     pool = set(seen) - set(due)
-    ids = await store.oldest_detail_ids(conn, pool, limit=min(wanted, room))
-    stats.rolling_deferred = min(wanted, len(pool)) - len(ids)
-    logger.info(
-        "rolling refresh: %d listings to re-fetch, %d deferred (%d fetched before, cap %d)",
-        len(ids),
-        stats.rolling_deferred,
-        len(due),
-        detail_cap,
-        extra={
-            "event": "rolling_refresh",
-            "run_id": stats.run_id,
-            "rolling": len(ids),
-            "rolling_deferred": stats.rolling_deferred,
-            "due": len(due),
-            "detail_cap": detail_cap,
-        },
+    must_do = sent_this_run()
+    if must_do > request_budget:
+        logger.warning(
+            "request budget exceeded before the rolling refresh: %d requests sent, budget "
+            "%d; nothing was deferred but the rolling slice",
+            must_do,
+            request_budget,
+            extra={
+                "event": "request_budget_exceeded",
+                "run_id": stats.run_id,
+                "requests_sent": must_do,
+                "request_budget": request_budget,
+            },
+        )
+    ids = await store.oldest_detail_ids(
+        conn, pool, limit=min(wanted, max(0, request_budget - must_do))
     )
-    todo.update(ids)
-    for batch in itertools.batched(ids, DETAIL_BATCH_SIZE):
+    attempted = 0
+    while attempted < len(ids):
+        room = request_budget - sent_this_run()
+        if room <= 0:
+            break
+        batch = ids[attempted : attempted + min(room, DETAIL_BATCH_SIZE)]
+        attempted += len(batch)
+        todo.update(batch)
         rows = {i: seen[i] for i in batch}  # oldest first: dicts keep insertion order
         try:
             # No stored hashes: every listing in `rows` is fetched, unchanged or not.
@@ -763,6 +780,22 @@ async def _rolling_refresh(
             raise
         stats.rolling_refreshed += len(details.fetched)
         await _save_details(conn, details, stored, stats, todo)
+    stats.rolling_deferred = min(wanted, len(pool)) - attempted
+    logger.info(
+        "rolling refresh: %d listings re-fetched, %d deferred (%d requests before it, budget %d)",
+        attempted,
+        stats.rolling_deferred,
+        must_do,
+        request_budget,
+        extra={
+            "event": "rolling_refresh",
+            "run_id": stats.run_id,
+            "rolling": attempted,
+            "rolling_deferred": stats.rolling_deferred,
+            "requests_before": must_do,
+            "request_budget": request_budget,
+        },
+    )
 
 
 async def guard_allowlist(

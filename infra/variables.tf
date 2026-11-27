@@ -94,12 +94,11 @@ variable "nightly_sync_cron" {
   default     = "cron(0 1 * * ? *)"
 }
 
-# OLX allows roughly 1,400 requests before a ~1,600 s 429 penalty, and #105's run 5 still
-# got a 429 at 3.0 s after ~1,000 requests. The nightly sync makes up to ~1,000 detail
-# GETs (changed listings + the rolling refresh slice, #135) plus the list pages, so it
-# runs at 2.8 s (Tomislav, #135): 1,000 x 2.8 s is ~47 min plus the list pages, well
-# inside the 3 h deadline. Manual runs outside this task keep the Settings default of
-# 2.0 s unless OLX_REQUEST_INTERVAL says otherwise.
+# OLX allows 1,000 requests per fixed hourly window (#105); past that it answers 429 with
+# a long Retry-After. The nightly sync sends at most OLX_NIGHTLY_REQUEST_BUDGET (950)
+# requests of every kind (#135), at 2.8 s (Tomislav, #135): 950 x 2.8 s is ~44 min,
+# well inside the 3 h deadline. Manual runs outside this task keep the Settings default
+# of 2.0 s unless OLX_REQUEST_INTERVAL says otherwise.
 variable "sync_request_interval" {
   description = "OLX_REQUEST_INTERVAL (seconds between OLX requests) for every sync in the job task: the nightly sync and one-off `martom sync --full` runs."
   type        = number

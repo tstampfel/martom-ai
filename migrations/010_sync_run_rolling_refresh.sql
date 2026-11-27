@@ -4,9 +4,10 @@
 -- Re-runs safely (IF NOT EXISTS).
 --
 --   rolling_refreshed       rolling-slice detail GETs that succeeded this run
---   rolling_deferred        rolling-slice listings left for later because the changed
---                           listings used up the nightly cap (OLX_NIGHTLY_DETAIL_CAP); a
---                           deferred slice never changes the status
+--   rolling_deferred        rolling-slice listings left for later because the run's other
+--                           OLX requests used up the nightly request budget
+--                           (OLX_NIGHTLY_REQUEST_BUDGET); a deferred slice never changes
+--                           the status
 --   oldest_detail_age_days  after the run: days since the oldest detail fetch among the
 --                           active listings (first_seen_at for one never fetched); NULL
 --                           when the run broke before it could look, or no listing is active
