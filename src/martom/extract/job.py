@@ -7,7 +7,8 @@
    so a crash halfway keeps what was already done.
 4. Finish the run: 'succeeded', 'partial' (some listings still failed after their
    retries; they keep their old product row and are tried again next run, because their
-   hashes still differ) or 'failed' (the run broke, e.g. a database error).
+   hashes still differ) or 'failed' (the run broke: a database error, a non-retryable
+   API error such as a bad key, 20 listings in a row failing, or nothing extracted).
 """
 
 import logging
@@ -29,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 # Listings per batch: extracted concurrently, then saved in one transaction.
 BATCH_SIZE = 40
+# This many failures in a row (checked after each batch) look like an outage, not bad
+# listings: the run stops as 'failed' instead of working through the whole catalogue.
+MAX_CONSECUTIVE_FAILURES = 20
+
+
+class _OutageError(Exception):
+    """The run is stopped as 'failed': nothing worked, so something is broken."""
+
 
 type ExtractionStatus = Literal["succeeded", "partial", "failed"]
 
@@ -115,9 +124,20 @@ async def run_extraction(
         pending = await load_pending(conn, force_all=force_all, limit=limit)
         stats.seen = len(pending)
         logger.info("extraction run started", extra={"run_id": stats.run_id, "pending": stats.seen})
+        consecutive_failures = 0
         for batch in _batches(pending, BATCH_SIZE):
+            # Raises ExtractionAbortedError on a bad key, wrong model id, rejected request.
             results = await extractor.extract_many(batch)
             await _save_batch(conn, batch, results, stats, extractor.model_name)
+            for result in results:
+                consecutive_failures = 0 if result.product else consecutive_failures + 1
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                raise _OutageError(
+                    f"{consecutive_failures} consecutive listings failed; stopped the run "
+                    "(is the model or the API down?)"
+                )
+        if stats.errors and not stats.extracted:
+            raise _OutageError(f"no listing was extracted ({stats.errors} failed)")
         stats.status = "partial" if stats.errors else "succeeded"
     except Exception as exc:
         logger.exception("extraction run %s failed", stats.run_id)

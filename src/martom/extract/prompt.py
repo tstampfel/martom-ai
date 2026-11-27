@@ -9,6 +9,7 @@ stored on every `product` row and sent to LangSmith, so traces and rows show whi
 produced them. `martom extract --all` re-extracts every listing after such a change.
 """
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -82,15 +83,14 @@ class ListingInput:
         )
 
 
-# Closing tags inside the data would end our wrapper early; break them up so the model
-# can't be tricked into reading listing text as outside the <listing> block.
-_WRAPPER_TAGS = ("listing", "title", "olx_fields", "description")
+# Our wrapper tags inside the data ("</listing>", "<LISTING id=2>", "</Title >") could make
+# listing text look like it sits outside the <listing> block. A space after "<" breaks
+# such a tag up, in any letter case, opening or closing.
+_WRAPPER_TAG = re.compile(r"<(\s*/?\s*)(listing|title|olx_fields|description)\b", re.IGNORECASE)
 
 
 def _data(text: str) -> str:
-    for tag in _WRAPPER_TAGS:
-        text = text.replace(f"</{tag}", f"< /{tag}")
-    return text
+    return _WRAPPER_TAG.sub(r"< \1\2", text)
 
 
 def _olx_fields(listing: ListingInput) -> str:

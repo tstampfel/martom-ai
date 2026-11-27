@@ -1,9 +1,11 @@
 """`martom extract`: settings checks and exit codes (fake model, real throwaway database)."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import psycopg
 import pytest
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableLambda
 
 from martom import cli
@@ -34,19 +36,27 @@ def test_limit_must_be_positive() -> None:
         cli.main(["extract", "--limit", "0"])
 
 
-@pytest.mark.parametrize(("fails", "exit_code"), [(False, 0), (True, 2)])
+@pytest.mark.parametrize(
+    ("failing", "exit_code"),
+    [
+        (set(), 0),  # succeeded
+        ({2}, 2),  # partial: one of two failed
+        ({1, 2}, 1),  # failed: nothing was extracted
+    ],
+)
 def test_exit_code_follows_the_run_status(
-    database_url: str, monkeypatch: pytest.MonkeyPatch, fails: bool, exit_code: int
+    database_url: str, monkeypatch: pytest.MonkeyPatch, failing: set[int], exit_code: int
 ) -> None:
     run_migrations(database_url, MIGRATIONS)
     with psycopg.connect(database_url, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO olx_listing (id, slug, title, summary, description_text, detail_hash)"
-            " VALUES (1, 'tiplo-1', 'TIPLO', '{}', 'TIPLO SX6 - 0,15KM', 'h')"
+            " VALUES (1, 'tiplo-1', 'TIPLO', '{}', 'TIPLO SX6 - 0,15KM', 'h'),"
+            " (2, 'tiplo-2', 'TIPLO', '{}', 'TIPLO SX8 - 0,20KM', 'h')"
         )
 
-    def fake(_: object) -> ExtractedProduct:
-        if fails:
+    def fake(messages: Sequence[BaseMessage]) -> ExtractedProduct:
+        if any(f'<listing id="{i}">' in messages[1].text for i in failing):
             raise RuntimeError("model unavailable")
         return PRODUCT
 

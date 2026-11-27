@@ -396,6 +396,7 @@ name = "martom"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anthropic" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "langchain-anthropic" },
@@ -417,6 +418,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anthropic", specifier = ">=2.14.0" },
     { name = "fastapi", specifier = ">=0.165.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "langchain-anthropic", specifier = ">=1.0" },

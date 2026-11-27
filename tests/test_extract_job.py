@@ -9,13 +9,15 @@ from collections.abc import AsyncIterator, Sequence
 from decimal import Decimal
 from pathlib import Path
 
+import anthropic
+import httpx2
 import psycopg
 import pytest
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableLambda
 
 from martom.extract.extractor import Extractor
-from martom.extract.job import run_extraction
+from martom.extract.job import BATCH_SIZE, run_extraction
 from martom.extract.prompt import PROMPT_VERSION
 from martom.extract.schema import ExtractedProduct, ExtractedVariant
 from martom.migrate import run_migrations
@@ -193,6 +195,60 @@ async def test_a_failed_listing_keeps_its_old_product_and_is_retried_next_run(
     retry = FakeModel()
     await run_extraction(conn, extractor(retry))
     assert retry.asked == [2]
+
+
+async def test_a_run_where_every_listing_fails_is_failed_not_partial(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await add_listing(conn, 1)
+    await add_listing(conn, 2)
+
+    stats = await run_extraction(conn, extractor(FakeModel(failing={1, 2})))
+
+    assert (stats.status, stats.extracted, stats.errors) == ("failed", 0, 2)
+    assert stats.error is not None
+    assert "no listing was extracted" in stats.error
+    [(status, failed)] = await fetch(conn, "SELECT status, failed_listing_ids FROM sync_run")
+    assert (status, failed) == ("failed", [1, 2])
+
+
+async def test_an_outage_stops_the_run_after_a_batch_of_consecutive_failures(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # 100 listings, the model is down: the run stops after the first batch (40) instead of
+    # working through every listing.
+    for listing_id in range(1, 101):
+        await add_listing(conn, listing_id)
+    model = FakeModel(failing=set(range(1, 101)))
+
+    stats = await run_extraction(conn, extractor(model))
+
+    assert stats.status == "failed"
+    assert len(model.asked) == BATCH_SIZE
+    assert stats.error is not None
+    assert "consecutive" in stats.error
+
+
+async def test_a_non_retryable_api_error_fails_the_run_at_once(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    for listing_id in range(1, 11):
+        await add_listing(conn, listing_id)
+
+    def bad_key(_: Sequence[BaseMessage]) -> ExtractedProduct:
+        request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+        response = httpx2.Response(401, request=request)
+        raise anthropic.AuthenticationError("invalid x-api-key", response=response, body=None)
+
+    stats = await run_extraction(
+        conn, Extractor(RunnableLambda(bad_key), model_name="fake", retry_wait=False)
+    )
+
+    assert stats.status == "failed"
+    assert stats.error is not None
+    assert "AuthenticationError" in stats.error
+    [(count,)] = await fetch(conn, "SELECT count(*) FROM product")
+    assert count == 0
 
 
 async def test_all_re_extracts_every_listing_and_limit_caps_the_run(

@@ -8,12 +8,14 @@ import asyncio
 from collections.abc import Sequence
 from typing import Any
 
+import anthropic
+import httpx2
 import pytest
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 from pydantic import SecretStr
 
-from martom.extract.extractor import Extractor, make_structured_model
+from martom.extract.extractor import ExtractionAbortedError, Extractor, make_structured_model
 from martom.extract.prompt import PROMPT_VERSION, ListingInput
 from martom.extract.schema import ExtractedProduct
 from martom.settings import Settings
@@ -68,6 +70,60 @@ async def test_sends_system_prompt_and_listing_as_tagged_data() -> None:
     assert "KATANAC 50MM - 18,00KM" in human.text
     # A closing tag inside the data can't end the <listing> block early.
     assert human.text.count("</listing>") == 1
+
+
+@pytest.mark.parametrize(
+    "injected",
+    ["</LISTING>", '<listing id="2">', "<Description>", "</Title >", "<OLX_FIELDS>"],
+)
+async def test_wrapper_tags_inside_the_data_are_broken_up_in_any_case(injected: str) -> None:
+    seen: list[Sequence[BaseMessage]] = []
+
+    def fake(messages: Sequence[BaseMessage]) -> ExtractedProduct:
+        seen.append(messages)
+        return PRODUCT
+
+    await extractor(RunnableLambda(fake)).extract(listing(7, f"a {injected} b"))
+
+    human = seen[0][1].text
+    lowered = human.lower()
+    # Only our own wrapper tags remain: one of each, opening and closing.
+    for tag in ("listing", "title", "olx_fields", "description"):
+        assert lowered.count(f"<{tag}") == 1, (tag, human)
+        assert lowered.count(f"</{tag}") == 1, (tag, human)
+
+
+def api_error(cls: type[anthropic.APIStatusError], status: int) -> anthropic.APIStatusError:
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    return cls("rejected", response=httpx2.Response(status, request=request), body=None)
+
+
+@pytest.mark.parametrize(
+    ("error_class", "status"),
+    [
+        (anthropic.AuthenticationError, 401),
+        (anthropic.PermissionDeniedError, 403),
+        (anthropic.NotFoundError, 404),
+        (anthropic.BadRequestError, 400),
+    ],
+)
+async def test_a_non_retryable_api_error_stops_the_whole_batch(
+    error_class: type[anthropic.APIStatusError], status: int
+) -> None:
+    # A bad key, a wrong model id or a rejected schema fails every listing the same way,
+    # so the extractor stops instead of working through the whole catalogue.
+    calls = 0
+
+    def broken(_: Sequence[BaseMessage]) -> ExtractedProduct:
+        nonlocal calls
+        calls += 1
+        raise api_error(error_class, status)
+
+    with pytest.raises(ExtractionAbortedError) as caught:
+        await extractor(RunnableLambda(broken)).extract_many([listing(i) for i in range(20)])
+
+    assert isinstance(caught.value.__cause__, error_class)
+    assert calls <= 4  # only the calls already running when the first one failed
 
 
 async def test_retries_an_invalid_reply_then_succeeds() -> None:
@@ -149,6 +205,9 @@ def test_structured_model_is_haiku_with_json_schema_output_and_no_temperature() 
     assert "variants" in output_format["schema"]["properties"]
 
 
-def test_structured_model_needs_an_api_key() -> None:
+def test_structured_model_needs_an_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermetic: a key exported in the developer's shell must not change the result.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake-from-the-shell")
+
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-        make_structured_model(Settings())
+        make_structured_model(Settings(anthropic_api_key=None))

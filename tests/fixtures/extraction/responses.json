@@ -1,5 +1,5 @@
 {
- "_about": "Model replies for the 10 golden listings (tests/fixtures/extraction/listings.json), keyed by listing id: the ExtractedProduct JSON the structured-output call returns. SOURCE: hand-written to SYSTEM_PROMPT's rules by the M2-1 implementing agent on 27 Nov 2026, because no Anthropic API key was available to it; NOT yet recorded from claude-haiku-5-5. Re-record with real Haiku output: `uv run python scripts/record_extraction_fixtures.py` (needs ANTHROPIC_API_KEY), then review the diff and update tests/fixtures/extraction/golden.json.",
+ "_about": "Model replies for the 10 golden listings (tests/fixtures/extraction/listings.json), keyed by listing id: the ExtractedProduct JSON the structured-output call returns. SOURCE: hand-written to SYSTEM_PROMPT's rules by the M2-1 implementing agent on 27 Nov 2026, because no Anthropic API key was available to it; NOT yet recorded from claude-haiku-5-5. Re-record with real Haiku output: `uv run python scripts/record_extraction_fixtures.py --record` (needs ANTHROPIC_API_KEY in the shell; without --record the script only rewrites golden.json and calls no model), then review the diff and update tests/fixtures/extraction/golden.json.",
  "source": "hand-written",
  "model": null,
  "prompt_version": "m2-1-v1",

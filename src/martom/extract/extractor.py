@@ -15,7 +15,9 @@ How the pieces fit:
   retried by the Anthropic SDK inside `ChatAnthropic` (`max_retries`, with backoff). A
   reply that doesn't validate against the schema is retried by LangChain's `with_retry`
   (a fresh call, up to `max_attempts`). A listing that still fails is reported as an
-  error and the run goes on with the others.
+  error and the run goes on with the others. A non-retryable API error (bad key, no
+  access, wrong model id, rejected request) would fail every listing alike, so it stops
+  the batch with `ExtractionAbortedError` instead.
 - Concurrency: an `asyncio.Semaphore` lets at most `concurrency` calls (4 by default) run
   at once; the rest wait their turn. Think `p-limit(4)` in JS.
 - LangSmith: LangChain traces every call by itself when `LANGSMITH_TRACING=true` and
@@ -28,6 +30,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import anthropic
 from langchain_anthropic import ChatAnthropic
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import BaseMessage
@@ -48,6 +51,20 @@ REQUEST_TIMEOUT_SECONDS = 120.0
 
 # Errors that mean "the reply was malformed": worth asking the model again.
 _RETRYABLE_REPLY_ERRORS = (ValidationError, OutputParserException)
+
+# API errors that fail every listing the same way (bad key, no access, wrong model id, a
+# request the API rejects, e.g. the schema): the run stops instead of trying the rest.
+_FATAL_API_ERRORS = (
+    anthropic.AuthenticationError,
+    anthropic.PermissionDeniedError,
+    anthropic.NotFoundError,
+    anthropic.BadRequestError,
+)
+
+
+class ExtractionAbortedError(Exception):
+    """A non-retryable API error: no point extracting more listings. `__cause__` is it."""
+
 
 type StructuredModel = Runnable[Sequence[BaseMessage], ExtractedProduct]
 
@@ -115,14 +132,22 @@ class Extractor:
     async def extract_many(self, listings: Sequence[ListingInput]) -> list[ExtractionResult]:
         """Extract every listing, at most `concurrency` at a time, in input order.
 
-        A listing that fails doesn't stop the others; its result carries the error.
+        A listing that fails doesn't stop the others; its result carries the error. A
+        non-retryable API error (`_FATAL_API_ERRORS`) raises `ExtractionAbortedError`
+        instead: listings still waiting are not sent, and the calls already running finish.
         """
         limit = asyncio.Semaphore(self._concurrency)
+        fatal: list[Exception] = []  # the first fatal error, shared by every task
 
         async def one(listing: ListingInput) -> ExtractionResult:
             async with limit:  # waits here while `concurrency` calls are running
+                if fatal:
+                    return ExtractionResult(listing.id, None, "not sent: run aborted")
                 try:
                     product = await self.extract(listing)
+                except _FATAL_API_ERRORS as exc:
+                    fatal.append(exc)
+                    return ExtractionResult(listing.id, None, f"{type(exc).__name__}: {exc}")
                 except Exception as exc:
                     logger.warning(
                         "extraction failed for listing %s",
@@ -134,4 +159,8 @@ class Extractor:
                 return ExtractionResult(listing.id, product)
 
         # gather runs all the coroutines concurrently and returns results in input order.
-        return list(await asyncio.gather(*(one(listing) for listing in listings)))
+        results = list(await asyncio.gather(*(one(listing) for listing in listings)))
+        if fatal:
+            error = fatal[0]
+            raise ExtractionAbortedError(f"{type(error).__name__}: {error}") from error
+        return results
