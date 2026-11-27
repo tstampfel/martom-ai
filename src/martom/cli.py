@@ -14,6 +14,7 @@ import uvicorn
 from pydantic import ValidationError
 
 from martom.api.admin import AdminTokenError, check_admin_token
+from martom.checkpointer import setup_checkpointer
 from martom.embed_job import EmbedStats, run_embedding
 from martom.embeddings import EmbeddingError, make_embedder
 from martom.extract.extractor import (
@@ -156,6 +157,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"applied {name}")
         if not applied:
             print("nothing to apply")
+        # The agent graph's checkpointer owns its tables (the one exception to SQL
+        # migrations); create or upgrade them here, never at API startup.
+        try:
+            setup_checkpointer(database_url)
+        except psycopg.Error as exc:
+            print(f"checkpointer setup failed: {exc}", file=sys.stderr)
+            return 1
+        print("checkpointer tables ready")
     return 0
 
 
