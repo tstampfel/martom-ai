@@ -842,6 +842,83 @@ async def test_the_run_summary_log_says_how_long_olx_asked_us_to_wait(
     assert "1 x 429, OLX asked to wait 600 s" in summary.getMessage()
 
 
+async def test_a_run_that_crashes_still_logs_its_summary_then_re_raises(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    answered = set()
+
+    def one_429_then_crash(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/listings/1" and path not in answered:
+            answered.add(path)
+            server.requests.append(request)
+            return httpx.Response(429, headers={"Retry-After": "30"})
+        if path == "/listings/2":
+            server.requests.append(request)
+            raise RuntimeError("database or network gone")  # not an OLX error: a crash
+        return server(request)
+
+    clock = FakeClock()
+    with caplog.at_level(logging.INFO, logger="martom.olx.job"):
+        async with OlxClient(
+            transport=httpx.MockTransport(one_429_then_crash),
+            clock=clock.monotonic,
+            sleep=clock.sleep,
+            max_attempts=2,
+        ) as olx:
+            with pytest.raises(RuntimeError, match="network gone"):
+                await run_sync(conn, olx, kind="nightly")
+
+    [summary] = [r for r in caplog.records if getattr(r, "event", None) == "sync_run"]
+    assert summary.levelno == logging.ERROR
+    assert summary.status == "failed"
+    assert summary.error == "RuntimeError: database or network gone"
+    assert summary.olx_429_count == 1
+    assert summary.olx_429_requested_wait_seconds == 30.0
+    assert summary.olx_requests_sent == len(server.requests)
+    assert summary.olx_elapsed_seconds == clock.now - 1000.0
+    assert (await last_run(conn))["status"] == "failed"  # unchanged by the summary
+
+
+async def test_a_client_reused_across_runs_logs_each_runs_own_olx_numbers(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    answered = set()
+
+    def one_429(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/listings/2" and 2 not in answered:
+            answered.add(2)
+            server.requests.append(request)
+            return httpx.Response(429, headers={"Retry-After": "600"})
+        return server(request)
+
+    clock = FakeClock()
+    with caplog.at_level(logging.INFO, logger="martom.olx.job"):
+        async with OlxClient(
+            transport=httpx.MockTransport(one_429),
+            clock=clock.monotonic,
+            sleep=clock.sleep,
+            max_attempts=2,
+        ) as olx:
+            await run_sync(conn, olx, kind="nightly")  # the 429 lands in this run
+            first_run_requests = len(server.requests)
+            second_run_start = clock.now
+            server.listed[2] = "Stup 120"  # one changed summary: one detail GET
+            await run_sync(conn, olx, kind="nightly")
+
+    first, second = [r for r in caplog.records if getattr(r, "event", None) == "sync_run"]
+    assert first.olx_429_count == 1
+    assert first.olx_requests_sent == first_run_requests
+    assert second.olx_429_count == 0
+    assert second.olx_429_requested_wait_seconds == 0.0
+    assert second.olx_requests_sent == len(server.requests) - first_run_requests
+    assert second.olx_elapsed_seconds == clock.now - second_run_start
+    assert second.retried_count == 0
+    assert "0 x 429, OLX asked to wait 0 s" in second.getMessage()
+
+
 async def test_abort_during_candidate_check_deactivates_nothing(
     conn: psycopg.AsyncConnection,
 ) -> None:

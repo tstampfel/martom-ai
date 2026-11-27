@@ -9,7 +9,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 
 import httpx
@@ -19,6 +19,7 @@ from martom.log import JsonFormatter
 from martom.olx.client import (
     OlxApiError,
     OlxClient,
+    OlxCounters,
     OlxRateLimitAbortError,
     OlxRunDeadlineError,
     RateLimiter,
@@ -344,6 +345,63 @@ async def test_non_finite_or_garbage_retry_after_logs_null_and_the_raw_header(
     assert record.retry_after_seconds is None
     assert record.retry_after_header == retry_after[:50]
     assert "Infinity" not in JsonFormatter().format(record)
+
+
+async def test_an_http_date_retry_after_is_parsed_once_so_log_and_wait_agree(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    retry_at = "Thu, 26 Nov 2026 12:00:20 GMT"  # FIXED_NOW + 20 s
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": retry_at}), ok()])
+    now_calls: list[datetime] = []
+
+    def ticking_now() -> datetime:
+        """Wall clock that moves 1 s per call: a second parse would see a later 'now'."""
+        moment = FIXED_NOW + timedelta(seconds=len(now_calls))
+        now_calls.append(moment)
+        return moment
+
+    async with OlxClient(
+        transport=httpx.MockTransport(server),
+        clock=clock.monotonic,
+        sleep=clock.sleep,
+        now=ticking_now,
+    ) as client:
+        await client.get_listing(1)
+
+    [record] = [r for r in caplog.records if getattr(r, "event", None) == "olx_429"]
+    assert len(now_calls) == 1
+    assert record.retry_after_seconds == 20.0
+    assert gaps(server.starts) == [20.0]  # the wait applied is the one logged
+    assert client.rate_limit_requested_wait_seconds == 20.0
+
+
+async def test_client_counters_snapshot_subtracts_to_the_numbers_since_it() -> None:
+    clock = FakeClock()
+    too_many = httpx.Response(429, headers={"Retry-After": "100"})
+    server = Recorder(clock, [too_many, ok(), ok(), too_many, ok()])
+
+    async with make_client(clock, server, max_attempts=2) as client:
+        await client.get_listing(1)  # 429, then ok on the retry
+        before = client.counters()
+        await client.get_listing(2)
+        await client.get_listing(3)  # 429, then ok on the retry
+        since = client.counters() - before
+
+    assert before == OlxCounters(
+        requests_sent=2,
+        rate_limited=1,
+        requested_wait_seconds=100.0,
+        recovered_requests=1,
+        elapsed_seconds=100.0,
+    )
+    assert since == OlxCounters(
+        requests_sent=3,
+        rate_limited=1,
+        requested_wait_seconds=100.0,
+        recovered_requests=1,
+        elapsed_seconds=clock.now - 1000.0 - 100.0,
+    )
 
 
 async def test_client_counts_429s_requests_and_the_wait_olx_asked_for() -> None:
