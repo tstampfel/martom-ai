@@ -91,9 +91,10 @@ def test_id_must_be_a_lowercase_slug(tmp_path: Path) -> None:
         parse_chunk(path)
 
 
-def test_sources_must_be_a_list_of_strings(tmp_path: Path) -> None:
+@pytest.mark.parametrize("value", ["Toni", "[]", "[1, 2]", '[""]'])
+def test_sources_must_be_a_non_empty_list_of_strings(tmp_path: Path, value: str) -> None:
     text = VALID.replace('  - "fence-rules.md: Panel fence"\n  - "Toni, 26.11.2026"\n', "")
-    path = write(tmp_path, "x.md", text.replace("sources:", "sources: Toni"))
+    path = write(tmp_path, "x.md", text.replace("sources:", f"sources: {value}"))
 
     with pytest.raises(KnowledgeError, match="sources"):
         parse_chunk(path)
@@ -110,6 +111,38 @@ def test_invalid_yaml_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, "x.md", VALID.replace("topic: posts", "topic: [posts"))
 
     with pytest.raises(KnowledgeError, match=r"x\.md"):
+        parse_chunk(path)
+
+
+def test_repeated_front_matter_key_is_rejected(tmp_path: Path) -> None:
+    # `status` is the approval gate: a second `status:` must not silently win.
+    path = write(tmp_path, "x.md", VALID.replace("topic: posts", "status: approved\ntopic: posts"))
+
+    with pytest.raises(KnowledgeError, match=r"x\.md.*status"):
+        parse_chunk(path)
+
+
+def test_utf8_bom_is_accepted(tmp_path: Path) -> None:
+    path = tmp_path / "x.md"
+    path.write_text(VALID, encoding="utf-8-sig")  # "UTF-8 with BOM", as some editors save
+
+    assert parse_chunk(path).id == "razmak-stupova"
+
+
+def test_file_that_is_not_utf8_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "x.md"
+    path.write_bytes(VALID.replace("Razmak", "Žica").encode("cp1250"))
+
+    with pytest.raises(KnowledgeError, match=r"x\.md.*UTF-8"):
+        parse_chunk(path)
+
+
+def test_unreadable_file_is_rejected(tmp_path: Path) -> None:
+    # e.g. an editor's dangling lock symlink like `.#07-montaza.md`
+    path = tmp_path / ".#x.md"
+    path.symlink_to(tmp_path / "missing.md")
+
+    with pytest.raises(KnowledgeError, match=r"\.#x\.md.*cannot read"):
         parse_chunk(path)
 
 

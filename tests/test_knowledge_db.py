@@ -122,6 +122,17 @@ def test_chunk_whose_file_is_gone_is_deleted(migrated: str, tmp_path: Path) -> N
     assert [row[0] for row in rows(migrated)] == ["a"]
 
 
+def test_renamed_chunk_gets_its_new_file_name(migrated: str, tmp_path: Path) -> None:
+    old = write_chunk(tmp_path, "a")
+    run_load_knowledge(migrated, tmp_path)
+
+    old.rename(tmp_path / "12-a.md")  # renumbered, text unchanged
+    stats = run_load_knowledge(migrated, tmp_path)
+
+    assert stats == LoadStats(inserted=0, updated=1, unchanged=0, deleted=0)
+    assert [row[6] for row in rows(migrated)] == ["12-a.md"]
+
+
 def test_invalid_chunk_loads_nothing(migrated: str, tmp_path: Path) -> None:
     write_chunk(tmp_path, "a")
     (tmp_path / "b.md").write_text("# no front matter\n", encoding="utf-8")

@@ -27,6 +27,25 @@ NOT_CHUNKS = {"README.md"}
 FRONT_MATTER = re.compile(r"\A---\n(?P<yaml>.*?)\n---\n(?P<body>.*)\Z", re.DOTALL)
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """PyYAML's safe loader, except that a repeated key is an error instead of "last one wins".
+
+    `status` is the approval gate, so `status: draft` followed by `status: approved` must not
+    quietly load as approved.
+    """
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
+        seen: set[object] = set()
+        for key_node, _value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"repeated key {key!r}", key_node.start_mark
+                )
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 class KnowledgeError(Exception):
     """A chunk file is invalid, or the folder holds no usable chunks."""
 
@@ -53,15 +72,23 @@ def _required_text(meta: dict[str, object], field: str, name: str) -> str:
 def parse_chunk(path: Path) -> KnowledgeChunk:
     """Read one chunk file, validating its front matter. Raises KnowledgeError."""
     name = path.name
+    try:
+        # utf-8-sig also reads "UTF-8 with BOM" files (it drops the BOM, which would otherwise
+        # hide the opening '---').
+        raw = path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise KnowledgeError(f"{name}: not valid UTF-8, save the file as UTF-8 ({exc})") from exc
+    except OSError as exc:  # e.g. a dangling editor lock symlink like `.#07-montaza.md`
+        raise KnowledgeError(f"{name}: cannot read the file ({exc})") from exc
     # Normalise Windows line endings so the front matter regex matches either way.
-    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    text = raw.replace("\r\n", "\n")
     match = FRONT_MATTER.match(text)
     if match is None:
         raise KnowledgeError(f"{name}: expected YAML front matter between two '---' lines")
 
     try:
-        # safe_load builds only plain dicts, lists and scalars, never Python objects.
-        meta = yaml.safe_load(match.group("yaml"))
+        # Like yaml.safe_load: only plain dicts, lists and scalars, never Python objects.
+        meta = yaml.load(match.group("yaml"), Loader=_UniqueKeyLoader)
     except yaml.YAMLError as exc:
         raise KnowledgeError(f"{name}: invalid YAML front matter: {exc}") from exc
     if not isinstance(meta, dict):
@@ -77,10 +104,15 @@ def parse_chunk(path: Path) -> KnowledgeChunk:
         raise KnowledgeError(f"{name}: status {status!r} must be one of {', '.join(STATUSES)}")
 
     sources = meta.get("sources")
-    if not isinstance(sources, list) or not all(
-        isinstance(source, str) and source.strip() for source in sources
+    # `all()` of an empty list is True, so the empty list needs its own check.
+    if (
+        not isinstance(sources, list)
+        or not sources
+        or not all(isinstance(source, str) and source.strip() for source in sources)
     ):
-        raise KnowledgeError(f"{name}: front matter field 'sources' must be a list of strings")
+        raise KnowledgeError(
+            f"{name}: front matter field 'sources' must be a non-empty list of strings"
+        )
 
     body = match.group("body").strip()
     if not body:
@@ -131,7 +163,8 @@ class LoadStats:
     deleted: int
 
 
-# Insert a new chunk, or overwrite an existing one only when its file changed. The WHERE on
+# Insert a new chunk, or overwrite an existing one only when its file changed (its text, or
+# its name: a renumbered file must not leave the old name in source_path). The WHERE on
 # DO UPDATE skips unchanged rows, so their updated_at stays put. `xmax = 0` is a Postgres
 # trick: it is true for a freshly inserted row and false for an updated one. No row comes
 # back when the WHERE skipped the update.
@@ -149,6 +182,7 @@ ON CONFLICT (id) DO UPDATE SET
     content_hash = EXCLUDED.content_hash,
     updated_at = now()
 WHERE knowledge_chunk.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+   OR knowledge_chunk.source_path IS DISTINCT FROM EXCLUDED.source_path
 RETURNING (xmax = 0) AS inserted
 """
 
