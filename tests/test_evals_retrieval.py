@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from martom.evals.retrieval import (
+    ISSUE_102_CASES,
     EvalQuestion,
     case_status,
     forbidden_in_top_k,
@@ -291,3 +292,9 @@ def test_the_repo_eval_set_pins_the_kolica_and_panelan_cases() -> None:
     questions = {q.question: q for q in load_questions(REPO_EVAL_SET)}
     assert 52889522 in questions["kolica"].must_not_include_listing_ids
     assert set(questions["panelan"].expected_listing_ids) == {63996799, 1199211}
+
+
+def test_the_issue_102_cases_are_in_the_repo_eval_set() -> None:
+    # A renamed case would otherwise show "-" in compare_embeddings.py and eval_retrieve.py.
+    ids = {q.id for q in load_questions(REPO_EVAL_SET)}
+    assert set(ISSUE_102_CASES) <= ids
