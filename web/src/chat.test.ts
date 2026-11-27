@@ -43,9 +43,7 @@ describe('chatReducer', () => {
   it('keeps the chips, the product cards and the materials list of the reply', () => {
     const clarify = replay(fixtures.fenceClarify)
     expect(lastReply(clarify).chips?.questions.map((question) => question.id)).toEqual([
-      'corners',
-      'closed',
-      'sides',
+      'layout',
       'posts',
       'color',
     ])

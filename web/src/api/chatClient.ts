@@ -3,17 +3,37 @@
 // for POST /api/chat (#25) implements the same interface, so the screen
 // doesn't change when it lands.
 
+// The request body is mirrored by hand from docs/api/chat-request.schema.json,
+// which the backend generates from src/martom/api/chat_request.py;
+// chatClient.test.ts checks the two agree. Contract: docs/api/chat-events.md.
+
+/** The longest fence side in metres; a longer one gets no BOM (bom/common.py). */
+export const MAX_SIDE_M = 300
+
+/** The customer's answers to a chips event. */
+export type RequestAnswers = {
+  /** Question id → picked option value, for the single questions. */
+  choices: Record<string, string>
+  /**
+   * Length of each fence side in metres, in order, each 0 < x ≤ MAX_SIDE_M.
+   * Empty without a layout question or for "Ne znam" corners. Never a string:
+   * "10 + 5 + 10" is display text only.
+   */
+  sides: number[]
+  /**
+   * The fence goes all the way round; needs at least 3 sides. Corners are
+   * never sent: len(sides) - 1 when open, len(sides) when closed.
+   */
+  closed: boolean
+}
+
 export type ChatRequest = {
   /** The customer's message as typed, or the summary of their chip answers. */
   message: string
   /** From the previous reply's done event; null for the first message. */
-  threadId: string | null
-  /**
-   * The clarify answers, question id → option value (side lengths as
-   * "10 + 5 + 10"), when the message answers a chips event. Provisional:
-   * #25 settles how answers reach the backend.
-   */
-  answers: Record<string, string> | null
+  thread_id: string | null
+  /** Set when the message answers a chips event. */
+  answers: RequestAnswers | null
 }
 
 export interface ChatClient {

@@ -33,7 +33,7 @@ export function pickFakeReply(request: ChatRequest): readonly unknown[] {
   const named = /^fake:(\w+)$/.exec(request.message.trim())?.[1]
   if (named && Object.hasOwn(fixtures, named)) return fixtures[named as keyof typeof fixtures]
   if (request.answers) {
-    return request.answers.posts === 'concrete' ? fixtures.fenceConcretePosts : fixtures.fenceBom
+    return request.answers.choices.posts === 'concrete' ? fixtures.fenceConcretePosts : fixtures.fenceBom
   }
   if (PRODUCT_WORDS.test(request.message)) return fixtures.productQuestion
   return fixtures.fenceClarify

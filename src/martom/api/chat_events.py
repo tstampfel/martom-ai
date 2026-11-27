@@ -119,25 +119,70 @@ class StepEvent(_Event):
 class ChipOption(_Event):
     value: str = Field(description="Sent back in the next message; not shown.")
     label: str
+    short_label: str | None = Field(
+        default=None,
+        description="Shorter text for the 'Vaš projekt' panel, e.g. 'Antracit'; else label.",
+    )
     badge: str | None = Field(default=None, description="e.g. 'po narudžbi, 10–15 dana'.")
     note: str | None = Field(default=None, description="Shown under the question when picked.")
 
 
 class ChipQuestion(_Event):
-    id: str = Field(description="e.g. 'corners', 'posts', 'color'.")
-    text: str
-    # single: pick one option. side_lengths: one number input (metres) per fence side,
-    # as on docs/mockups/*/2-clarify.html; it has no options.
-    kind: Literal["single", "side_lengths"]
+    id: str = Field(description="e.g. 'posts', 'color'; the key of its answer in choices.")
+    text: str = Field(description="The full question, e.g. 'Gdje idu stupovi?'.")
+    label: str | None = Field(
+        default=None, description="Short row label for the 'Vaš projekt' panel, e.g. 'Stupovi'."
+    )
+    # single: pick one option; the answer goes in ChatRequest.answers.choices[id].
+    # layout: the fence layout (docs/mockups/*/2-clarify.html): corner chips, the "Ide
+    # okolo" toggle and one length per side, all drawn by the frontend. It has no
+    # options; the answer goes in ChatRequest.answers.sides and .closed.
+    kind: Literal["single", "layout"]
     options: list[ChipOption]
+    default: str | None = Field(
+        default=None,
+        description="Option value picked before the customer taps, e.g. 'plate' "
+        "(base-plate posts, fence-rules.md). Only for single questions.",
+    )
 
     @model_validator(mode="after")
     def _options_match_kind(self) -> Self:
         if self.kind == "single" and not self.options:
             raise ValueError("a single-choice question needs options")
-        if self.kind == "side_lengths" and self.options:
-            raise ValueError("a side_lengths question has no options")
+        if self.kind == "layout" and self.options:
+            raise ValueError("a layout question has no options")
+        if self.default is not None:
+            if self.kind == "layout":
+                raise ValueError("a layout question has no default")
+            if self.default not in {option.value for option in self.options}:
+                raise ValueError(f"default {self.default!r} is not one of the option values")
         return self
+
+
+class ProjectFact(_Event):
+    """Something the advisor already knows from the message, e.g. Visina: oko 150 cm."""
+
+    label: str = Field(min_length=1, description="e.g. 'Visina'.")
+    value: str = Field(min_length=1, description="e.g. 'oko 150 cm'.")
+
+
+class ProjectSummary(_Event):
+    """What the 'Vaš projekt' panel shows before the customer answers anything."""
+
+    title: str = Field(min_length=1, description="e.g. 'Ograda za dvorište'.")
+    length_m: float | None = Field(
+        default=None,
+        gt=0,
+        description="Total length understood from the message, in metres (e.g. 25). "
+        "A straight fence (0 corners) sends it back as its one side.",
+    )
+    facts: list[ProjectFact] = Field(default_factory=list)
+    panel_order: list[str] = Field(
+        default_factory=list,
+        description="Single question ids in the order the panel lists them, e.g. "
+        "['color', 'posts'] (the panel's order can differ from the form's). Questions "
+        "not listed follow in question order.",
+    )
 
 
 class ChipsEvent(_Event):
@@ -145,7 +190,26 @@ class ChipsEvent(_Event):
 
     type: Literal["chips"] = "chips"
     intro: str | None = Field(default=None, description="e.g. 'Još tri stvari:'.")
+    project: ProjectSummary | None = Field(
+        default=None, description="Title, length and facts for the 'Vaš projekt' panel."
+    )
     questions: list[ChipQuestion] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _questions_fit_together(self) -> Self:
+        ids = [question.id for question in self.questions]
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"question ids must be unique, got {ids}")
+        if sum(1 for question in self.questions if question.kind == "layout") > 1:
+            raise ValueError("a chips event has at most one layout question")
+        if self.project is not None:
+            order = self.project.panel_order
+            singles = {question.id for question in self.questions if question.kind == "single"}
+            if len(set(order)) != len(order) or not set(order) <= singles:
+                raise ValueError(
+                    f"panel_order {order} must name each single question id at most once"
+                )
+        return self
 
 
 # --- product cards ----------------------------------------------------------------
@@ -355,5 +419,12 @@ def write_schema(path: Path = SCHEMA_PATH) -> None:
 
 
 if __name__ == "__main__":
-    # `python -m martom.api.chat_events [path]` regenerates the committed schema.
-    write_schema(Path(sys.argv[1]) if len(sys.argv) > 1 else SCHEMA_PATH)
+    # `python -m martom.api.chat_events` regenerates both committed schemas: the events
+    # and the request body (chat_request.py). With a path it writes only the events.
+    if len(sys.argv) > 1:
+        write_schema(Path(sys.argv[1]))
+    else:
+        from martom.api import chat_request
+
+        write_schema()
+        chat_request.write_schema()

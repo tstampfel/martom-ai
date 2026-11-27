@@ -2,7 +2,8 @@
 // prices: parsing side lengths, counting sides, and turning the customer's
 // answers into the next request and their chat bubble.
 
-import type { ChipsEvent, Price } from './api/events'
+import { MAX_SIDE_M, type RequestAnswers } from './api/chatClient'
+import type { ChipQuestion, ChipsEvent, Price } from './api/events'
 import { copy } from './copy'
 
 /** "53.00" (API) → "53,00 KM" (customer). */
@@ -23,22 +24,18 @@ export function formatMetres(value: number): string {
   return String(Math.round(value * 100) / 100).replace('.', ',')
 }
 
-/** The question whose answer sets how many side fields show. */
-export const CORNERS_QUESTION_ID = 'corners'
-/**
- * The closed-loop flag, sent as its own chip question with the values below
- * (no contract change); the form shows it as the "Ide okolo" toggle.
- */
-export const CLOSED_QUESTION_ID = 'closed'
-const CLOSED_YES = 'yes'
-const CLOSED_NO = 'no'
+/** The corner chips the layout question shows (2-clarify.html); "4+" starts at 4. */
+export const CORNER_OPTIONS = ['0', '1', '2', '3', '4+', 'unknown'] as const
+export type CornerOption = (typeof CORNER_OPTIONS)[number]
 
 export type ClarifyAnswers = {
-  /** Question id → picked option value, for the chip questions (not the closed flag). */
+  /** Question id → picked option value, for the single questions. */
   single: Record<string, string>
+  /** The picked corner chip; null while unanswered. */
+  cornerOption: CornerOption | null
   /**
-   * The number of corners: from the picked option ("4+" starts at 4), raised by
-   * "+ strana". null while unanswered or "Ne znam".
+   * The number of corners: from the picked chip, raised by "+ strana". null
+   * while unanswered or "Ne znam".
    */
   corners: number | null
   /** The fence goes all the way round: as many sides as corners. */
@@ -47,21 +44,24 @@ export type ClarifyAnswers = {
   sides: string[]
 }
 
-function hasQuestion(chips: ChipsEvent, id: string): boolean {
-  return chips.questions.some((question) => question.id === id)
+export function layoutQuestion(chips: ChipsEvent): ChipQuestion | undefined {
+  return chips.questions.find((question) => question.kind === 'layout')
 }
 
-function hasSidesQuestion(chips: ChipsEvent): boolean {
-  return chips.questions.some((question) => question.kind === 'side_lengths')
+/** The total length the advisor understood from the message, if any. */
+function knownLength(chips: ChipsEvent): number | null {
+  return chips.project?.length_m ?? null
 }
 
 /**
- * How many side fields to show (docs/mockups/{web,mobile}/2-clarify.html): none for 0 or
- * unknown corners (the length comes from the message), one per corner for a
- * closed fence, else one more than the corners.
+ * How many side fields to show (docs/mockups/{web,mobile}/2-clarify.html):
+ * none for unknown corners, none for 0 corners when the length is known from
+ * the message (else one), one per corner for a closed fence, else one more
+ * than the corners.
  */
-export function sideCount(corners: number | null, closed: boolean): number {
-  if (corners === null || corners === 0) return 0
+export function sideCount(corners: number | null, closed: boolean, lengthKnown: boolean): number {
+  if (corners === null) return 0
+  if (corners === 0) return lengthKnown ? 0 : 1
   return closed ? corners : corners + 1
 }
 
@@ -74,114 +74,157 @@ export function sidesTotal(sides: readonly string[]): number {
   return sides.reduce((sum, side) => sum + (parseMetres(side) ?? 0), 0)
 }
 
-/** Nothing picked. Without a corners question the side lengths start with one field. */
+/** A side the request accepts: a number above 0 and at most MAX_SIDE_M. */
+function validSide(text: string): number | null {
+  const metres = parseMetres(text)
+  return metres !== null && metres <= MAX_SIDE_M ? metres : null
+}
+
+/**
+ * The one side a straight fence sends without a side field: the length from
+ * the message (0 corners, no field shown). null otherwise.
+ */
+function straightLength(chips: ChipsEvent, answers: ClarifyAnswers): number | null {
+  return answers.corners === 0 && answers.sides.length === 0 ? knownLength(chips) : null
+}
+
+/**
+ * True when a side is longer than MAX_SIDE_M (no BOM for it): a typed side,
+ * or the length from the message sent as the one side of a straight fence.
+ */
+export function hasSideTooLong(chips: ChipsEvent, answers: ClarifyAnswers): boolean {
+  const straight = straightLength(chips, answers)
+  if (straight !== null && straight > MAX_SIDE_M) return true
+  return answers.sides.some((side) => (parseMetres(side) ?? 0) > MAX_SIDE_M)
+}
+
+/** Nothing tapped yet; the options the advisor sent as `default` start picked. */
 export function initialAnswers(chips: ChipsEvent): ClarifyAnswers {
-  const sides = hasSidesQuestion(chips) && !hasQuestion(chips, CORNERS_QUESTION_ID) ? [''] : []
-  return { single: {}, corners: null, closed: false, sides }
+  const single: Record<string, string> = {}
+  for (const question of chips.questions) {
+    if (question.kind === 'single' && question.default !== null) single[question.id] = question.default
+  }
+  return { single, cornerOption: null, corners: null, closed: false, sides: [] }
 }
 
 /** "2" → 2, "4+" → 4, "unknown" → null. */
-function cornersFromValue(value: string): number | null {
-  const corners = Number.parseInt(value, 10)
-  return Number.isNaN(corners) ? null : corners
+function cornersFromOption(option: CornerOption): number | null {
+  return option === 'unknown' ? null : Number.parseInt(option, 10)
 }
 
 export function pickOption(answers: ClarifyAnswers, questionId: string, value: string): ClarifyAnswers {
   return { ...answers, single: { ...answers.single, [questionId]: value } }
 }
 
-/** Picks a corners option; a closed fence needs at least 3 corners. */
-export function pickCorners(chips: ChipsEvent, answers: ClarifyAnswers, value: string): ClarifyAnswers {
-  const corners = cornersFromValue(value)
+/** Picks a corner chip; a closed fence needs at least 3 corners. */
+export function pickCorners(chips: ChipsEvent, answers: ClarifyAnswers, option: CornerOption): ClarifyAnswers {
+  const corners = cornersFromOption(option)
   const closed = corners !== null && corners >= 3 ? answers.closed : false
-  const sides = hasSidesQuestion(chips) ? resizeSides(answers.sides, sideCount(corners, closed)) : []
-  return { ...pickOption(answers, CORNERS_QUESTION_ID, value), corners, closed, sides }
+  const sides = resizeSides(answers.sides, sideCount(corners, closed, knownLength(chips) !== null))
+  return { ...answers, cornerOption: option, corners, closed, sides }
 }
 
 /**
  * Turns "Ide okolo (zatvoreno)" on or off. Closing a fence with fewer than 3
- * (or unknown) corners picks the 4-corner option, as "around the yard"
- * usually means 4.
+ * (or unknown) corners picks "4+", as "around the yard" usually means 4.
  */
 export function toggleClosed(chips: ChipsEvent, answers: ClarifyAnswers): ClarifyAnswers {
   const closed = !answers.closed
   let next = answers
   if (closed && (answers.corners === null || answers.corners < 3)) {
-    const four = chips.questions
-      .find((question) => question.id === CORNERS_QUESTION_ID)
-      ?.options.find((option) => cornersFromValue(option.value) === 4)
-    next = { ...pickOption(answers, CORNERS_QUESTION_ID, four?.value ?? '4'), corners: 4 }
+    next = { ...answers, cornerOption: '4+', corners: 4 }
   }
-  const sides = hasSidesQuestion(chips) ? resizeSides(next.sides, sideCount(next.corners, closed)) : []
+  const sides = resizeSides(next.sides, sideCount(next.corners, closed, knownLength(chips) !== null))
   return { ...next, closed, sides }
 }
 
-/** "+ strana" shows from 4 corners on, or always when there is no corners question. */
-export function canAddSide(chips: ChipsEvent, answers: ClarifyAnswers): boolean {
-  if (!hasQuestion(chips, CORNERS_QUESTION_ID)) return true
+/** "+ strana" shows from 4 corners on. */
+export function canAddSide(answers: ClarifyAnswers): boolean {
   return answers.corners !== null && answers.corners >= 4
 }
 
-/** Adds a side field; with a corners question the corners go up with it, so both stay consistent. */
-export function addSide(chips: ChipsEvent, answers: ClarifyAnswers): ClarifyAnswers {
-  if (!hasQuestion(chips, CORNERS_QUESTION_ID) || answers.corners === null) {
-    return { ...answers, sides: [...answers.sides, ''] }
-  }
+/** Adds a side field and raises the corners with it, so both stay consistent. */
+export function addSide(answers: ClarifyAnswers): ClarifyAnswers {
+  if (answers.corners === null) return answers
   return { ...answers, corners: answers.corners + 1, sides: [...answers.sides, ''] }
 }
 
-/** True when every chip question has an answer and every side field a valid length. */
+/** True when every question has an answer and every side field a valid length. */
 export function isComplete(chips: ChipsEvent, answers: ClarifyAnswers): boolean {
   return chips.questions.every((question) => {
-    if (question.id === CLOSED_QUESTION_ID) return true
-    if (question.kind === 'side_lengths') return answers.sides.every((side) => parseMetres(side) !== null)
+    if (question.kind === 'layout') {
+      return (
+        answers.cornerOption !== null &&
+        answers.sides.every((side) => validSide(side) !== null) &&
+        !hasSideTooLong(chips, answers)
+      )
+    }
     return question.id in answers.single
   })
+}
+
+/**
+ * The answers for the next request (see RequestAnswers): the picked option
+ * values, the sides as numbers and the closed flag. A straight fence whose
+ * length came from the message sends that length as its one side.
+ */
+export function requestAnswers(chips: ChipsEvent, answers: ClarifyAnswers): RequestAnswers {
+  const choices: Record<string, string> = {}
+  for (const question of chips.questions) {
+    if (question.kind === 'single' && question.id in answers.single) choices[question.id] = answers.single[question.id]
+  }
+  if (!layoutQuestion(chips)) return { choices, sides: [], closed: false }
+  const straight = straightLength(chips, answers)
+  if (straight !== null) return { choices, sides: [straight], closed: false }
+  const sides = answers.sides.map((side) => validSide(side)).filter((side) => side !== null)
+  return { choices, sides, closed: answers.closed && sides.length >= 3 }
 }
 
 function sidesText(sides: readonly string[]): string {
   return sides.map((side) => side.trim()).join(' + ')
 }
 
-/**
- * Question id → value for the next request (see ChatRequest.answers): the
- * corners as the actual count when known, the closed flag as "yes"/"no",
- * the sides joined (left out when none were asked).
- */
-export function answersForRequest(chips: ChipsEvent, answers: ClarifyAnswers): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const question of chips.questions) {
-    if (question.id === CLOSED_QUESTION_ID) {
-      out[question.id] = answers.closed ? CLOSED_YES : CLOSED_NO
-    } else if (question.kind === 'side_lengths') {
-      if (answers.sides.length > 0) out[question.id] = sidesText(answers.sides)
-    } else if (question.id === CORNERS_QUESTION_ID && answers.corners !== null) {
-      out[question.id] = String(answers.corners)
-    } else if (question.id in answers.single) {
-      out[question.id] = answers.single[question.id]
-    }
-  }
-  return out
-}
-
 /** "2 kuta", "4 kuta, zatvoreno", "Kutovi: ne znam"; null before the corners are picked. */
 export function cornersText(answers: ClarifyAnswers): string | null {
   const { clarify } = copy.chat
-  if (answers.corners === null) {
-    return CORNERS_QUESTION_ID in answers.single ? clarify.cornersUnknown : null
-  }
+  if (answers.cornerOption === null) return null
+  if (answers.corners === null) return clarify.cornersUnknown
   const text = clarify.corners(answers.corners)
   return answers.closed ? `${text}${clarify.closedSuffix}` : text
+}
+
+/** The "Kutovi" value in the "Vaš projekt" panel: "2", "4 · zatvoreno", "Ne znam"; null before a pick. */
+export function panelCornersText(answers: ClarifyAnswers): string | null {
+  const { clarify, project } = copy.chat
+  if (answers.cornerOption === null) return null
+  if (answers.corners === null) return clarify.cornerUnknown
+  return answers.closed ? `${answers.corners}${project.closedSuffix}` : String(answers.corners)
+}
+
+/**
+ * The single questions in panel row order: those in `project.panel_order`
+ * first, in that order, then the rest in question order. The canvas lists
+ * Boja before Stupovi though the form asks posts first.
+ */
+export function panelQuestions(chips: ChipsEvent): ChipQuestion[] {
+  const singles = chips.questions.filter((question) => question.kind === 'single')
+  const order = chips.project?.panel_order ?? []
+  const rank = (question: ChipQuestion) => {
+    const index = order.indexOf(question.id)
+    return index === -1 ? order.length : index
+  }
+  // Array.prototype.sort is stable, so unlisted questions keep their order.
+  return [...singles].sort((a, b) => rank(a) - rank(b))
 }
 
 /** The customer's bubble: the corners, the sides and the picked labels, in question order. */
 export function answerSummary(chips: ChipsEvent, answers: ClarifyAnswers): string {
   return chips.questions
-    .map((question) => {
-      if (question.id === CLOSED_QUESTION_ID) return null
-      if (question.id === CORNERS_QUESTION_ID) return cornersText(answers)
-      if (question.kind === 'side_lengths') return answers.sides.length > 0 ? `${sidesText(answers.sides)} m` : null
-      return question.options.find((option) => option.value === answers.single[question.id])?.label ?? null
+    .flatMap((question) => {
+      if (question.kind === 'layout') {
+        return [cornersText(answers), answers.sides.length > 0 ? `${sidesText(answers.sides)} m` : null]
+      }
+      return [question.options.find((option) => option.value === answers.single[question.id])?.label ?? null]
     })
     .filter((part) => part !== null)
     .join(' · ')
