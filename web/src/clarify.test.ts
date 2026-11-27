@@ -3,16 +3,19 @@ import { fixtures } from './api/fixtures'
 import type { ChipsEvent } from './api/events'
 import {
   addSide,
-  answersForRequest,
   answerSummary,
   canAddSide,
   formatMetres,
   formatPrice,
+  hasSideTooLong,
   initialAnswers,
   isComplete,
+  panelCornersText,
+  panelQuestions,
   parseMetres,
   pickCorners,
   pickOption,
+  requestAnswers,
   resizeSides,
   sideCount,
   sidesTotal,
@@ -22,17 +25,15 @@ import {
 
 const chips = fixtures.fenceClarify.find((event): event is ChipsEvent => event.type === 'chips')!
 
-/** A chips event with only the side lengths (no corners question). */
-const sidesOnly: ChipsEvent = {
-  type: 'chips',
-  intro: null,
-  questions: [{ id: 'sides', text: 'Dužina svake strane (m)', kind: 'side_lengths', options: [] }],
-}
+/** The same questions, but the advisor didn't understand a length from the message. */
+const noLength: ChipsEvent = { ...chips, project: null }
+
+/** A chips event without a layout question. */
+const colorOnly: ChipsEvent = { ...chips, project: null, questions: chips.questions.filter((q) => q.id === 'color') }
 
 function answered(): ClarifyAnswers {
   let answers = pickCorners(chips, initialAnswers(chips), '2')
   answers = { ...answers, sides: ['10', '5', '10'] }
-  answers = pickOption(answers, 'posts', 'plate')
   return pickOption(answers, 'color', 'antracit')
 }
 
@@ -62,17 +63,21 @@ describe('parseMetres and formatMetres', () => {
 
 describe('sideCount', () => {
   it('has one more side than corners for an open fence', () => {
-    expect(sideCount(1, false)).toBe(2)
-    expect(sideCount(2, false)).toBe(3)
+    expect(sideCount(1, false, true)).toBe(2)
+    expect(sideCount(2, false, true)).toBe(3)
   })
 
   it('has as many sides as corners when the fence goes all the way round', () => {
-    expect(sideCount(4, true)).toBe(4)
+    expect(sideCount(4, true, true)).toBe(4)
   })
 
-  it('asks for no sides with 0 or unknown corners (the length comes from the message)', () => {
-    expect(sideCount(0, false)).toBe(0)
-    expect(sideCount(null, false)).toBe(0)
+  it('asks for no sides with unknown corners, or 0 corners when the length is known', () => {
+    expect(sideCount(0, false, true)).toBe(0)
+    expect(sideCount(null, false, true)).toBe(0)
+  })
+
+  it('asks for the one side of a straight fence when the length is not known', () => {
+    expect(sideCount(0, false, false)).toBe(1)
   })
 })
 
@@ -96,21 +101,25 @@ describe('initialAnswers', () => {
     expect(initialAnswers(chips).sides).toEqual([])
   })
 
-  it('shows one side field when there is no corners question', () => {
-    expect(initialAnswers(sidesOnly).sides).toEqual([''])
+  it('preselects the default option the advisor sent (base-plate posts)', () => {
+    expect(initialAnswers(chips).single).toEqual({ posts: 'plate' })
   })
 })
 
 describe('pickCorners', () => {
   it('shows one field per side', () => {
     const answers = pickCorners(chips, initialAnswers(chips), '2')
-    expect(answers).toMatchObject({ corners: 2, sides: ['', '', ''], single: { corners: '2' } })
+    expect(answers).toMatchObject({ cornerOption: '2', corners: 2, sides: ['', '', ''] })
   })
 
-  it('hides the side fields for "Ne znam" and for 0', () => {
+  it('hides the side fields for "Ne znam" and for 0 with a known length', () => {
     const two = pickCorners(chips, initialAnswers(chips), '2')
     expect(pickCorners(chips, two, 'unknown')).toMatchObject({ corners: null, sides: [] })
     expect(pickCorners(chips, two, '0')).toMatchObject({ corners: 0, sides: [] })
+  })
+
+  it('asks for one side at 0 corners when the length is not known', () => {
+    expect(pickCorners(noLength, initialAnswers(noLength), '0')).toMatchObject({ corners: 0, sides: [''] })
   })
 
   it('starts "4+" at 4 corners', () => {
@@ -131,9 +140,9 @@ describe('toggleClosed', () => {
   })
 
   it('needs at least 3 corners, so it picks "4+" (4) when fewer or unknown', () => {
-    for (const value of ['unknown', '1']) {
+    for (const value of ['unknown', '1'] as const) {
       const answers = toggleClosed(chips, pickCorners(chips, initialAnswers(chips), value))
-      expect(answers).toMatchObject({ closed: true, corners: 4, single: { corners: '4+' } })
+      expect(answers).toMatchObject({ closed: true, corners: 4, cornerOption: '4+' })
       expect(answers.sides).toHaveLength(4)
     }
   })
@@ -145,65 +154,94 @@ describe('toggleClosed', () => {
 })
 
 describe('addSide', () => {
-  it('is offered only from 4 corners, or when there is no corners question', () => {
-    expect(canAddSide(chips, pickCorners(chips, initialAnswers(chips), '2'))).toBe(false)
-    expect(canAddSide(chips, pickCorners(chips, initialAnswers(chips), '4+'))).toBe(true)
-    expect(canAddSide(sidesOnly, initialAnswers(sidesOnly))).toBe(true)
+  it('is offered only from 4 corners', () => {
+    expect(canAddSide(pickCorners(chips, initialAnswers(chips), '2'))).toBe(false)
+    expect(canAddSide(pickCorners(chips, initialAnswers(chips), '4+'))).toBe(true)
   })
 
-  it('raises the corners with the new side, so the request stays consistent', () => {
-    const answers = addSide(chips, pickCorners(chips, initialAnswers(chips), '4+'))
-    expect(answers).toMatchObject({ corners: 5, single: { corners: '4+' } })
+  it('raises the corners with the new side, so sides and corners agree', () => {
+    const answers = addSide(pickCorners(chips, initialAnswers(chips), '4+'))
+    expect(answers).toMatchObject({ corners: 5, cornerOption: '4+' })
     expect(answers.sides).toHaveLength(6)
-    expect(answersForRequest(chips, { ...answers, sides: ['1', '1', '1', '1', '1', '1'] })).toMatchObject({
-      corners: '5',
-      sides: '1 + 1 + 1 + 1 + 1 + 1',
-    })
-  })
-
-  it('only adds a field when there is no corners question', () => {
-    expect(addSide(sidesOnly, initialAnswers(sidesOnly))).toMatchObject({ corners: null, sides: ['', ''] })
   })
 })
 
 describe('isComplete', () => {
-  it('needs every chip question answered and every side filled', () => {
+  it('needs every chip question answered, the corners picked and every side filled', () => {
     expect(isComplete(chips, answered())).toBe(true)
+    expect(isComplete(chips, initialAnswers(chips))).toBe(false)
     expect(isComplete(chips, pickCorners(chips, initialAnswers(chips), '2'))).toBe(false)
     expect(isComplete(chips, { ...answered(), sides: ['10', '', '10'] })).toBe(false)
   })
 
   it('completes with "Ne znam" corners and no side lengths', () => {
-    const answers = pickCorners(chips, answered(), 'unknown')
-    expect(isComplete(chips, answers)).toBe(true)
+    expect(isComplete(chips, pickCorners(chips, answered(), 'unknown'))).toBe(true)
   })
 
-  it('does not need the closed toggle to be touched', () => {
-    expect(answered().closed).toBe(false)
-    expect(isComplete(chips, answered())).toBe(true)
+  it('refuses a side over 300 m (the cap rule)', () => {
+    const tooLong = { ...answered(), sides: ['10', '300,5', '10'] }
+    expect(isComplete(chips, tooLong)).toBe(false)
+    expect(hasSideTooLong(chips, tooLong)).toBe(true)
+    expect(isComplete(chips, { ...answered(), sides: ['10', '300', '10'] })).toBe(true)
+    expect(hasSideTooLong(chips, answered())).toBe(false)
+  })
+
+  it('refuses a straight fence whose length from the message is over 300 m', () => {
+    const long = (length_m: number): ChipsEvent => ({ ...chips, project: { ...chips.project!, length_m } })
+    const straight = (event: ChipsEvent) => pickCorners(event, answered(), '0')
+    expect(isComplete(long(300), straight(long(300)))).toBe(true)
+    expect(hasSideTooLong(long(300), straight(long(300)))).toBe(false)
+    expect(requestAnswers(long(300), straight(long(300))).sides).toEqual([300])
+    expect(isComplete(long(300.5), straight(long(300.5)))).toBe(false)
+    expect(hasSideTooLong(long(300.5), straight(long(300.5)))).toBe(true)
+  })
+
+  it('accepts a long total when the fence has corners', () => {
+    const long: ChipsEvent = { ...chips, project: { ...chips.project!, length_m: 400 } }
+    const answers = { ...pickCorners(long, answered(), '1'), sides: ['200', '200'] }
+    expect(isComplete(long, answers)).toBe(true)
+    expect(hasSideTooLong(long, answers)).toBe(false)
+  })
+
+  it('needs no layout answer without a layout question', () => {
+    expect(isComplete(colorOnly, pickOption(initialAnswers(colorOnly), 'color', 'zelena'))).toBe(true)
   })
 })
 
-describe('answersForRequest', () => {
-  it('sends option values, the corners count, the closed flag and the side lengths joined', () => {
-    expect(answersForRequest(chips, answered())).toEqual({
-      corners: '2',
-      closed: 'no',
-      sides: '10 + 5 + 10',
-      posts: 'plate',
-      color: 'antracit',
+describe('requestAnswers', () => {
+  it('sends the choices, the sides as numbers and the closed flag', () => {
+    expect(requestAnswers(chips, answered())).toEqual({
+      choices: { posts: 'plate', color: 'antracit' },
+      sides: [10, 5, 10],
+      closed: false,
     })
   })
 
-  it('sends "unknown" corners and no sides for "Ne znam"', () => {
-    const request = answersForRequest(chips, pickCorners(chips, answered(), 'unknown'))
-    expect(request).toMatchObject({ corners: 'unknown', closed: 'no' })
-    expect(request).not.toHaveProperty('sides')
+  it('reads decimal commas', () => {
+    expect(requestAnswers(chips, { ...answered(), sides: ['7,5', '5', '10'] }).sides).toEqual([7.5, 5, 10])
   })
 
-  it('sends closed "yes" when the fence goes round', () => {
-    const answers = toggleClosed(chips, pickCorners(chips, answered(), '4+'))
-    expect(answersForRequest(chips, answers)).toMatchObject({ corners: '4', closed: 'yes' })
+  it('sends no sides for "Ne znam"', () => {
+    expect(requestAnswers(chips, pickCorners(chips, answered(), 'unknown'))).toMatchObject({ sides: [], closed: false })
+  })
+
+  it('sends the known length as the one side of a straight fence', () => {
+    expect(requestAnswers(chips, pickCorners(chips, answered(), '0')).sides).toEqual([25])
+    const typed = { ...pickCorners(noLength, answered(), '0'), sides: ['18'] }
+    expect(requestAnswers(noLength, typed).sides).toEqual([18])
+  })
+
+  it('sends closed true with as many sides as corners when the fence goes round', () => {
+    const closed = toggleClosed(chips, pickCorners(chips, answered(), '4+'))
+    expect(requestAnswers(chips, { ...closed, sides: ['10', '5', '10', '5'] })).toMatchObject({
+      sides: [10, 5, 10, 5],
+      closed: true,
+    })
+  })
+
+  it('sends no layout without a layout question', () => {
+    const answers = pickOption(initialAnswers(colorOnly), 'color', 'zelena')
+    expect(requestAnswers(colorOnly, answers)).toEqual({ choices: { color: 'zelena' }, sides: [], closed: false })
   })
 })
 
@@ -220,5 +258,28 @@ describe('answerSummary', () => {
     expect(answerSummary(chips, pickCorners(chips, answered(), 'unknown'))).toBe(
       'Kutovi: ne znam · Na beton, s pločicom · Antracit (RAL 7016)',
     )
+  })
+})
+
+describe('panelCornersText', () => {
+  it('reads like the mockup panel: "2", "4 · zatvoreno", "Ne znam"', () => {
+    expect(panelCornersText(initialAnswers(chips))).toBeNull()
+    expect(panelCornersText(answered())).toBe('2')
+    expect(panelCornersText(toggleClosed(chips, answered()))).toBe('4 · zatvoreno')
+    expect(panelCornersText(pickCorners(chips, answered(), 'unknown'))).toBe('Ne znam')
+  })
+})
+
+describe('panelQuestions', () => {
+  it('follows project.panel_order: Boja before Stupovi, as on the canvas', () => {
+    expect(panelQuestions(chips).map((q) => q.id)).toEqual(['color', 'posts'])
+  })
+
+  it('keeps question order without a panel order, and puts unlisted questions last', () => {
+    expect(panelQuestions(noLength).map((q) => q.id)).toEqual(['posts', 'color'])
+    const partial: ChipsEvent = { ...chips, project: { ...chips.project!, panel_order: ['color'] } }
+    expect(panelQuestions(partial).map((q) => q.id)).toEqual(['color', 'posts'])
+    const none: ChipsEvent = { ...chips, project: { ...chips.project!, panel_order: [] } }
+    expect(panelQuestions(none).map((q) => q.id)).toEqual(['posts', 'color'])
   })
 })

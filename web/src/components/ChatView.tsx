@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { BomRecalculator } from '../api/bomRecalculator'
-import type { ChatClient } from '../api/chatClient'
+import type { ChatClient, RequestAnswers } from '../api/chatClient'
 import type { ChatError, Turn } from '../chat'
-import { answerSummary, answersForRequest, initialAnswers, type ClarifyAnswers } from '../clarify'
+import { answerSummary, initialAnswers, requestAnswers, type ClarifyAnswers } from '../clarify'
 import { copy } from '../copy'
 import { useMediaQuery } from '../hooks'
 import { useBomEditor } from '../useBomEditor'
@@ -79,14 +79,14 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
     setAnswersState((current) => update(current ?? initialAnswers(chips)))
   }
 
-  function sendMessage(text: string, requestAnswers: Record<string, string> | null = null) {
+  function sendMessage(text: string, answersBody: RequestAnswers | null = null) {
     setAnswersState(null)
-    send(text, requestAnswers)
+    send(text, answersBody)
   }
 
   function submitAnswers() {
     if (!openChips || !answers) return
-    sendMessage(answerSummary(openChips, answers), answersForRequest(openChips, answers))
+    sendMessage(answerSummary(openChips, answers), requestAnswers(openChips, answers))
   }
 
   return (
@@ -110,7 +110,7 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
         </button>
       </section>
       {openChips && answers ? (
-        <ProjectPanel title={state.turns[0].text} chips={openChips} answers={answers} />
+        <ProjectPanel fallbackTitle={state.turns[0].text} chips={openChips} answers={answers} />
       ) : null}
       {bomInPanel ? bomCard('panel') : null}
     </div>

@@ -1,6 +1,7 @@
 // All customer-facing Bosnian text lives here, so wording can be reviewed
 // and changed in one place. Text comes from docs/mockups/.
 
+import { MAX_SIDE_M } from './api/chatClient'
 import { config } from './config'
 
 const shop = {
@@ -127,8 +128,12 @@ export const copy = {
     },
     clarify: {
       side: (n: number) => `Strana ${n}`,
-      // Shown under the corners chips for a question with id "closed".
+      // The layout question: corner chips 0–3 and "4+" show as numbers, then this one.
+      cornerUnknown: 'Ne znam',
+      // Shown under the corner chips.
       closedToggle: 'Ide okolo (zatvoreno)',
+      sidesLabel: 'Dužina svake strane (m)',
+      sideTooLong: `Jedna strana može imati najviše ${MAX_SIDE_M} m. Za veću ogradu nazovite Martom: ${shop.phone}.`,
       // The corners in the customer's bubble and the "Vaš projekt" panel.
       corners: (n: number) => (n === 0 ? 'bez kutova' : `${n} ${cornerWord(n)}`),
       cornersUnknown: 'Kutovi: ne znam',
@@ -151,6 +156,8 @@ export const copy = {
       label: 'Vaš projekt',
       length: 'Dužina',
       sides: 'Strane',
+      // After the corners in the panel: "4 · zatvoreno".
+      closedSuffix: ' · zatvoreno',
       unanswered: '—',
       hint: 'Promijenite bilo šta u razgovoru — popis materijala se ponovo izračuna.',
     },
