@@ -22,6 +22,7 @@ from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder
 from martom.evals.retrieval import EvalQuestion, run_search_eval, score_run
+from martom.extract.store import save_products
 from martom.search.hybrid import search_hybrid
 from martom.search.keyword import SearchFilters, search_keyword
 from martom.search.manual import manual_search_text, sync_manual_products
@@ -29,7 +30,7 @@ from martom.search.query_parser import ParsedQuery, QueryParser
 from martom.search.rerank import RerankScore
 from martom.search.retrieve import retrieve
 from martom.search.vector import search_vector
-from search_catalogue import TIPLO, build_catalogue
+from search_catalogue import TIPLO, add_listing, build_catalogue, synthetic
 
 pytestmark = pytest.mark.anyio
 
@@ -40,6 +41,8 @@ CONCEPTS = {
     "stup": ("stup", "stub"),
 }
 ANCHOR = "anchor_m8x70"
+SAME_NAME = 900301  # a synthetic listing named like the manual anchor
+M8X80 = 900302  # a synthetic M8x80 anchor listing
 
 
 class ConceptEmbeddings(Embeddings):
@@ -116,11 +119,39 @@ async def conn(database_url: str, embedder: Embedder) -> AsyncIterator[psycopg.A
 # --- the index -------------------------------------------------------------------------
 
 
-def test_search_text_has_the_name_as_written_and_with_a_plain_x() -> None:
+def test_search_text_is_the_name_plus_the_plain_x_spelling_of_its_sizes() -> None:
     # unaccent turns "×" into "*", so "M8×70" alone would never match a customer's "M8x70".
-    text = manual_search_text(product())
-    assert "Anker M8×70" in text
-    assert "Anker M8x70" in text
+    # Each other word is written once, so it weighs no more than in a listing (R1-0).
+    assert manual_search_text(product()) == "Anker M8×70 M8x70"
+    assert manual_search_text(product(name="Anker M8 70")) == "Anker M8 70"
+
+
+async def test_a_manual_name_word_weighs_the_same_as_in_a_listing(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # Keyword search merges manual and listing scores directly, so the same word must score
+    # the same in both (R1-0: a repeated name doubled "anker").
+    await add_listing(conn, SAME_NAME, "Anker M8x70", "anker-m8x70-900301")
+    await save_products(conn, [synthetic(SAME_NAME, "Anker M8x70", "Anker M8x70")])
+    scores = {
+        (hit.source, hit.listing_id or hit.manual_key): hit.score
+        for hit in await search_keyword(conn, "anker", limit=30)
+    }
+    assert scores[("manual", ANCHOR)] <= scores[("olx", SAME_NAME)]
+
+
+async def test_the_manual_m8x70_anchor_does_not_outrank_an_m8x80_listing_for_m8x80(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    await add_listing(conn, M8X80, "Anker M8x80", "anker-m8x80-900302")
+    await save_products(conn, [synthetic(M8X80, "anker", "Anker M8x80")])
+    await run_embedding(conn, embedder)
+    for hits in (
+        await search_keyword(conn, "ankeri M8x80 za stupove panelne ograde", limit=30),
+        await search_hybrid(conn, "ankeri M8x80 za stupove panelne ograde", embedder=embedder),
+    ):
+        keys = [hit.key for hit in hits]
+        assert keys.index(("olx", M8X80)) < keys.index(("manual", ANCHOR))
 
 
 async def test_sync_adds_changes_skips_and_removes(database_url: str) -> None:
@@ -248,7 +279,7 @@ async def test_retrieve_reranks_the_manual_anchor_by_its_search_text(
     result = await retrieve(
         conn, "Anker M8x70 za stup sa stopom", embedder=embedder, parser=None, reranker=reranker
     )
-    assert any("Anker M8x70" in document for document in reranker.documents)
+    assert "Anker M8×70 M8x70" in reranker.documents
     first = result.hits[0]
     assert (first.source, first.manual_key, first.listing_id, first.url) == (
         "manual",
