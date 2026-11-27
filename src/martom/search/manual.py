@@ -8,8 +8,9 @@ key instead of a listing id, and never have an OLX link.
 
 `sync_manual_products` upserts one row per entry, skips entries whose content hash is
 unchanged and deletes rows whose entry is gone, all in one transaction, so running it twice
-changes nothing. `martom load-manual-products` runs it alone, and `martom embed` runs it
-before embedding, so the nightly chain keeps search in step with a newly deployed TOML.
+changes nothing. `martom load-manual-products` runs it alone, `martom migrate` runs it after
+the migrations (so a deploy that runs migrate updates search at once), and `martom embed`
+runs it before embedding, so the nightly chain keeps search in step with the TOML too.
 
 The price is copied only for the search price filter. A price shown to a customer comes
 from the TOML (grounding), never from this table.
