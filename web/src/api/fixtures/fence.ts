@@ -45,56 +45,46 @@ export const fenceClarify: ChatEvent[] = [
   {
     type: 'chips',
     intro: 'Još tri stvari:',
+    // The "Vaš projekt" panel (web/2-clarify.html) before any answer.
+    project: {
+      title: 'Ograda za dvorište',
+      length_m: 25,
+      facts: [{ label: 'Visina', value: 'oko 150 cm' }],
+    },
     questions: [
-      {
-        id: 'corners',
-        text: 'Koliko ima kutova?',
-        kind: 'single',
-        options: [
-          { value: '0', label: '0', badge: null, note: null },
-          { value: '1', label: '1', badge: null, note: null },
-          { value: '2', label: '2', badge: null, note: null },
-          { value: '3', label: '3', badge: null, note: null },
-          { value: '4+', label: '4+', badge: null, note: null },
-          { value: 'unknown', label: 'Ne znam', badge: null, note: null },
-        ],
-      },
-      // The closed-loop flag as its own chip question (no contract change);
-      // the UI shows a question with this id as the "Ide okolo" toggle.
-      {
-        id: 'closed',
-        text: 'Ide li ograda okolo (zatvoreno)?',
-        kind: 'single',
-        options: [
-          { value: 'no', label: 'Ne, otvorena', badge: null, note: null },
-          { value: 'yes', label: 'Ide okolo (zatvoreno)', badge: null, note: null },
-        ],
-      },
-      { id: 'sides', text: 'Dužina svake strane (m)', kind: 'side_lengths', options: [] },
+      // Corners, the "Ide okolo" toggle and the side fields; the answer goes
+      // back as answers.sides (numbers) and answers.closed.
+      { id: 'layout', text: 'Koliko ima kutova?', label: 'Kutovi', kind: 'layout', options: [], default: null },
       {
         id: 'posts',
         text: 'Gdje idu stupovi?',
+        label: 'Stupovi',
         kind: 'single',
         options: [
-          { value: 'plate', label: 'Na beton, s pločicom', badge: null, note: null },
+          { value: 'plate', label: 'Na beton, s pločicom', short_label: null, badge: null, note: null },
           {
             value: 'concrete',
             label: 'U zemlju (betoniram)',
+            short_label: 'U zemlju · po upitu',
             badge: 'po upitu · po narudžbi',
             note: 'Stupovi za betoniranje su po upitu i rade se po narudžbi, 10–15 dana. Beton ne prodajemo, nabavljate ga sami.',
           },
-          { value: 'unknown', label: 'Ne znam', badge: null, note: null },
+          { value: 'unknown', label: 'Ne znam', short_label: null, badge: null, note: null },
         ],
+        // Base-plate posts are the default (fence-rules.md).
+        default: 'plate',
       },
       {
         id: 'color',
         text: 'Koja boja?',
+        label: 'Boja',
         kind: 'single',
         options: [
-          { value: 'antracit', label: 'Antracit (RAL 7016)', badge: null, note: null },
-          { value: 'zelena', label: 'Zelena (RAL 6005)', badge: null, note: null },
-          { value: 'any', label: 'Svejedno', badge: null, note: null },
+          { value: 'antracit', label: 'Antracit (RAL 7016)', short_label: 'Antracit', badge: null, note: null },
+          { value: 'zelena', label: 'Zelena (RAL 6005)', short_label: 'Zelena', badge: null, note: null },
+          { value: 'any', label: 'Svejedno', short_label: null, badge: null, note: null },
         ],
+        default: null,
       },
     ],
   },

@@ -1,17 +1,18 @@
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent } from 'react'
 import type { ChipQuestion, ChipsEvent } from '../api/events'
 import {
   addSide,
   canAddSide,
-  CLOSED_QUESTION_ID,
-  CORNERS_QUESTION_ID,
+  CORNER_OPTIONS,
   formatMetres,
+  hasSideTooLong,
   isComplete,
   pickCorners,
   pickOption,
   sidesTotal,
   toggleClosed,
   type ClarifyAnswers,
+  type CornerOption,
 } from '../clarify'
 import { copy } from '../copy'
 import { ArrowIcon } from './Icons'
@@ -31,21 +32,16 @@ type ClarifyFormProps = {
 }
 
 /**
- * The advisor's clarify questions as tappable chips (2-clarify.html). As in
- * the mockups, the corners answer sets the side fields (none for 0 or "Ne
- * znam"), a question with id "closed" shows as the "Ide okolo (zatvoreno)"
- * toggle under the corners, and "+ strana" (from 4 corners) raises the
- * corners with each side. "Prikaži prijedlog" sends the answers once all are given.
+ * The advisor's clarify questions as tappable chips (2-clarify.html). The
+ * layout question shows the corner chips, the "Ide okolo (zatvoreno)" toggle
+ * and the side fields (none for "Ne znam", none for 0 corners when the length
+ * came from the message), and "+ strana" (from 4 corners) raises the corners
+ * with each side. Options the advisor sent as `default` start picked.
+ * "Prikaži prijedlog" sends the answers once all are given.
  */
 export function ClarifyForm({ chips, text, answers, onChange, onSubmit, canSubmit }: ClarifyFormProps) {
   const complete = isComplete(chips, answers)
-  const hasClosedToggle = chips.questions.some((question) => question.id === CLOSED_QUESTION_ID)
-
-  function pick(question: ChipQuestion, value: string) {
-    onChange((current) =>
-      question.id === CORNERS_QUESTION_ID ? pickCorners(chips, current, value) : pickOption(current, question.id, value),
-    )
-  }
+  const tooLong = hasSideTooLong(answers)
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -53,56 +49,107 @@ export function ClarifyForm({ chips, text, answers, onChange, onSubmit, canSubmi
   }
 
   const heading = [text.trim(), chips.intro].filter(Boolean).join(' ')
-  // Numbered like the mockups: the chip questions only (the side lengths and
-  // the closed toggle belong to the corners).
-  const numbered = chips.questions
-    .filter((question) => question.kind === 'single' && question.id !== CLOSED_QUESTION_ID)
-    .map((question) => question.id)
 
   return (
     <form className="clarify" onSubmit={handleSubmit}>
       {heading ? <p className="clarify__heading">{heading}</p> : null}
-      {chips.questions.map((question) => {
-        if (question.id === CLOSED_QUESTION_ID) return null
-        if (question.kind === 'side_lengths') {
-          return answers.sides.length > 0 ? (
-            <SidesQuestion
+      {chips.questions.map((question, index) => {
+        if (question.kind === 'layout') {
+          return (
+            <LayoutQuestion
               key={question.id}
+              number={index + 1}
               question={question}
-              sides={answers.sides}
-              canAdd={canAddSide(chips, answers)}
-              onChange={(sides) => onChange((current) => ({ ...current, sides }))}
-              onAdd={() => onChange((current) => addSide(chips, current))}
+              answers={answers}
+              onPick={(option) => onChange((current) => pickCorners(chips, current, option))}
+              onToggleClosed={() => onChange((current) => toggleClosed(chips, current))}
+              onSides={(sides) => onChange((current) => ({ ...current, sides }))}
+              onAddSide={() => onChange((current) => addSide(current))}
             />
-          ) : null
+          )
         }
         return (
           <SingleQuestion
             key={question.id}
-            number={numbered.indexOf(question.id) + 1}
+            number={index + 1}
             question={question}
             picked={answers.single[question.id]}
-            onPick={(value) => pick(question, value)}
-          >
-            {question.id === CORNERS_QUESTION_ID && hasClosedToggle ? (
-              <button
-                type="button"
-                className={answers.closed ? 'opt opt--on clarify__closed' : 'opt clarify__closed'}
-                aria-pressed={answers.closed}
-                onClick={() => onChange((current) => toggleClosed(chips, current))}
-              >
-                {copy.chat.clarify.closedToggle}
-              </button>
-            ) : null}
-          </SingleQuestion>
+            onPick={(value) => onChange((current) => pickOption(current, question.id, value))}
+          />
         )
       })}
       <button type="submit" className="clarify__submit" disabled={!complete || !canSubmit}>
         {copy.chat.clarify.submit}
         <ArrowIcon />
       </button>
-      {complete ? null : <p className="clarify__hint">{copy.chat.clarify.incomplete}</p>}
+      {tooLong ? (
+        <p className="clarify__hint">{copy.chat.clarify.sideTooLong}</p>
+      ) : complete ? null : (
+        <p className="clarify__hint">{copy.chat.clarify.incomplete}</p>
+      )}
     </form>
+  )
+}
+
+function optionClass(label: string, on: boolean, twoLines = false): string {
+  return ['opt', label.length <= 2 ? 'opt--num' : '', twoLines ? 'opt--two' : '', on ? 'opt--on' : '']
+    .filter(Boolean)
+    .join(' ')
+}
+
+function LayoutQuestion({
+  number,
+  question,
+  answers,
+  onPick,
+  onToggleClosed,
+  onSides,
+  onAddSide,
+}: {
+  number: number
+  question: ChipQuestion
+  answers: ClarifyAnswers
+  onPick: (option: CornerOption) => void
+  onToggleClosed: () => void
+  onSides: (sides: string[]) => void
+  onAddSide: () => void
+}) {
+  const { clarify } = copy.chat
+  return (
+    <fieldset className="clarify__question">
+      <legend className="clarify__label">
+        <span aria-hidden="true">{number}. </span>
+        {question.text}
+      </legend>
+      <div className="clarify__options">
+        {CORNER_OPTIONS.map((option) => {
+          const label = option === 'unknown' ? clarify.cornerUnknown : option
+          const on = option === answers.cornerOption
+          return (
+            <button
+              key={option}
+              type="button"
+              className={optionClass(label, on)}
+              aria-pressed={on}
+              onClick={() => onPick(option)}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      <button
+        type="button"
+        className={answers.closed ? 'opt opt--on clarify__closed' : 'opt clarify__closed'}
+        aria-pressed={answers.closed}
+        onClick={onToggleClosed}
+      >
+        {clarify.closedToggle}
+      </button>
+      {answers.sides.length > 0 ? (
+        <SidesFields sides={answers.sides} canAdd={canAddSide(answers)} onChange={onSides} onAdd={onAddSide} />
+      ) : null}
+    </fieldset>
   )
 }
 
@@ -111,14 +158,11 @@ function SingleQuestion({
   question,
   picked,
   onPick,
-  children,
 }: {
   number: number
   question: ChipQuestion
   picked: string | undefined
   onPick: (value: string) => void
-  /** Extra controls under the options (the closed toggle). */
-  children?: ReactNode
 }) {
   const note = question.options.find((option) => option.value === picked)?.note
   return (
@@ -132,14 +176,7 @@ function SingleQuestion({
           <button
             key={option.value}
             type="button"
-            className={[
-              'opt',
-              option.label.length <= 2 ? 'opt--num' : '',
-              option.badge ? 'opt--two' : '',
-              option.value === picked ? 'opt--on' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
+            className={optionClass(option.label, option.value === picked, option.badge !== null)}
             aria-pressed={option.value === picked}
             onClick={() => onPick(option.value)}
           >
@@ -148,20 +185,17 @@ function SingleQuestion({
           </button>
         ))}
       </div>
-      {children}
       {note ? <p className="clarify__note">{note}</p> : null}
     </fieldset>
   )
 }
 
-function SidesQuestion({
-  question,
+function SidesFields({
   sides,
   canAdd,
   onChange,
   onAdd,
 }: {
-  question: ChipQuestion
   sides: string[]
   canAdd: boolean
   onChange: (sides: string[]) => void
@@ -169,7 +203,7 @@ function SidesQuestion({
 }) {
   return (
     <fieldset className="clarify__sides">
-      <legend className="clarify__label">{question.text}</legend>
+      <legend className="clarify__label">{copy.chat.clarify.sidesLabel}</legend>
       <div className="clarify__side-row">
         {sides.map((side, index) => (
           <label key={index} className="clarify__side">

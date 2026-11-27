@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
-import type { ChatClient, ChatRequest } from './api/chatClient'
+import type { ChatClient, ChatRequest, RequestAnswers } from './api/chatClient'
 import { chatReducer, INITIAL_CHAT_STATE } from './chat'
 
 /**
@@ -42,13 +42,13 @@ export function useChat(client: ChatClient, firstMessage: string) {
   )
 
   useEffect(() => {
-    void run({ message: firstMessage, threadId: null, answers: null })
+    void run({ message: firstMessage, thread_id: null, answers: null })
     return () => controllerRef.current?.abort()
   }, [run, firstMessage])
 
-  function send(text: string, answers: Record<string, string> | null = null) {
+  function send(text: string, answers: RequestAnswers | null = null) {
     dispatch({ type: 'send', text })
-    void run({ message: text, threadId: state.threadId, answers })
+    void run({ message: text, thread_id: state.threadId, answers })
   }
 
   return { state, send }

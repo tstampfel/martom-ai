@@ -28,6 +28,13 @@ function renderChat(firstMessage: string, client: ChatClient) {
 
 const FENCE = 'Treba mi 25 m ograde za dvorište, visina oko 1,5 m'
 
+/** The value next to `label` in the "Vaš projekt" panel. */
+function panelValue(label: string): string | null {
+  const panel = screen.getByRole('complementary', { name: copy.chat.project.label })
+  const term = within(panel).getByText(label, { selector: 'dt' })
+  return term.nextElementSibling?.textContent ?? null
+}
+
 async function answerClarify() {
   const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
   fireEvent.click(within(corners).getByRole('button', { name: '2' }))
@@ -52,7 +59,7 @@ describe('ChatView', () => {
       expect.stringContaining('Trebam još 3 podatka'),
     ])
     expect(screen.getByRole('group', { name: 'Koja boja?' })).toBeInTheDocument()
-    expect(requests).toEqual([{ message: FENCE, threadId: null, answers: null }])
+    expect(requests).toEqual([{ message: FENCE, thread_id: null, answers: null }])
   })
 
   it('does not replay the first message when the client changes', async () => {
@@ -94,13 +101,41 @@ describe('ChatView', () => {
     expect(screen.getByText(/Beton ne prodajemo/)).toBeInTheDocument()
   })
 
+  it('starts the "Vaš projekt" panel from the project summary, as in 2-clarify.html', async () => {
+    renderChat(FENCE, recordingClient().client)
+    await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    const panel = screen.getByRole('complementary', { name: copy.chat.project.label })
+    expect(within(panel).getByText('Ograda za dvorište')).toBeInTheDocument()
+    expect(within(panel).getAllByRole('term').map((term) => term.textContent)).toEqual([
+      'Dužina',
+      'Kutovi',
+      'Visina',
+      'Stupovi',
+      'Boja',
+    ])
+    expect(panelValue('Dužina')).toBe('25 m')
+    expect(panelValue('Kutovi')).toBe(copy.chat.project.unanswered)
+    expect(panelValue('Visina')).toBe('oko 150 cm')
+    expect(panelValue('Stupovi')).toBe('Na beton, s pločicom')
+    expect(panelValue('Boja')).toBe(copy.chat.project.unanswered)
+  })
+
+  it('preselects base-plate posts because the advisor sent them as the default', async () => {
+    renderChat(FENCE, recordingClient().client)
+    const posts = await screen.findByRole('group', { name: 'Gdje idu stupovi?' })
+    expect(within(posts).getByRole('button', { name: /pločicom/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(posts).getByRole('button', { name: /U zemlju/ })).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('fills in the "Vaš projekt" panel as the customer answers', async () => {
     renderChat(FENCE, recordingClient().client)
     await answerClarify()
-    const panel = screen.getByRole('complementary', { name: copy.chat.project.label })
-    expect(panel).toHaveTextContent('25 m')
-    expect(panel).toHaveTextContent('Na beton, s pločicom')
-    expect(panel).toHaveTextContent('Antracit (RAL 7016)')
+    expect(panelValue('Dužina')).toBe('25 m')
+    expect(panelValue('Kutovi')).toBe('2')
+    expect(panelValue('Strane')).toBe('10 + 5 + 10 m')
+    expect(panelValue('Boja')).toBe('Antracit')
+    fireEvent.click(within(screen.getByRole('group', { name: 'Gdje idu stupovi?' })).getByRole('button', { name: /U zemlju/ }))
+    expect(panelValue('Stupovi')).toBe('U zemlju · po upitu')
   })
 
   it('keeps every answer when several chips are picked before a re-render', async () => {
@@ -136,7 +171,7 @@ describe('ChatView', () => {
     fireEvent.click(within(screen.getByRole('group', { name: 'Koja boja?' })).getByRole('button', { name: /Antracit/ }))
     fireEvent.click(screen.getByRole('button', { name: copy.chat.clarify.submit }))
     await expect.poll(() => requests.length).toBe(2)
-    expect(requests[1].answers).toEqual({ corners: 'unknown', closed: 'no', posts: 'plate', color: 'antracit' })
+    expect(requests[1].answers).toEqual({ choices: { posts: 'plate', color: 'antracit' }, sides: [], closed: false })
   })
 
   it('raises the corners with "+ strana" from 4+ so corners and sides agree', async () => {
@@ -147,23 +182,49 @@ describe('ChatView', () => {
     expect(within(sides).getAllByRole('textbox')).toHaveLength(5)
     fireEvent.click(within(sides).getByRole('button', { name: copy.chat.clarify.addSide }))
     expect(within(sides).getAllByRole('textbox')).toHaveLength(6)
-    expect(screen.getByRole('complementary', { name: copy.chat.project.label })).toHaveTextContent('5 kutova')
+    expect(panelValue('Kutovi')).toBe('5')
   })
 
-  it('shows the closed-loop question as the "Ide okolo (zatvoreno)" toggle under the corners', async () => {
-    renderChat(FENCE, recordingClient().client)
+  it('shows the "Ide okolo (zatvoreno)" toggle under the corners and sends closed: true', async () => {
+    const { client, requests } = recordingClient()
+    renderChat(FENCE, client)
     const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
-    expect(screen.queryByRole('group', { name: 'Ide li ograda okolo (zatvoreno)?' })).not.toBeInTheDocument()
     const toggle = within(corners).getByRole('button', { name: copy.chat.clarify.closedToggle })
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(within(corners).getByRole('button', { name: '4+' })).toHaveAttribute('aria-pressed', 'true')
     const sides = screen.getByRole('group', { name: 'Dužina svake strane (m)' })
-    expect(within(sides).getAllByRole('textbox')).toHaveLength(4)
-    const panel = screen.getByRole('complementary', { name: copy.chat.project.label })
-    expect(panel).toHaveTextContent('4 kuta, zatvoreno')
-    expect(panel).toHaveTextContent('? + ? + ? + ? m')
+    const inputs = within(sides).getAllByRole('textbox')
+    expect(inputs).toHaveLength(4)
+    expect(panelValue('Kutovi')).toBe('4 · zatvoreno')
+    expect(panelValue('Strane')).toBe('? + ? + ? + ? m')
+    ;['10', '5', '10', '5'].forEach((value, index) => fireEvent.change(inputs[index], { target: { value } }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Koja boja?' })).getByRole('button', { name: /Zelena/ }))
+    fireEvent.click(screen.getByRole('button', { name: copy.chat.clarify.submit }))
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1].answers).toEqual({ choices: { posts: 'plate', color: 'zelena' }, sides: [10, 5, 10, 5], closed: true })
+  })
+
+  it('sends the length from the message as the one side of a straight fence', async () => {
+    const { client, requests } = recordingClient()
+    renderChat(FENCE, client)
+    const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    fireEvent.click(within(corners).getByRole('button', { name: '0' }))
+    expect(screen.queryByRole('group', { name: 'Dužina svake strane (m)' })).not.toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('group', { name: 'Koja boja?' })).getByRole('button', { name: /Antracit/ }))
+    fireEvent.click(screen.getByRole('button', { name: copy.chat.clarify.submit }))
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1].answers).toEqual({ choices: { posts: 'plate', color: 'antracit' }, sides: [25], closed: false })
+  })
+
+  it('refuses a side over 300 m with its own hint', async () => {
+    renderChat(FENCE, recordingClient().client)
+    await answerClarify()
+    const input = within(screen.getByRole('group', { name: 'Dužina svake strane (m)' })).getAllByRole('textbox')[1]
+    fireEvent.change(input, { target: { value: '350' } })
+    expect(screen.getByRole('button', { name: copy.chat.clarify.submit })).toBeDisabled()
+    expect(screen.getByText(copy.chat.clarify.sideTooLong)).toBeInTheDocument()
   })
 
   it('keeps "Prikaži prijedlog" disabled until every question is answered', async () => {
@@ -183,8 +244,8 @@ describe('ChatView', () => {
     const card = (await screen.findByRole('heading', { name: 'Panelna ograda 3D (Nylofor)' })).closest('article')!
     expect(requests[1]).toEqual({
       message: '2 kuta · 10 + 5 + 10 m · Na beton, s pločicom · Antracit (RAL 7016)',
-      threadId: '3b6f2a0e-7c1d-4e7a-9a43-2f1c5d8e9b10',
-      answers: { corners: '2', closed: 'no', sides: '10 + 5 + 10', posts: 'plate', color: 'antracit' },
+      thread_id: '3b6f2a0e-7c1d-4e7a-9a43-2f1c5d8e9b10',
+      answers: { choices: { posts: 'plate', color: 'antracit' }, sides: [10, 5, 10], closed: false },
     })
     expect(screen.getByText(requests[1].message)).toBeInTheDocument()
 
@@ -214,7 +275,7 @@ describe('ChatView', () => {
     await expect.poll(() => requests.length).toBe(2)
     expect(requests[1]).toEqual({
       message: 'A brusilica?',
-      threadId: '8d1e4c52-0b9f-4a6e-bf3c-5a7d2e9c1f04',
+      thread_id: '8d1e4c52-0b9f-4a6e-bf3c-5a7d2e9c1f04',
       answers: null,
     })
   })

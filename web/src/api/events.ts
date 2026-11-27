@@ -16,7 +16,7 @@ export const CHAT_EVENT_TYPES = ['token', 'step', 'chips', 'product_cards', 'bom
 
 // The closed sets of values; events.test.ts compares each with the schema.
 export const STEP_STATUSES = ['working', 'done', 'needs_input'] as const
-export const CHIP_KINDS = ['single', 'side_lengths'] as const
+export const CHIP_KINDS = ['single', 'layout'] as const
 export const ERROR_KINDS = ['rate_limited', 'invalid_request', 'internal'] as const
 
 /** A piece of the answer text; append it to the current message. */
@@ -34,9 +34,11 @@ export interface StepEvent {
 }
 
 export interface ChipOption {
-  /** Sent back in the next message; not shown. */
+  /** Sent back in answers.choices; not shown. */
   value: string
   label: string
+  /** Shorter text for the "Vaš projekt" panel, e.g. "Antracit"; null: use label. */
+  short_label: string | null
   /** e.g. "po narudžbi, 10–15 dana". */
   badge: string | null
   /** Shown under the question when this option is picked. */
@@ -44,17 +46,44 @@ export interface ChipOption {
 }
 
 export interface ChipQuestion {
+  /** e.g. "posts"; the key of its answer in answers.choices. */
   id: string
+  /** The full question for the form, e.g. "Gdje idu stupovi?". */
   text: string
-  /** single: pick one option. side_lengths: one input (m) per side, no options. */
+  /** Short row label for the "Vaš projekt" panel, e.g. "Stupovi"; null: use text. */
+  label: string | null
+  /**
+   * single: pick one option (answers.choices). layout: the corner chips, the
+   * "Ide okolo" toggle and the side fields, drawn by the frontend; it has no
+   * options, and its answer is answers.sides and answers.closed.
+   */
   kind: (typeof CHIP_KINDS)[number]
   options: ChipOption[]
+  /** Option value picked before the customer taps (e.g. "plate"); single only. */
+  default: string | null
+}
+
+/** Something the advisor already knows from the message, e.g. Visina: oko 150 cm. */
+export interface ProjectFact {
+  label: string
+  value: string
+}
+
+/** What the "Vaš projekt" panel shows before the customer answers. */
+export interface ProjectSummary {
+  /** e.g. "Ograda za dvorište". */
+  title: string
+  /** Total length from the message in metres; a straight fence sends it as its one side. */
+  length_m: number | null
+  facts: ProjectFact[]
 }
 
 /** The clarify questions the advisor still needs answered. */
 export interface ChipsEvent {
   type: 'chips'
   intro: string | null
+  /** null: the panel uses the customer's first message as its title. */
+  project: ProjectSummary | null
   questions: ChipQuestion[]
 }
 
