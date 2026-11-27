@@ -4,6 +4,7 @@ Reads only the `active_olx_listing` view (CLAUDE.md): a sold listing is never ch
 its open issues are resolved on the next run. Plain SQL through psycopg 3's async API.
 """
 
+import hashlib
 from collections import defaultdict
 from collections.abc import Sequence
 
@@ -109,11 +110,38 @@ UPDATE review_issue AS r SET
     resolved_at = now(),
     details = r.details || jsonb_build_object(
         'resolved_because',
-        CASE WHEN r.listing_id IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM active_olx_listing AS l WHERE l.id = r.listing_id)
+        CASE WHEN EXISTS (
+                 -- the issue's listing, or for a duplicate any listing of the group
+                 SELECT 1
+                 FROM (SELECT r.listing_id AS id
+                       UNION ALL
+                       SELECT jsonb_array_elements_text(
+                                  CASE WHEN jsonb_typeof(r.details -> 'listing_ids') = 'array'
+                                       THEN r.details -> 'listing_ids' ELSE '[]' END)::bigint
+                      ) AS involved
+                 WHERE involved.id IS NOT NULL
+                   AND NOT EXISTS (SELECT 1 FROM active_olx_listing AS l WHERE l.id = involved.id))
              THEN 'listing_inactive' ELSE 'not_found' END)
 WHERE r.status = 'open' AND NOT (r.fingerprint = ANY(%s))
 """
+
+
+def distinct_fingerprints(issues: Sequence[ReviewIssue]) -> dict[str, ReviewIssue]:
+    """Each issue under its own fingerprint; none is ever dropped.
+
+    The checks already give every issue a distinct key, so this is a safety net: if two
+    issues still share a fingerprint, the later ones get the fingerprint with "#2", "#3"
+    appended (hashed again). The checks run in a fixed order (listings by id, variants by
+    position), so the same input gives the same fingerprints on every run.
+    """
+    result: dict[str, ReviewIssue] = {}
+    for issue in issues:
+        fingerprint, n = issue.fingerprint, 1
+        while fingerprint in result:
+            n += 1
+            fingerprint = hashlib.sha256(f"{issue.fingerprint}#{n}".encode()).hexdigest()
+        result[fingerprint] = issue
+    return result
 
 
 async def save_issues(
@@ -124,8 +152,7 @@ async def save_issues(
     `issues` must be the result of a run over the whole catalogue: anything open that isn't
     in it is marked resolved. Returns (rows written, new issues, resolved issues).
     """
-    # Two checks could, in theory, produce the same fingerprint; keep the last one.
-    unique = {issue.fingerprint: issue for issue in issues}
+    unique = distinct_fingerprints(issues)
     new = 0
     async with conn.transaction(), conn.cursor() as cursor:
         for fingerprint, issue in unique.items():

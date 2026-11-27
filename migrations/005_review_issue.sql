@@ -5,8 +5,10 @@
 
 CREATE TABLE IF NOT EXISTS review_issue (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    -- sha256 of (kind, listing id, what makes the issue distinct: the variant's sizes and
-    -- colour, the misspelt word, the shared title of duplicates; never model-written text).
+    -- sha256 of (kind, listing id, what makes the issue distinct: the variant's size,
+    -- colour and unit fields as written, the misspelt word, the shared title of
+    -- duplicates). Only a variant with none of those fields, or two variants that share
+    -- them, fall back to the price and the model-written label (src/martom/review/checks.py).
     -- The checks upsert on it, so rerunning them never adds a second row for one problem.
     fingerprint   text NOT NULL CONSTRAINT review_issue_fingerprint_key UNIQUE,
     kind          text NOT NULL,                -- the check, e.g. 'implausible_dimension'

@@ -491,6 +491,38 @@ SIZE_CASES = [
     ("1530MM", "", Decimal(153)),
     ("H-85 cm", "", Decimal(85)),
     ("2500CM", "", Decimal(2500)),
+    # Round 2: a number after an abbreviation (letter + dot, or letter + space) is read.
+    ("H.2500CM", "", Decimal(2500)),
+    ("v.150 cm", "", Decimal(150)),
+    ("H.100 cm", "", Decimal(100)),
+    ("H 100 cm", "", Decimal(100)),
+    ("dim.153x250", "", Decimal(153)),
+    # ... but a word starting with "m" right after the number is still not metres.
+    ("H.153 maslinasto", "", Decimal(153)),
+    # Round 2 reviewer probes that must keep working.
+    ("830 mm", "2500x 830 mm", Decimal(83)),
+    ("2500", "2500x 830 mm", Decimal(250)),
+    ("100", "100CM (100/8/15)", Decimal(100)),
+    ("H-100CM", "", Decimal(100)),
+    ("1,53 m", "", Decimal(153)),
+    ("1.53m", "", Decimal(153)),
+    ("2 metra", "", Decimal(200)),
+    ("25", "okce 25MM", Decimal("2.5")),
+    ("1.5", "50 x 50 x 1.5 mm", Decimal("0.15")),
+    ("103", "83 i 103 cm", Decimal(103)),
+    ("10", "RABITZ 100 cm 10m", Decimal(1000)),
+    ("h=150cm", "", Decimal(150)),
+    ("150cm/20m", "", Decimal(150)),
+    ("1530", "1530x2500mm", Decimal(153)),
+    ("2500", "2500 \u00d7 1030 mm", Decimal(250)),  # multiplication sign
+    # Round 2 notes: the "A x B unit" pair hands on mm/cm only, not metres ("2,5m" is
+    # a length in metres, not the unit of the 150 cm height) ...
+    ("150", "Panel 150 x 2,5m", Decimal(150)),
+    # ... the same number twice in the label with different units is not guessed ...
+    ("100", "Panel visina 100, okca 100 x 50 mm", Decimal(100)),
+    # ... and with metres a dot is a decimal point ("2.500 m" is 2,5 m, not 2500 m).
+    ("2.500 m", "", Decimal(250)),
+    ("1.530 mm", "", Decimal(153)),
 ]
 
 
@@ -576,3 +608,77 @@ def test_duplicate_fingerprint_survives_a_third_listing_and_a_new_lowest_id() ->
 def test_doubled_word_across_title_and_description_is_not_a_typo() -> None:
     assert check_typos(listing(title="PANEL ZA OGRADU", description_text="Ogradu nudimo.")) == []
     assert check_typos(listing(description_text="za ogradu\nogradu nudimo")) == []
+
+
+# --- review round 2 ----------------------------------------------------------------------------
+
+
+def test_gates_still_get_the_post_ranges() -> None:
+    gate_post = listing(product_type="stup za kapiju", variants=[variant(height="600 cm")])
+    assert kinds(check_implausible_dimensions(gate_post)) == ["implausible_dimension"]
+
+
+def test_conflict_and_dimension_checks_read_a_bare_size_the_same_way() -> None:
+    # "2500" in "2500 x 1030 mm" is 250 cm in both checks.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("2500 x 1030 mm", height="1030 mm", length="2500", unit="panel"),
+                variant(
+                    "Panel 103 x 250 cm",
+                    height="103 cm",
+                    length="250 cm",
+                    unit="panel",
+                    price=Decimal("12"),
+                ),
+            ]
+        )
+    )
+    assert kinds(issues) == ["price_conflict"]
+
+
+def test_same_size_variants_that_differ_in_the_label_get_their_own_issues() -> None:
+    issues = check_variant_prices(
+        listing(
+            variants=[
+                variant("Panel 153x250 Ø4", height="153", length="250", price=Decimal("50")),
+                variant(
+                    "Panel 153x250 Ø4 PVC", height="153", length="250", price_text=None, price=None
+                ),
+                variant(
+                    "Panel 153x250 Ø5 PVC", height="153", length="250", price_text=None, price=None
+                ),
+            ]
+        )
+    )
+    assert kinds(issues) == ["height_without_price", "height_without_price"]
+    assert len({issue.fingerprint for issue in issues}) == 2
+
+
+def test_same_size_variants_that_differ_in_the_unit_get_their_own_issues() -> None:
+    issues = check_variant_prices(
+        listing(
+            variants=[
+                variant("Mreža 150", height="150", unit="m"),
+                variant("Mreža 150 rola", height="150", unit="rola", price_text="?", price=None),
+                variant("Mreža 150 kom", height="150", unit="kom", price_text="?", price=None),
+            ]
+        )
+    )
+    assert len({issue.fingerprint for issue in issues}) == 2
+
+
+def test_identical_variants_still_get_their_own_issues() -> None:
+    same = variant("Kopča", price_text=None, price=None)
+    issues = check_variant_prices(listing(variants=[variant("Anker"), same, same]))
+    assert len({issue.fingerprint for issue in issues}) == 2
+
+
+def test_variant_fingerprint_without_a_collision_ignores_the_label() -> None:
+    def fingerprints(label: str) -> set[str]:
+        unpriced = variant(f"{label} 173", height="173", length="250", price_text=None, price=None)
+        return {
+            i.fingerprint for i in check_variant_prices(listing(variants=[variant(), unpriced]))
+        }
+
+    assert fingerprints("Panel") == fingerprints("3D panelna ograda")

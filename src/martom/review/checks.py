@@ -11,7 +11,7 @@ the listing wrote it ("153", "2500CM", "H-85 cm", "44,00 KM").
 
 import hashlib
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -95,13 +95,19 @@ _NUMBER = r"\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?"
 # start of a longer word: "153 cm" and "50M" are units, "153 maslinasto" and "153 mat"
 # are not. Metres are also written out ("20METARA").
 _UNIT = r"(mm|cm|metara|metra|metar|m)(?![^\W\d_])"
-_NUMBER_AND_UNIT = re.compile(rf"(?<![\d.,])({_NUMBER})(?:\s*{_UNIT})?")
+# Not a digit, and not a dot or comma that continues a number: "2500" in "H.2500CM",
+# "v.150 cm" or "dim.153x250" is read, the "5" in "25" or "1.5" is not.
+_NOT_IN_A_NUMBER = r"(?<!\d)(?<!\d[.,])"
+_NUMBER_AND_UNIT = re.compile(rf"{_NOT_IN_A_NUMBER}({_NUMBER})(?:\s*{_UNIT})?")
 _CM_PER_UNIT = {"mm": Decimal("0.1"), "cm": Decimal(1), None: Decimal(1)}  # else metres
+_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?")
 
 
-def _to_decimal(digits: str) -> Decimal:
-    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?", digits):
-        digits = digits.replace(".", "")  # "1.530" -> "1530"
+def _to_decimal(digits: str, unit: str | None) -> Decimal:
+    # "1.530 mm" is 1530 mm, but "2.500 m" is 2,5 m: nobody writes thousands of metres.
+    in_metres = unit not in _CM_PER_UNIT
+    if _THOUSANDS.fullmatch(digits) and not (in_metres and "," not in digits):
+        digits = digits.replace(".", "")
     return Decimal(digits.replace(",", "."))
 
 
@@ -110,22 +116,27 @@ def _cm(number: Decimal, unit: str | None) -> Decimal:
 
 
 def _unit_in_label(digits: str, label: str) -> str | None:
-    """The unit the label writes right after this same number, or after "A x B" when the
-    number is the first of a pair ("2500 x 1030 mm"). None if the label gives none."""
+    """The unit the label gives this same number, or None.
+
+    The unit is the one written right after the number, or after "A x B" when the number
+    is the first of a pair and B ends in mm or cm ("2500 x 1030 mm"; not "150 x 2,5m",
+    where the metres belong to B alone). When the number appears more than once and the
+    places disagree ("visina 100, okca 100 x 50 mm"), nothing is guessed.
+    """
     pattern = re.compile(
-        rf"(?<![\d.,]){re.escape(digits)}(?![\d.,]*\d)"  # the same number, not part of one
-        rf"(?:\s*[x\u00d7]\s*(?:{_NUMBER}))*\s*{_UNIT}"
+        rf"{_NOT_IN_A_NUMBER}{re.escape(digits)}(?![\d.,]*\d)"  # the same number, not part of one
+        rf"(?:\s*{_UNIT}|(?:\s*[x\u00d7]\s*(?:{_NUMBER}))+\s*(mm|cm)(?![^\W\d_]))?"
     )
-    match = pattern.search(label.casefold())
-    return match.group(1) if match else None
+    units = {match.group(1) or match.group(2) for match in pattern.finditer(label.casefold())}
+    return units.pop() if len(units) == 1 else None
 
 
 def _parse_size(text: str | None, label: str = "") -> tuple[Decimal, str | None] | None:
     """(size in cm, unit: "mm", "cm", "m"/"metara"... or None), or None without a number.
 
     Reads the first number in `text` and the unit right next to it. A bare number takes
-    the unit its label writes next to the same number ("2500" in "2500 x 1030 mm" is mm);
-    with no unit anywhere it is read as centimetres, the way fence listings write sizes.
+    the unit its label gives the same number ("2500" in "2500 x 1030 mm" is mm); with no
+    unit anywhere it is read as centimetres, the way fence listings write sizes.
     """
     if not text:
         return None
@@ -135,7 +146,7 @@ def _parse_size(text: str | None, label: str = "") -> tuple[Decimal, str | None]
     digits, unit = match.group(1), match.group(2)
     if unit is None and label:
         unit = _unit_in_label(digits, label)
-    return _cm(_to_decimal(digits), unit), unit
+    return _cm(_to_decimal(digits, unit), unit), unit
 
 
 def size_in_cm(text: str | None, label: str = "") -> Decimal | None:
@@ -156,7 +167,8 @@ _RANGES: tuple[tuple[str, str, Decimal, Decimal], ...] = (
 # For any product: nobody writes 10 m or more in centimetres, so a bigger cm value is a
 # slipped unit. Lengths in metres ("ROLA 50M") are not affected.
 _MAX_CM_WRITTEN_AS_CM = Decimal(1000)
-# Panel gates ("panelna kapija", "vrata") are wider than fence panels: no fence-panel range.
+# Panel gates ("panelna kapija", "vrata") are wider than fence panels, so the "panel"
+# ranges don't apply to them; the post ranges still do ("stup za kapiju").
 _GATE_WORDS = ("kapij", "vrat")
 _FIELD_BS = {"height": "visina", "length": "dužina"}
 
@@ -166,10 +178,12 @@ def _size_problem(product_type: str, field_name: str, text: str, label: str) -> 
     if parsed is None:
         return False
     cm, unit = parsed
-    if not any(word in product_type for word in _GATE_WORDS):
-        for word, ranged_field, low, high in _RANGES:
-            if word in product_type and ranged_field == field_name and not low <= cm <= high:
-                return True
+    gate = any(word in product_type for word in _GATE_WORDS)
+    for word, ranged_field, low, high in _RANGES:
+        if gate and word == "panel":
+            continue
+        if word in product_type and ranged_field == field_name and not low <= cm <= high:
+            return True
     return unit in _CM_PER_UNIT and cm > _MAX_CM_WRITTEN_AS_CM
 
 
@@ -179,7 +193,8 @@ def check_implausible_dimensions(listing: CheckListing) -> list[ReviewIssue]:
         return []
     product_type = listing.product.product_type.casefold()
     issues = []
-    for v in listing.variants:
+    keys = _variant_keys(listing.variants)
+    for v, variant_key in zip(listing.variants, keys, strict=True):
         for field_name, text in (("height", v.height), ("length", v.length)):
             if text and _size_problem(product_type, field_name, text, v.label):
                 issues.append(
@@ -191,7 +206,7 @@ def check_implausible_dimensions(listing: CheckListing) -> list[ReviewIssue]:
                         f"{_FIELD_BS[field_name]} „{text}“. "
                         "Provjerite broj i jedinicu (cm, mm, m).",
                         {"field": field_name, "value": text, "label": v.label},
-                        key=f"{field_name}:{_variant_key(v)}",
+                        key=f"{field_name}:{variant_key}",
                     )
                 )
     return issues
@@ -209,7 +224,8 @@ def check_variant_prices(listing: CheckListing) -> list[ReviewIssue]:
     if not any(v.price_text for v in listing.variants):
         return []
     issues = []
-    for v in listing.variants:
+    keys = _variant_keys(listing.variants)
+    for v, variant_key in zip(listing.variants, keys, strict=True):
         if v.price_text is None and v.height:
             issues.append(
                 ReviewIssue(
@@ -218,7 +234,7 @@ def check_variant_prices(listing: CheckListing) -> list[ReviewIssue]:
                     "high",
                     f"Oglas {listing.id}: visina „{v.height}“ („{v.label}“) nema cijenu u opisu.",
                     {"height": v.height, "label": v.label},
-                    key=_variant_key(v),
+                    key=variant_key,
                 )
             )
         elif v.price_text is None:
@@ -229,7 +245,7 @@ def check_variant_prices(listing: CheckListing) -> list[ReviewIssue]:
                     "high",
                     f"Oglas {listing.id}: varijanta „{v.label}“ nema cijenu u opisu.",
                     {"label": v.label},
-                    key=_variant_key(v),
+                    key=variant_key,
                 )
             )
         elif v.price is None:
@@ -241,7 +257,7 @@ def check_variant_prices(listing: CheckListing) -> list[ReviewIssue]:
                     f"Oglas {listing.id}: cijena „{v.price_text}“ za „{v.label}“ nije jedna "
                     "jasna cijena.",
                     {"price_text": v.price_text, "label": v.label},
-                    key=_variant_key(v),
+                    key=variant_key,
                 )
             )
     return issues
@@ -271,22 +287,51 @@ def check_price_on_request(listing: CheckListing) -> list[ReviewIssue]:
 
 def _size_key(v: VariantRow) -> str | None:
     """The variant's sizes and colour, normalised so "250 cm", "250CM" and "250" compare
-    equal; None when the variant has none. Built from the size fields only, never the
-    label: the model writes the label freely and may reword it on the next extraction.
+    equal; None when the variant has none. Sizes are read like `check_implausible_dimensions`
+    reads them (a bare "2500" in "2500 x 1030 mm" is 250 cm). Used to group variants for
+    `check_price_conflicts`.
     """
     parts = []
     for text in (v.height, v.length):
-        cm = size_in_cm(text)
-        parts.append(str(cm.normalize()) if cm is not None else _normal_text(text))
+        parsed = _parse_size(text, v.label)
+        parts.append(str(parsed[0].normalize()) if parsed else _normal_text(text))
     # Other sizes ("100/8/15", "SX8") and colours are compared as text.
     parts += [_normal_text(v.size), _normal_text(v.colour)]
     return "|".join(parts) if any(parts) else None
 
 
-def _variant_key(v: VariantRow) -> str:
-    """What tells a variant apart in a fingerprint: its sizes and colour. A variant with no
-    size at all falls back to its label (letters and digits only), the only name it has."""
-    return _size_key(v) or "label:" + " ".join(_WORD_OR_NUMBER.findall(v.label.casefold()))
+def _label_tokens(v: VariantRow) -> str:
+    return " ".join(_WORD_OR_NUMBER.findall(v.label.casefold()))
+
+
+def _variant_keys(variants: Sequence[VariantRow]) -> list[str]:
+    """A fingerprint key for each variant of one listing, distinct within the listing.
+
+    The key is what the listing wrote in the variant's size, colour and unit fields (case
+    and spaces ignored), so a reworded label keeps the fingerprint and Toni's status. Only
+    when two variants share that key does it grow, step by step and only for those
+    variants: first the price as written, then the label's words (the model writes the
+    label, so these keys can change on re-extraction), and last a running number for
+    variants that are identical even in their label. A variant with no size, colour or
+    unit at all (an accessory such as "Kopča") has only its label to go by.
+    """
+    keys = []
+    for v in variants:
+        fields = (v.height, v.length, v.size, v.colour, v.unit)
+        base = "|".join(_normal_text(text) for text in fields)
+        keys.append(base if any(fields) else "label:" + _label_tokens(v))
+    for extra in (lambda v: "price:" + _normal_text(v.price_text), _label_tokens):
+        counts = Counter(keys)
+        keys = [
+            f"{key}|{extra(v)}" if counts[key] > 1 else key
+            for key, v in zip(keys, variants, strict=True)
+        ]
+    seen: Counter[str] = Counter()
+    numbered = []
+    for key in keys:
+        seen[key] += 1
+        numbered.append(key if seen[key] == 1 else f"{key}#{seen[key]}")
+    return numbered
 
 
 def _normal_text(text: str | None) -> str:

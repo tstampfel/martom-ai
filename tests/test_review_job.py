@@ -259,11 +259,52 @@ async def test_single_image_counts_when_the_image_list_is_empty(
 async def test_raised_counts_each_problem_once(
     conn: psycopg.AsyncConnection, manual_toml: Path
 ) -> None:
-    # Two variants with the same size and no price: one problem, one row.
+    # Two same-size variants without a price: two problems, two rows, counted once each.
     same = [("Panel 153 x 250 cm", "153", "250 cm", "53,00")] + [
         (f"Panel 173 x 250 cm ({n})", "173", "250 cm", None) for n in (1, 2)
     ]
     await add_listing(conn, 1, variants=same, images=["a"])
     stats = await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    cursor = await conn.execute(
+        "SELECT count(*) FROM review_issue WHERE kind = 'height_without_price'"
+    )
+    assert (await cursor.fetchone())[0] == 2  # type: ignore[index]
     cursor = await conn.execute("SELECT count(*) FROM review_issue")
     assert stats.raised == (await cursor.fetchone())[0]  # type: ignore[index]
+
+
+async def test_save_issues_never_drops_an_issue_with_a_colliding_fingerprint(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    from martom.review.checks import ReviewIssue
+    from martom.review.store import save_issues
+
+    await conn.execute(
+        "INSERT INTO olx_listing (id, slug, title, summary) VALUES (1, 'x-1', 'X', '{}')"
+    )
+    first = ReviewIssue("typo", 1, "low", "Prva", {"n": 1}, key="k")
+    second = ReviewIssue("typo", 1, "low", "Druga", {"n": 2}, key="k")
+    assert first.fingerprint == second.fingerprint
+
+    assert (await save_issues(conn, [first, second]))[:2] == (2, 2)
+    # Stable: the same input on the next run writes the same two rows, nothing new.
+    assert (await save_issues(conn, [first, second]))[:2] == (2, 0)
+    cursor = await conn.execute("SELECT message FROM review_issue ORDER BY message")
+    assert await cursor.fetchall() == [("Druga",), ("Prva",)]
+
+
+async def test_duplicate_resolved_because_a_higher_copy_went_inactive(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_listing(conn, 1, title="PANEL 153")
+    await add_listing(conn, 2, title="PANEL 153")
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    await conn.execute("UPDATE olx_listing SET active = false WHERE id = 2")
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    cursor = await conn.execute(
+        "SELECT status, details ->> 'resolved_because' FROM review_issue"
+        " WHERE kind = 'duplicate_listing'"
+    )
+    assert await cursor.fetchone() == ("resolved", "listing_inactive")
