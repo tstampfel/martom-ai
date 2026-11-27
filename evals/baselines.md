@@ -20,9 +20,11 @@ recall and MRR.
 | 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (copy of the 2,570-listing catalogue, embedded with Cohere embed-multilingual-v3.0) | vector | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.950 | n/a |
 | 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (same) | hybrid | 11 lines (seed-01 … seed-11) | 10 | 0.900 | 0.950 | 0.933 | n/a |
 
-Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them. The
-14-line rows come from his main database, run from the root of the main checkout once
-migration 007 (the embedding columns) is on `main`:
+Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them by
+hand. **Tomislav only:** agents never pass `--env-file .env` (CLAUDE.md); an agent that needs a
+vector or hybrid row asks Tomislav for it. The 14-line rows come from his main database, run
+from the root of the main checkout (migration 007, on `main` since #15, adds the embedding
+columns):
 
 ```sh
 DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run martom migrate
