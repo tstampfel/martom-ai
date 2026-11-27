@@ -195,6 +195,32 @@ def test_make_query_parser_builds_a_fast_haiku_without_thinking(
     assert "temperature" not in built  # Haiku 5.5 rejects sampling settings
     assert built["schema"] is ParsedQuery
     assert built["method"] == "json_schema"
+    assert built["default_request_timeout"] == query_parser.PARSE_TIMEOUT_SECONDS == 1.5
+    assert parser.timeout == 1.5
+
+
+def test_make_query_parser_for_batch_use_waits_and_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Recording fixtures and scoring evals must not inherit live search's 1.5 s / no-retry
+    # limit (the recording timed out with it).
+    built: dict = {}
+
+    class FakeChat:
+        def __init__(self, **kwargs: object) -> None:
+            built.update(kwargs)
+
+        def with_structured_output(self, schema: type, *, method: str) -> RunnableLambda:
+            return fake_model(ANTRACIT_150)
+
+    monkeypatch.setattr(query_parser, "ChatAnthropic", FakeChat)
+    settings = Settings(anthropic_api_key=SecretStr("sk-test"))
+    parser = make_query_parser(settings, for_queries=False)
+    assert parser is not None
+    assert built["default_request_timeout"] == query_parser.BATCH_TIMEOUT_SECONDS == 60.0
+    assert built["max_retries"] == query_parser.BATCH_MAX_RETRIES == 3
+    assert parser.timeout == 60.0
+    assert built["thinking"] == {"type": "disabled"}  # the rest is the same model
 
 
 # --- recorded replies -------------------------------------------------------------------------

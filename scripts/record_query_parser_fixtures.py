@@ -25,17 +25,32 @@ FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "query_p
 
 async def record() -> None:
     settings = Settings()
-    parser = make_query_parser(settings)
+    # Batch settings: 60 s per request and SDK retries, not live search's 1.5 s / one try.
+    parser = make_query_parser(settings, for_queries=False)
     if parser is None:
         raise SystemExit(
             "ANTHROPIC_API_KEY is not set (Tomislav runs this with his local key file)"
         )
     cases = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))["cases"]
     responses = {}
+    failed = []
     for case in cases:
-        # parse(), not filters(): no timeout, and an error stops the recording.
-        reply = await parser.parse(case["question"])
+        # parse(), not filters(): an error is reported, never turned into "no filters".
+        # The questions are seed data from cases.json, not customer text, so they may be
+        # printed.
+        try:
+            reply = await parser.parse(case["question"])
+        except Exception as exc:
+            print(f"FAILED {case['id']}: {case['question']!r}: {type(exc).__name__}: {exc}")
+            failed.append(case["id"])
+            continue
         responses[case["question"]] = reply.model_dump(mode="json")
+    if failed:
+        # A partial file would fail the golden test anyway; keep the old one instead.
+        raise SystemExit(
+            f"{len(failed)} of {len(cases)} failed ({', '.join(failed)}); "
+            "responses.json not written"
+        )
     payload = {
         "_about": (
             f"Replies of {settings.fast_model} for the questions in cases.json, recorded on "

@@ -43,6 +43,10 @@ PROMPT_VERSION = "m3-4-v1"
 # The most a search waits for the parse before it searches without filters. Haiku without
 # thinking usually answers in well under a second.
 PARSE_TIMEOUT_SECONDS = 1.5
+# Batch use (recording fixtures, scoring evals) waits for a real answer: a long timeout
+# and SDK retries, so a slow reply is never mistaken for a broken one.
+BATCH_TIMEOUT_SECONDS = 60.0
+BATCH_MAX_RETRIES = 3
 MAX_TOKENS = 512  # four short strings in JSON
 
 # Heights outside this range are not a fence, mesh or post height (a 5 cm "height" is a
@@ -191,11 +195,18 @@ class QueryParser:
         return to_filters(parsed)
 
 
-def make_query_parser(settings: Settings) -> QueryParser | None:
-    """The real Haiku parser, or None without ANTHROPIC_API_KEY (search runs unfiltered)."""
+def make_query_parser(settings: Settings, *, for_queries: bool = True) -> QueryParser | None:
+    """The real Haiku parser, or None without ANTHROPIC_API_KEY (search runs unfiltered).
+
+    `for_queries=True` (the default) is live search: one attempt bounded by
+    PARSE_TIMEOUT_SECONDS, after which the search runs without filters. False is for batch
+    use (recording fixtures, scoring evals): BATCH_TIMEOUT_SECONDS per request and
+    BATCH_MAX_RETRIES SDK retries, because there an answer matters more than speed.
+    """
     key = settings.anthropic_api_key
     if key is None or not key.get_secret_value().strip():
         return None
+    timeout = PARSE_TIMEOUT_SECONDS if for_queries else BATCH_TIMEOUT_SECONDS
     chat = ChatAnthropic(
         model=settings.fast_model,
         api_key=key,
@@ -204,9 +215,10 @@ def make_query_parser(settings: Settings) -> QueryParser | None:
         # 5.5 accepts thinking disabled at effort "high" or below.
         thinking={"type": "disabled"},
         effort="low",
-        # One attempt: QueryParser's timeout bounds the wait, and a retry wouldn't fit in it.
-        max_retries=0,
-        default_request_timeout=PARSE_TIMEOUT_SECONDS,
+        # Live: one attempt, since QueryParser's timeout bounds the wait and a retry
+        # wouldn't fit in it.
+        max_retries=0 if for_queries else BATCH_MAX_RETRIES,
+        default_request_timeout=timeout,
     )
     model = chat.with_structured_output(ParsedQuery, method="json_schema")
-    return QueryParser(model, model_name=settings.fast_model)  # type: ignore[arg-type]
+    return QueryParser(model, model_name=settings.fast_model, timeout=timeout)  # type: ignore[arg-type]

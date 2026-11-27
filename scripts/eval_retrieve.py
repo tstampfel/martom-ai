@@ -32,6 +32,7 @@ long as one (roughly 15 minutes at the default pause).
 
 import argparse
 import asyncio
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,9 +50,9 @@ from martom.evals.retrieval import (
 )
 from martom.evals.retrieve_eval import percentile, run_retrieve_eval
 from martom.search.keyword import SearchFilters
-from martom.search.query_parser import QueryParser, make_query_parser
+from martom.search.query_parser import PARSE_TIMEOUT_SECONDS, QueryParser, make_query_parser
 from martom.search.rerank import Reranker, RerankScore, make_reranker
-from martom.search.retrieve import retrieve
+from martom.search.retrieve import Retrieval, retrieve
 from martom.settings import Settings
 
 DEFAULT_SET = Path(__file__).resolve().parents[1] / "evals" / "retrieval.jsonl"
@@ -95,17 +96,32 @@ def print_run(name: str, questions: list[EvalQuestion], results: dict[str, list[
 
 class CachingParser:
     """Asks the real parser once per question, then repeats its answer, so every rerank
-    model is scored with the same filters (Haiku can read a question differently twice)."""
+    model is scored with the same filters (Haiku can read a question differently twice).
+    Each first call is timed with no time limit: how long Haiku really takes."""
 
     def __init__(self, inner: QueryParser) -> None:
         self.inner = inner
         self.model_name = inner.model_name
         self._seen: dict[str, SearchFilters | None] = {}
+        self.parse_ms: list[float] = []
 
     async def filters(self, question: str, fallback: bool = True) -> SearchFilters | None:
         if question not in self._seen:
+            started = time.perf_counter()
             self._seen[question] = await self.inner.filters(question, fallback=fallback)
+            self.parse_ms.append((time.perf_counter() - started) * 1000)
         return self._seen[question]
+
+
+def print_parse_latency(parse_ms: list[float]) -> None:
+    """Haiku's own time per question, without the live limit (scoring runs)."""
+    over = sum(ms > PARSE_TIMEOUT_SECONDS * 1000 for ms in parse_ms)
+    print(
+        f"\nHaiku parse alone, no time limit ({len(parse_ms)} questions): "
+        f"p50 {percentile(parse_ms, 50):.0f} ms  p95 {percentile(parse_ms, 95):.0f} ms  "
+        f"max {max(parse_ms):.0f} ms; {over}/{len(parse_ms)} over the live limit of "
+        f"{PARSE_TIMEOUT_SECONDS} s (live search would run those without filters)"
+    )
 
 
 @dataclass
@@ -161,7 +177,19 @@ async def timed_run(
                 f"   p95 {percentile(values, 95):>7.1f} ms"
                 f"   max {max(values):>7.1f} ms"
             )
-        print(f"fallbacks: parse {r.not_parsed}/{runs}, rerank {r.not_reranked}/{runs}")
+        print(
+            f"fallbacks: parse {r.not_parsed}/{runs} (Haiku over {PARSE_TIMEOUT_SECONDS} s or"
+            f" failed: those searches ran without filters), rerank {r.not_reranked}/{runs}"
+        )
+
+
+def print_fallbacks(details: dict[str, Retrieval], *, parsed: bool) -> None:
+    """Scoring runs use fallback=False, so a failed parse or rerank stops the eval instead
+    of being scored; these counts confirm every scored answer was the real one."""
+    n = len(details)
+    not_reranked = sum(not d.reranked for d in details.values())
+    parse = f"{sum(not d.parsed for d in details.values())}/{n}" if parsed else "- (no parser)"
+    print(f"fallbacks: parse {parse}, rerank {not_reranked}/{n}")
 
 
 def model_settings(settings: Settings, model: str) -> Settings:
@@ -185,7 +213,9 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
     questions = load_questions(eval_set)
     settings = Settings()
     embedder = make_embedder(settings)
-    live_parser = make_query_parser(settings)
+    # Scoring waits for Haiku (60 s, retries): a slow reply must not stop the eval or be
+    # scored as "no filters". The timed run below uses the live parser and its 1.5 s limit.
+    live_parser = make_query_parser(settings, for_queries=False)
     rerankers = {m: make_reranker(model_settings(settings, m)) for m in models}
     if live_parser is None or None in rerankers.values():
         raise SystemExit("needs ANTHROPIC_API_KEY and COHERE_API_KEY (Tomislav runs this)")
@@ -198,18 +228,20 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
 
         for r in results:
             pausing = PausingReranker(rerankers[r.model], pause)
-            reranked, _ = await run_retrieve_eval(
+            reranked, rerank_details = await run_retrieve_eval(
                 conn, questions, embedder=embedder, parser=None, reranker=pausing
             )
             print_run(
                 f"rerank with {r.model} (hybrid top 30 -> Cohere, no filters)", questions, reranked
             )
+            print_fallbacks(rerank_details, parsed=False)
             full, details = await run_retrieve_eval(
                 conn, questions, embedder=embedder, parser=parser, reranker=pausing
             )
             r.scores = print_run(
                 f"full with {r.model} (Haiku filters -> hybrid -> Cohere)", questions, full
             )
+            print_fallbacks(details, parsed=True)
             print(f"\nfilters per question ({r.model}):")
             for question in questions:
                 d = details[question.id]
@@ -219,6 +251,8 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
                     matched = sum(h.matched_filters for h in d.hits)
                     note += f" (+{d.top_up_added} top-up; {matched}/{len(d.hits)} hits matched)"
                 print(f"  {question.id:<32} {d.filters}{note}  best relevance {top}")
+
+        print_parse_latency(parser.parse_ms)
 
         kolica, panelan = await issue_102_hits(conn, embedder)
         print(f"\n#102 hybrid: 'kolica' top 5 {kolica[:5]}, 'panelan' top 5 {panelan[:5]}")
