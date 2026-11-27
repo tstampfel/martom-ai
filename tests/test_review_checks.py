@@ -7,6 +7,7 @@ ReviewIssue values; nothing here touches the database or changes extracted data.
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from typing import TypedDict
 
 from martom.bom.manual_products import ManualProduct
 from martom.extract.store import VariantRow
@@ -167,6 +168,44 @@ def test_unit_written_once_in_the_label_applies_to_both_sizes() -> None:
     assert issues == []
 
 
+def test_panel_tape_roll_length_in_metres_is_plausible() -> None:
+    # 52127407 / 76220690: panel tape 19 cm wide on a 35 m roll; "panel" in the product type
+    # must not hold the roll length to fence-panel lengths.
+    issues = check_implausible_dimensions(
+        listing(
+            product_type="pvc traka za panelnu ogradu",
+            variants=[
+                variant(
+                    "TRAKA ZA PANELE 19CM X 35M (650GR/M2) ( 34 NOSAČA) ZELENA I ANTRACIT BOJA",
+                    length="35M",
+                    size="19CM X 35M (650GR/M2)",
+                ),
+                variant("TRAKA ZA PANELE 19CM X 35M", length="35 m", size="19CM"),
+                variant("traka za panele 19cm x 35m", length="35 metara"),
+            ],
+        )
+    )
+    assert issues == []
+
+
+def test_panel_tape_roll_length_in_centimetres_is_still_checked() -> None:
+    issues = check_implausible_dimensions(
+        listing(product_type="pvc traka za panelnu ogradu", variants=[variant(length="3500CM")])
+    )
+    assert kinds(issues) == ["implausible_dimension"]
+
+
+# R1-2: the tape's width read into the height is not a panel height either.
+def test_panel_tape_width_in_the_height_is_plausible() -> None:
+    issues = check_implausible_dimensions(
+        listing(
+            product_type="pvc traka za panelnu ogradu",
+            variants=[variant("TRAKA ZA PANELE 19CM X 35M", height="19CM", length="35M")],
+        )
+    )
+    assert issues == []
+
+
 def test_unreadable_sizes_are_ignored() -> None:
     issues = check_implausible_dimensions(listing(variants=[variant(height="visoka", length=None)]))
     assert issues == []
@@ -291,11 +330,273 @@ def test_other_sizes_are_compared_as_text() -> None:
     assert issues == []
 
 
+class Price(TypedDict):
+    price_text: str
+    price: Decimal
+
+
+def km(price: str) -> Price:
+    """price_text and price for a variant, from the price as the listing wrote it."""
+    number = price.casefold().split("km")[0].strip().replace(",", ".")
+    return {"price_text": price, "price": Decimal(number)}
+
+
+def test_variants_that_differ_by_material_are_not_a_conflict() -> None:
+    # 28227701: INOX vs CINK chimney caps of the same diameter.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("FI 150MM - INOX - 62KM", size="FI 150MM", **km("62KM")),
+                variant("FI 150MM - CINK - 41KM", size="FI 150MM", **km("41KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+def test_variants_with_and_without_brake_are_not_a_conflict() -> None:
+    # 32573962: castors with and without a brake.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("OKRETNI FI 75MM -5.50KM", size="FI 75MM", **km("5.50KM")),
+                variant("OKRETNIS KOČNICOM FI 75MM -7,50 KM", size="FI 75MM", **km("7,50 KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+def test_variants_with_different_wire_thickness_are_not_a_conflict() -> None:
+    # 20007498: the same mesh in 1,10 and 1,40 mm wire.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant(
+                    "19x19 1,10 101CM - 9,00km/m",
+                    height="101CM",
+                    size="19x19",
+                    unit="m",
+                    **km("9,00km/m"),
+                ),
+                variant(
+                    "19x19 1,40 101CM - 10,75 km/m",
+                    height="101CM",
+                    size="19x19",
+                    unit="m",
+                    **km("10,75 km/m"),
+                ),
+            ]
+        )
+    )
+    assert issues == []
+
+
+def test_long_and_short_variants_are_not_a_conflict() -> None:
+    # 23832848: DUGI vs KRATKI hex key sets.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant(
+                    "IMBUS KLJUČEVI SET DUGI 1,5-10 MAURER PLUS (KAO NA SLICI)",
+                    size="1,5-10",
+                    **km("31,50KM"),
+                ),
+                variant(
+                    "IMBUS KLJUČEVI SET KRATKI 1,5-10 MAURER PLUS (KAO NA SLICI)",
+                    size="1,5-10",
+                    **km("18,00KM"),
+                ),
+            ]
+        )
+    )
+    assert issues == []
+
+
+def test_variants_of_two_brands_are_not_a_conflict() -> None:
+    # 68240492: TOPEX vs RICHMANN taps.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Ureznice M8 3/1 TOPEX", size="M8", unit="set", **km("11,00 KM")),
+                variant("Ureznice M8 3/1 RICHMANN", size="M8", unit="set", **km("14,25 KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+def test_identical_labels_apart_from_the_price_are_a_conflict() -> None:
+    # 32498542: the same 70 mm wheel at 13,75 and 16,75 KM.
+    variants = [
+        variant("TOČKIĆ TOČAK ZA KLIZNU KAPIJU 70 MM - 13,75KM", size="70 MM", **km("13,75KM")),
+        variant("TOČKIĆ TOČAK ZA KLIZNU KAPIJU 70 MM - 16,75KM", size="70 MM", **km("16,75KM")),
+    ]
+    issues = check_price_conflicts(listing(variants=variants))
+    assert kinds(issues) == ["price_conflict"]
+    assert "13,75" in issues[0].message and "16,75" in issues[0].message
+    # The fingerprint key is still the sizes the listing wrote, as before this change, so
+    # Toni's ignored rows stay ignored.
+    assert issues[0].key == "||70mm||"
+
+
+def test_labels_differing_only_in_case_accents_spaces_and_price_conflict() -> None:
+    # 21629676: "60mm - 1,50KM" and "60MM - 1,25KM"; a price without "KM" ("- 12") too.
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("60mm - 1,50KM", size="60mm", **km("1,50KM")),
+                variant("60MM  -  1,25KM", size="60MM", **km("1,25KM")),
+                variant("Točak 75mm - 12", size="75mm", price_text="12", price=Decimal("12")),
+                variant("TOCAK 75MM - 11", size="75MM", price_text="11", price=Decimal("11")),
+            ]
+        )
+    )
+    assert kinds(issues) == ["price_conflict", "price_conflict"]
+
+
+def test_identical_labels_without_sizes_are_compared() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Kopča - 1,00 KM", unit="kom", **km("1,00 KM")),
+                variant("KOPČA - 1,20 KM", unit="KOM", **km("1,20 KM")),
+            ]
+        )
+    )
+    assert kinds(issues) == ["price_conflict"]
+    assert issues[0].key.startswith("label:")
+    # R1-5: no size was written, so the message doesn't speak of "ista mjera".
+    assert "isti artikal" in issues[0].message
+
+
+def bare(price: str) -> Price:
+    """A price the listing wrote without "KM" ("- 12")."""
+    return {"price_text": price, "price": Decimal(price.replace(",", "."))}
+
+
+# Tomislav, 27 Nov 2026: filler after the price ("I", "NEMA") doesn't make a different
+# variant; the advisor can't pick a price either way, so Toni should name the difference.
+def test_filler_after_the_price_still_conflicts() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                # 27244397
+                variant("DIMENZIJE 50X160 - 2,50KM/KOM", size="50X160", unit="KOM", **km("2,50KM")),
+                variant(
+                    "DIMENZIJE 50X160 - 2,55KM/KOM I", size="50X160", unit="KOM", **km("2,55KM")
+                ),
+                # 21629676
+                variant("100mm - 2.50KM", size="100mm", **km("2.50KM")),
+                variant("100mm - 2,00KM - NEMA", size="100mm", **km("2,00KM")),
+            ]
+        )
+    )
+    assert [issue.details["prices"] for issue in issues] == [["2.50", "2.55"], ["2.00", "2.50"]]
+
+
+def test_filler_words_before_the_price_still_count() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Panel 153 NEMA - 50,00 KM", height="153", **km("50,00 KM")),
+                variant("Panel 153 - 55,00 KM", height="153", **km("55,00 KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+# R1-1: a bare price text that is also a size in the label is not the price.
+def test_a_size_with_the_same_number_as_a_bare_price_is_not_removed() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Lanac 6mm", **bare("6")),
+                variant("Lanac 8mm", **bare("8")),
+                variant("Cijev fi 20", **bare("20")),
+                variant("Cijev fi 25", **bare("25")),
+                variant("Vijak M12", **bare("12")),
+                variant("Vijak M10", **bare("10")),
+                variant("Pločica 30", **bare("30")),
+                variant("Pločica 40", **bare("40")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+# R1-1: labels that are only a price say nothing about being the same product.
+def test_labels_that_are_only_a_price_are_not_compared() -> None:
+    issues = check_price_conflicts(
+        listing(variants=[variant("1,50 KM", **km("1,50 KM")), variant("2,00 KM", **km("2,00 KM"))])
+    )
+    assert issues == []
+
+
+# R1-7: the label writes the price without "KM", the price text with it.
+def test_price_number_without_km_in_the_label_is_removed() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Točak 75mm - 12,00", size="75mm", **km("12,00 KM")),
+                variant("Točak 75mm - 14,00", size="75mm", **km("14,00 KM")),
+            ]
+        )
+    )
+    assert kinds(issues) == ["price_conflict"]
+
+
+# R1-3: only a unit after "KM/" belongs to the price.
+def test_a_word_after_km_slash_that_is_not_a_unit_is_kept() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Kapa 62KM/INOX", **km("62KM")),
+                variant("Kapa 41KM/CINK", **km("41KM")),
+                variant("Mreža 9,00KM/m", unit="m", **km("9,00KM")),
+                variant("Mreža 10,75 km / M", unit="m", **km("10,75 km")),
+            ]
+        )
+    )
+    assert [issue.details["labels"] for issue in issues] == [
+        ["Mreža 9,00KM/m", "Mreža 10,75 km / M"]
+    ]
+
+
+# R1-4: removing separators must not join two numbers into a third.
+def test_separators_between_numbers_are_kept() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Set 1,5-10 - 18,00 KM", **km("18,00 KM")),
+                variant("Set 1,510 - 31,50 KM", **km("31,50 KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+# R1-6: when one size group splits into two conflicts, the first keeps the old key.
+def test_first_conflict_of_a_size_keeps_the_plain_key() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Panel 153 zeleni", height="153", **km("50 KM")),
+                variant("Panel 153 zeleni", height="153", **km("55 KM")),
+                variant("Panel 153 crni", height="153", **km("60 KM")),
+                variant("Panel 153 crni", height="153", **km("65 KM")),
+            ]
+        )
+    )
+    assert [issue.key for issue in issues] == ["153||||", "153|||||label:panel153crni"]
+
+
 def test_listing_price_compares_cents() -> None:
     assert check_listing_price(listing(price=Decimal("10.0"), variants=[variant()])) == []
 
 
-def test_variants_without_any_size_are_not_compared() -> None:
+def test_different_labels_without_sizes_are_not_compared() -> None:
     issues = check_price_conflicts(
         listing(variants=[variant("Kopča"), variant("Anker", price=Decimal("1.30"))])
     )
@@ -608,7 +909,8 @@ def test_fingerprints_survive_a_reworded_label() -> None:
         reworded = listing(
             variants=[
                 variant(f"{label} A", height="153", length="250 cm"),
-                variant(f"{label} B", height="153", length="250 CM", price=Decimal("12")),
+                # Same label as A (a price conflict needs identical labels), other sizes text.
+                variant(f"{label} A", height="153", length="250 CM", price=Decimal("12")),
                 variant(f"{label} C", height="173", length="2500CM", price_text=None, price=None),
                 variant(f"{label} D", height="203", price_text="27 / 31 KM", price=None),
             ]
@@ -645,13 +947,14 @@ def test_gates_still_get_the_post_ranges() -> None:
 
 
 def test_conflict_and_dimension_checks_read_a_bare_size_the_same_way() -> None:
-    # "2500" in "2500 x 1030 mm" is 250 cm in both checks.
+    # "2500" in "2500 x 1030 mm" is 250 cm in both checks, so the two variants (same label,
+    # sizes extracted differently) fall in one group.
     issues = check_price_conflicts(
         listing(
             variants=[
                 variant("2500 x 1030 mm", height="1030 mm", length="2500", unit="panel"),
                 variant(
-                    "Panel 103 x 250 cm",
+                    "2500 x 1030 mm",
                     height="103 cm",
                     length="250 cm",
                     unit="panel",

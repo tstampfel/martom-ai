@@ -11,6 +11,7 @@ the listing wrote it ("153", "2500CM", "H-85 cm", "44,00 KM").
 
 import hashlib
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -170,6 +171,9 @@ _MAX_CM_WRITTEN_AS_CM = Decimal(1000)
 # Panel gates ("panelna kapija", "vrata") are wider than fence panels, so the "panel"
 # ranges don't apply to them; the post ranges still do ("stup za kapiju").
 _GATE_WORDS = ("kapij", "vrat")
+# Rolls and tapes ("pvc traka za panelnu ogradu": 19 cm wide, "35M" long) are not panels,
+# so neither their width nor their roll length is held to the "panel" ranges.
+_ROLL = re.compile(r"\b(?:trak|rol)")
 _FIELD_BS = {"height": "visina", "length": "dužina"}
 
 
@@ -179,8 +183,9 @@ def _size_problem(product_type: str, field_name: str, text: str, label: str) -> 
         return False
     cm, unit = parsed
     gate = any(word in product_type for word in _GATE_WORDS)
+    roll = _ROLL.search(product_type) is not None
     for word, ranged_field, low, high in _RANGES:
-        if gate and word == "panel":
+        if (gate or roll) and word == "panel":
             continue
         if word in product_type and ranged_field == field_name and not low <= cm <= high:
             return True
@@ -339,32 +344,111 @@ def _normal_text(text: str | None) -> str:
     return "".join(text.casefold().split()) if text else ""
 
 
-def check_price_conflicts(listing: CheckListing) -> list[ReviewIssue]:
-    """The same size (and colour) sold in the same unit at different prices.
+# A price written in a label: "62KM", "7,50 KM", "9,00km/m", "10,00/km/m", "2,50KM/KOM".
+# Only a unit after the slash belongs to the price: "62KM/INOX" keeps "INOX".
+_PER_UNIT = r"m2|m1|m|kg|kom|komad|set|panel|pak|paket|par|rola|role|l|lit|metar|kut"
+_PRICE_IN_LABEL = re.compile(
+    rf"{_NOT_IN_A_NUMBER}(?:{_NUMBER})\s*/?\s*km(?![^\W\d_])"
+    rf"(?:\s*/\s*(?:{_PER_UNIT})(?![^\W\d_]))?"
+)
+# Punctuation and symbols, except a dot, comma or slash inside a number ("1,10", "3/8").
+_PUNCTUATION = re.compile(r"(?<!\d)[.,/]|[.,/](?!\d)|[^\w\s.,/]|_")
+# A space that doesn't stand between two digits ("153 x 250" = "153X250", but "1,5 10" stays
+# two numbers).
+_SPACE_NOT_BETWEEN_DIGITS = re.compile(r"(?<!\d) | (?!\d)")
+# Where a price was removed from the label (a character no label contains).
+_PRICE_MARK = "\x00"
+# Filler words that, written after the price and before the end of the label, don't name a
+# different variant: "... - 2,55KM/KOM I", "100mm - 2,00KM - NEMA" (Tomislav, 27 Nov 2026).
+_FILLER_AFTER_PRICE = re.compile(
+    rf"{_PRICE_MARK}(?:[^\w{_PRICE_MARK}]*(?<![^\W\d_])(?:i|nema)(?![^\W\d_]))+[^\w]*$"
+)
 
-    Prices in different units (a roll and a metre, a panel and a piece) are not compared.
+
+def _without_accents(text: str) -> str:
+    """ "Kočnicom" -> "kocnicom": drop the marks NFKD splits off (č, ć, š, ž; đ stays đ)."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def _remove_bare_price(label: str, price_text: str | None) -> str:
+    """Remove the variant's price where the label writes it without "KM" ("... - 12").
+
+    Only at the price position: right after a separator (hyphen, en dash or colon) and followed by
+    nothing but the end of the label or punctuation, so "Lanac 6mm" or "Cijev fi 20" keep
+    their number even when the price is 6 or 20. The last such place counts.
     """
-    by_key: dict[str, list[VariantRow]] = defaultdict(list)
+    number = _NUMBER_AND_UNIT.search(price_text.casefold()) if price_text else None
+    if number is None:
+        return label
+    pattern = rf"([-\u2013:]\s*){re.escape(number.group(1))}(?![\d.,]*\d)(?=\s*(?:$|[^\w\s]))"
+    matches = list(re.finditer(pattern, label))
+    if not matches:
+        return label
+    last = matches[-1]
+    return f"{label[: last.start()]}{last.group(1)}{_PRICE_MARK}{label[last.end() :]}"
+
+
+def _label_without_price(v: VariantRow) -> str:
+    """The label with its prices removed, compared ignoring case, accents, spaces and
+    punctuation: "60mm - 1,50KM" and "60MM - 1,25KM" are both "60mm".
+
+    Removes every "<number> KM" and the variant's own price where the label writes it
+    without "KM" (`_remove_bare_price`), then filler written after the last price ("I",
+    "NEMA"). Spaces go, except between two numbers.
+    """
+    label = _PRICE_IN_LABEL.sub(_PRICE_MARK, v.label.casefold())
+    label = _remove_bare_price(label, v.price_text)
+    label = _FILLER_AFTER_PRICE.sub("", label).replace(_PRICE_MARK, " ")
+    label = " ".join(_PUNCTUATION.sub(" ", _without_accents(label)).split())
+    return _SPACE_NOT_BETWEEN_DIGITS.sub("", label)
+
+
+def check_price_conflicts(listing: CheckListing) -> list[ReviewIssue]:
+    """Variants whose labels are identical once the price is removed, in the same unit and
+    with the same sizes and colour, at different prices (Tomislav's rule, 27 Nov 2026).
+
+    Labels that differ in anything else (INOX vs CINK, "s kočnicom", wire thickness, DUGI
+    vs KRATKI, the brand) are different products, not a conflict. Prices in different units
+    (a roll and a metre, a panel and a piece) are not compared.
+    """
+    groups: dict[tuple[str, str | None, str], list[VariantRow]] = defaultdict(list)
     for v in _priced(listing):
-        key = _size_key(v)
-        if key is not None:
-            by_key[f"{key}|{_normal_text(v.unit)}"].append(v)
+        groups[(_label_without_price(v), _size_key(v), _normal_text(v.unit))].append(v)
+    conflicts = [
+        (group, variants)
+        for group, variants in groups.items()
+        # A label that is only a price (empty once it's removed) and no sizes: nothing
+        # says the variants are the same product.
+        if len({v.price for v in variants}) > 1 and (group[0] or group[1] is not None)
+    ]
+    # The fingerprint key is the sizes the listing wrote and the unit, as before this rule
+    # (so Toni's ignored rows keep their fingerprint). The label joins it when the variants
+    # have no sizes, and for the second and later conflicts that share the same sizes (the
+    # first, in listing order, keeps the plain key).
+    seen_sizes: set[tuple[str, str]] = set()
     issues = []
-    for key, variants in by_key.items():
+    for (label, sizes, unit), variants in conflicts:
+        if sizes is None:
+            key = f"label:{label}|{unit}"
+        elif (sizes, unit) in seen_sizes:
+            key = f"{sizes}|{unit}|label:{label}"
+        else:
+            key = f"{sizes}|{unit}"
+            seen_sizes.add((sizes, unit))
+        what = "isti artikal je naveden" if sizes is None else "ista mjera je navedena"
         prices = sorted({v.price for v in variants if v.price is not None})
-        if len(prices) > 1:
-            labels = [v.label for v in variants]
-            issues.append(
-                ReviewIssue(
-                    "price_conflict",
-                    listing.id,
-                    "high",
-                    f"Oglas {listing.id}: ista mjera je navedena s različitim cijenama: "
-                    f"{' i '.join(format_km(p) for p in prices)} ({'; '.join(labels)}).",
-                    {"labels": labels, "prices": [str(p) for p in prices]},
-                    key=key,
-                )
+        labels = [v.label for v in variants]
+        issues.append(
+            ReviewIssue(
+                "price_conflict",
+                listing.id,
+                "high",
+                f"Oglas {listing.id}: {what} s različitim cijenama: "
+                f"{' i '.join(format_km(p) for p in prices)} ({'; '.join(labels)}).",
+                {"labels": labels, "prices": [str(p) for p in prices]},
+                key=key,
             )
+        )
     return issues
 
 
