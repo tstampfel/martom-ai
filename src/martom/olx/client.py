@@ -24,6 +24,7 @@ with fakes and never wait for real.
 
 import asyncio
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
@@ -269,10 +270,12 @@ class OlxClient:
         self._now = now
         # Calls that succeeded only after at least one retry (sync_run.retried_count).
         self.recovered_requests = 0
-        # 429 answers, and the seconds the limiter was paused for them (their Retry-After,
-        # or the backoff when there was none). Logged with the run summary.
+        # 429 answers, and the seconds OLX asked us to wait for them (their Retry-After, or
+        # our backoff when there was none). It is the wait *asked for*, added when the
+        # limiter is paused, not time actually slept: when the deadline stops the run or no
+        # request follows, the full value still counts. Logged with the run summary.
         self.rate_limited_count = 0
-        self.rate_limit_wait_seconds = 0.0
+        self.rate_limit_requested_wait_seconds = 0.0
         self._limiter = rate_limiter or RateLimiter(
             min_request_interval_seconds,
             clock=clock,
@@ -306,7 +309,11 @@ class OlxClient:
 
     @property
     def requests_sent(self) -> int:
-        """Requests started through this client's limiter so far, retries included."""
+        """Requests started through this client's limiter so far, retries included.
+
+        Every request actually sent counts once, whatever came back: 2xx, 429, 5xx, other
+        4xx, or a timeout. A call the abort or the run deadline stopped before sending doesn't.
+        """
         return self._limiter.requests_started
 
     @property
@@ -366,7 +373,7 @@ class OlxClient:
 
             delay = retry_after if retry_after is not None else self._backoff_delay(attempt)
             if failure.status_code == 429:
-                self.rate_limit_wait_seconds += delay
+                self.rate_limit_requested_wait_seconds += delay
             # Pause the shared limiter BEFORE either give-up below, so whoever sends the
             # next request through this limiter (another coroutine, or the sync moving on
             # after catching OlxApiError) still waits as long as OLX asked. The delay is
@@ -398,10 +405,14 @@ class OlxClient:
         self.rate_limited_count += 1
         interval_before = self._limiter.interval
         interval_after = self._limiter.slow_down()
+        raw = response.headers.get("Retry-After")
         try:
-            retry_after = parse_retry_after(response.headers.get("Retry-After"), now=self._now())
+            retry_after = parse_retry_after(raw, now=self._now())
         except ValueError:
             retry_after = None  # `_checked_retry_after` aborts on it right after this
+        if retry_after is not None and not math.isfinite(retry_after):
+            # json.dumps would write `Infinity`, which jq and CloudWatch can't parse.
+            retry_after = None
         elapsed = self._limiter.elapsed_seconds
         requests = self._limiter.requests_started
         logger.warning(
@@ -418,7 +429,8 @@ class OlxClient:
                 "requests_sent": requests,
                 "interval_before": interval_before,
                 "interval_after": interval_after,
-                "retry_after_seconds": retry_after,
+                "retry_after_seconds": retry_after,  # None: absent, unparseable or infinite
+                "retry_after_header": None if raw is None else raw[:50],
             },
         )
 

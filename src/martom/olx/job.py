@@ -576,21 +576,23 @@ async def _finish_quietly(conn: psycopg.AsyncConnection, stats: RunStats) -> Non
 
 def _log_summary(stats: RunStats, olx: OlxClient) -> None:
     """One line per run. Besides the `sync_run` columns it carries the OLX timing
-    (requests, 429s, forced wait, elapsed) that #105 needs and that has no column.
+    (requests, 429s, the wait OLX asked for, elapsed) that #105 needs and that has no
+    column. `olx_429_requested_wait_seconds` is the sum of the 429 waits OLX asked for
+    (Retry-After, or our backoff), not time actually slept.
 
     The counters are the client's totals; `martom sync` uses one client per run.
     """
     timing = {
         "olx_requests_sent": olx.requests_sent,
         "olx_429_count": olx.rate_limited_count,
-        "olx_429_wait_seconds": olx.rate_limit_wait_seconds,
+        "olx_429_requested_wait_seconds": olx.rate_limit_requested_wait_seconds,
         "olx_elapsed_seconds": olx.elapsed_seconds,
     }
     log = logger.info if stats.status == "succeeded" else logger.error
     log(
         "sync run %s (%s) %s: seen %d, new %d, deactivated %d, reactivated %d, "
         "fetched %d, changed %d, errors %d, coverage %s; "
-        "OLX %d requests in %.0f s, %d x 429, %.0f s forced wait",
+        "OLX %d requests in %.0f s, %d x 429, OLX asked to wait %.0f s",
         stats.run_id,
         stats.kind,
         stats.status,
@@ -605,7 +607,7 @@ def _log_summary(stats: RunStats, olx: OlxClient) -> None:
         olx.requests_sent,
         olx.elapsed_seconds,
         olx.rate_limited_count,
-        olx.rate_limit_wait_seconds,
+        olx.rate_limit_requested_wait_seconds,
         extra={
             "event": "sync_run",
             **stats.columns(),

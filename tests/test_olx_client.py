@@ -15,6 +15,7 @@ from itertools import pairwise
 import httpx
 import pytest
 
+from martom.log import JsonFormatter
 from martom.olx.client import (
     OlxApiError,
     OlxClient,
@@ -324,9 +325,28 @@ async def test_429_with_an_absurd_retry_after_is_still_logged_before_the_abort(
 
     [record] = [r for r in caplog.records if getattr(r, "event", None) == "olx_429"]
     assert record.retry_after_seconds == 86400.0
+    assert record.retry_after_header == "86400"
 
 
-async def test_client_counts_429s_requests_and_forced_wait() -> None:
+@pytest.mark.parametrize("retry_after", ["9" * 400, "inf", "soon"])
+async def test_non_finite_or_garbage_retry_after_logs_null_and_the_raw_header(
+    retry_after: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": retry_after})])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxRateLimitAbortError):
+            await client.get_listing(1)
+
+    [record] = [r for r in caplog.records if getattr(r, "event", None) == "olx_429"]
+    # None, never `inf`: json.dumps would write `Infinity`, which jq and CloudWatch reject.
+    assert record.retry_after_seconds is None
+    assert record.retry_after_header == retry_after[:50]
+    assert "Infinity" not in JsonFormatter().format(record)
+
+
+async def test_client_counts_429s_requests_and_the_wait_olx_asked_for() -> None:
     clock = FakeClock()
     too_many = httpx.Response(429, headers={"Retry-After": "100"})
     server = Recorder(clock, [ok(), too_many, ok(), too_many, ok()])
@@ -337,7 +357,7 @@ async def test_client_counts_429s_requests_and_forced_wait() -> None:
 
     assert client.requests_sent == 5
     assert client.rate_limited_count == 2
-    assert client.rate_limit_wait_seconds == 200.0
+    assert client.rate_limit_requested_wait_seconds == 200.0
     assert client.elapsed_seconds == clock.now - 1000.0
 
 
