@@ -752,6 +752,8 @@ _PRICE_PROBLEM_TEXT = {
     PriceProblem.PRICES_DIFFER: "varijante {fields} u oglasu {listing} više nemaju istu cijenu",
     PriceProblem.MANUAL_MISSING: "proizvod „{manual}“ nije u manual_products.toml",
 }
+# A manual entry has no listing and no variants: its own text (R2-2).
+_MANUAL_UNPRICED_TEXT = "proizvod „{manual}“ u manual_products.toml nema cijenu (0 KM)"
 
 
 def check_bom_price_map(
@@ -761,6 +763,10 @@ def check_bom_price_map(
 ) -> list[ReviewIssue]:
     """A BOM line the price map prices that has lost its price (high: the customer sees
     "cijena na upit" in the materials list).
+
+    It also runs while the map is a draft, as a check of the map before Tomislav and Toni
+    review it; then every line is "cijena na upit" because of the draft, so the message
+    says that instead of blaming the variant.
 
     Uses `resolve_price`, the same rule as the DB pricer, so Toni sees exactly the lines
     the customer sees unpriced. `listings` are the active listings; one without an
@@ -782,17 +788,30 @@ def check_bom_price_map(
         # listing or colours whose prices differ.
         match_dicts = [dict(match) for match in lookup.failed_matches or entry.matches]
         fields = ", ".join(_match_text(m) for m in match_dicts)
-        reason = _PRICE_PROBLEM_TEXT[problem].format(
-            listing=entry.listing_id, fields=fields, manual=entry.manual_key
+        template = (
+            _MANUAL_UNPRICED_TEXT
+            if entry.manual_key is not None and problem == PriceProblem.UNPRICED
+            else _PRICE_PROBLEM_TEXT[problem]
         )
+        reason = template.format(listing=entry.listing_id, fields=fields, manual=entry.manual_key)
+        if price_map.status == "reviewed":
+            sees = "(kupac vidi „cijena na upit“)"
+        else:
+            sees = "(mapa cijena je još nacrt, pa kupac ionako vidi „cijena na upit“ za sve stavke)"
+        if entry.manual_key is not None:
+            action = "Javite Tomislavu ispravnu cijenu za manual_products.toml."
+        else:
+            action = (
+                "Provjerite oglas; ako se oglas namjerno promijenio, javite Tomislavu da "
+                "uskladi mapu cijena (price_map.toml)."
+            )
         issues.append(
             ReviewIssue(
                 "bom_price_missing",
                 entry.listing_id if entry.listing_id in active else None,
                 "high",
-                f"Stavka „{line}“ u popisu materijala za ogradu nema cijenu (kupac vidi "
-                f"„cijena na upit“): {reason}. Provjerite oglas; ako se oglas namjerno "
-                "promijenio, javite Tomislavu da uskladi mapu cijena (price_map.toml).",
+                f"Stavka „{line}“ u popisu materijala za ogradu nema cijenu {sees}: "
+                f"{reason}. {action}",
                 {
                     "item": entry.item.value,
                     "size": entry.size,

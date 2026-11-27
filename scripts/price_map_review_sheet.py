@@ -40,8 +40,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     out = args.out.resolve()
-    if not out.is_relative_to(DATA_DIR):
-        parser.error(f"--out must be under {DATA_DIR} (git-ignored), got {out}")
+    if not out.is_relative_to(DATA_DIR) or out == DATA_DIR or out.is_dir():
+        parser.error(f"--out must be a file under {DATA_DIR} (git-ignored), got {out}")
 
     price_map = load_price_map()
     manual_products = load_manual_products()

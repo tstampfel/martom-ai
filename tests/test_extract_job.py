@@ -319,6 +319,26 @@ async def test_a_review_check_error_makes_the_run_partial(
     assert "review checks" in error and "checks broke" in error
 
 
+async def test_a_broken_price_map_makes_the_run_partial(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R2-1: the other review checks are saved, the run is 'partial', not 'succeeded'.
+    await add_listing(conn, 1)
+
+    def broken_map(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("price map: status must be 'draft' or 'reviewed'")
+
+    monkeypatch.setattr("martom.review.job.load_price_map", broken_map)
+    stats = await run_extraction(conn, extractor(FakeModel()))
+
+    assert (stats.status, stats.extracted) == ("partial", 1)
+    [(status, error)] = await fetch(conn, "SELECT status, error FROM sync_run")
+    assert status == "partial"
+    assert "price map invalid" in error
+    rows = await fetch(conn, "SELECT kind, listing_id FROM review_issue")
+    assert ("height_without_price", 1) in rows
+
+
 async def open_issue_listings(conn: psycopg.AsyncConnection) -> list[tuple]:
     return await fetch(
         conn,

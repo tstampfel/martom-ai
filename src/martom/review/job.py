@@ -22,6 +22,12 @@ from martom.review.store import load_allowlist_warnings, load_check_listings, sa
 logger = logging.getLogger(__name__)
 
 
+class PriceMapCheckSkippedError(Exception):
+    """price_map.toml couldn't be loaded: every other check ran and was saved, the BOM
+    price check didn't, and its open issues were left as they were. Raised after saving, so
+    `martom extract` marks its run 'partial' (a check that breaks is alert-worthy)."""
+
+
 @dataclass(frozen=True)
 class ReviewStats:
     checked: int  # active listings checked
@@ -40,13 +46,14 @@ async def run_review_checks(
     """Check every active listing, manual_products.toml, the latest sync's allowlist
     warnings and the BOM price map (#125); upsert by fingerprint."""
     manual_products = load_manual_products(manual_products_path)
+    map_error: Exception | None = None
     try:
         price_map = load_price_map(price_map_path)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
         # A broken map must not stop the listing, manual and allowlist checks; the shipped
         # map is checked by the tests, and the pricer refuses to start on it.
         logger.exception("price map invalid, BOM price check skipped")
-        price_map = None
+        price_map, map_error = None, exc
     listings = await load_check_listings(conn)
     issues = run_all_checks(
         listings,
@@ -55,7 +62,10 @@ async def run_review_checks(
         allowlist_warnings=await load_allowlist_warnings(conn),
         price_map=price_map,
     )
-    raised, new, resolved = await save_issues(conn, issues)
+    # Unchecked kinds keep their open issues: a skipped check found nothing because it
+    # never ran, not because the problems were fixed.
+    unchecked = ["bom_price_missing"] if price_map is None else []
+    raised, new, resolved = await save_issues(conn, issues, unchecked_kinds=unchecked)
     stats = ReviewStats(checked=len(listings), raised=raised, new=new, resolved=resolved)
     logger.info(
         "review checks finished",
@@ -66,4 +76,8 @@ async def run_review_checks(
             "resolved": stats.resolved,
         },
     )
+    if map_error is not None:
+        raise PriceMapCheckSkippedError(
+            f"price map invalid, BOM price check skipped: {map_error}"
+        ) from map_error
     return stats

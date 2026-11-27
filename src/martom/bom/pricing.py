@@ -51,7 +51,14 @@ STATUSES: tuple[Status, ...] = ("draft", "reviewed")
 type Match = tuple[tuple[str, str | int], ...]
 
 # One number and an optional unit, nothing else: "H-125", "h - 125CM", "250 cm", "1250 mm".
-_ONE_SIZE = re.compile(r"(?:h\s*[-.]?\s*)?(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?", re.IGNORECASE)
+# A dot before exactly three digits is a thousands separator ("1.550 mm" = 1550 mm), except
+# in metres without a comma ("2.500 m" = 2,5 m): the same reading as `_to_decimal` in
+# `martom.review.checks` (a test keeps the two equal).
+_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?")
+_ONE_SIZE = re.compile(
+    r"(?:h\s*[-.]?\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(mm|cm|m)?",
+    re.IGNORECASE,
+)
 _CM_PER = {"mm": Decimal("0.1"), "cm": Decimal(1), "m": Decimal(100), None: Decimal(1)}
 
 
@@ -110,8 +117,11 @@ def written_cm(text: str | None) -> Decimal | None:
     found = _ONE_SIZE.fullmatch(text.strip()) if text else None
     if found is None:
         return None
-    number = Decimal(found.group(1).replace(",", "."))
+    digits = found.group(1)
     unit = found.group(2).lower() if found.group(2) else None
+    if _THOUSANDS.fullmatch(digits) and not (unit == "m" and "," not in digits):
+        digits = digits.replace(".", "")
+    number = Decimal(digits.replace(",", "."))
     return number * _CM_PER[unit]
 
 
@@ -249,7 +259,9 @@ def _entry(raw: dict[str, Any]) -> PriceMapEntry:
 
 
 def _match(name: str, raw: object) -> Match:
-    if not isinstance(raw, dict) or "unit" not in raw:
+    if not isinstance(raw, dict):
+        raise ValueError(f"price map: {name}: each variant must be a table, e.g. {{ unit = ... }}")
+    if "unit" not in raw:
         raise ValueError(f"price map: {name}: each variant needs a unit (what it is priced per)")
     for field, value in raw.items():
         if field not in MATCH_FIELDS:

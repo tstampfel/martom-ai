@@ -2,8 +2,12 @@
 
 # ruff: noqa: RUF001
 
+import dataclasses
+import subprocess
+import sys
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -72,6 +76,7 @@ def test_renders_one_fake_row_with_empty_columns_for_toni() -> None:
     ) in lines
     assert "27.11.2026" in text
     assert "nacrt" in text
+    assert "nije sužen na varenu mrežu" in text  # roll candidates include PVC fences
 
 
 # --- build_rows -------------------------------------------------------------------------
@@ -113,7 +118,9 @@ def test_unmapped_item_says_why() -> None:
 def test_inactive_listing_and_missing_variant_are_noted() -> None:
     listings = {k: v for k, v in LISTINGS.items() if k != TENSIONER_LISTING}
     rows = rows_for("Zatezač (španer)", build_rows(PRICE_MAP, listings, MANUAL, roll_candidates=[]))
-    assert {r.note for r in rows} == {"oglas nije aktivan ili nije obrađen"}
+    assert {r.note for r in rows} == {
+        "oglas nije aktivan ili nije obrađen → kupac vidi „cijena na upit“"
+    }
     assert {r.price for r in rows} == {""}
 
 
@@ -142,6 +149,60 @@ def test_roll_candidate_priced_per_piece_is_not_offered() -> None:
     assert all(r.listing == "nije povezano" for r in rows)
 
 
+def test_the_note_follows_the_pricing_rule_when_colours_cost_differently() -> None:
+    # The customer sees "na upit" when the tensioner colours differ: so must the sheet.
+    variants = [
+        dataclasses.replace(v, price=Decimal("1.80")) if v.colour == "Antracit" else v
+        for v in VARIANTS[TENSIONER_LISTING]
+    ]
+    listings = {**LISTINGS, TENSIONER_LISTING: dataclasses.replace(
+        LISTINGS[TENSIONER_LISTING], variants=variants)}  # fmt: skip
+    rows = rows_for("Zatezač (španer)", build_rows(PRICE_MAP, listings, MANUAL, roll_candidates=[]))
+    assert {r.note for r in rows} == {"boje nemaju istu cijenu → kupac vidi „cijena na upit“"}
+    assert [r.price for r in rows] == ["1,65 KM", "1,80 KM", "1,65 KM"]
+
+
+def test_a_manual_price_of_zero_is_noted_like_the_pricer_sees_it() -> None:
+    zero = {
+        key: dataclasses.replace(product, price_km=Decimal("0.00"))
+        for key, product in MANUAL.items()
+    }
+    [row] = rows_for("Anker M8×70", build_rows(PRICE_MAP, LISTINGS, zero, roll_candidates=[]))
+    assert row.price == ""
+    assert row.note.startswith("cijena 0 KM → kupac vidi „cijena na upit“")
+
+
+def test_a_nan_price_is_never_shown() -> None:
+    variants = [
+        dataclasses.replace(v, price=Decimal("NaN")) if v.colour == "Zeleni" else v
+        for v in VARIANTS[TENSIONER_LISTING]
+    ]
+    listings = {**LISTINGS, TENSIONER_LISTING: dataclasses.replace(
+        LISTINGS[TENSIONER_LISTING], variants=variants)}  # fmt: skip
+    rows = rows_for("Zatezač (španer)", build_rows(PRICE_MAP, listings, MANUAL, roll_candidates=[]))
+    assert (rows[0].price, rows[0].note) == (
+        "",
+        "varijanta nema cijenu → kupac vidi „cijena na upit“",
+    )
+    nan_roll = dataclasses.replace(
+        roll_candidate(), variants=[dataclasses.replace(roll_candidate().variants[0],
+                                                         price=Decimal("NaN"))]
+    )  # fmt: skip
+    rolls = rows_for(
+        "Varena ograda u roli", build_rows(PRICE_MAP, LISTINGS, MANUAL, roll_candidates=[nan_roll])
+    )
+    assert all(r.listing == "nije povezano" for r in rolls)
+
+
+@pytest.mark.parametrize("unit", ["metar", "m1", "/M", "m"])
+def test_roll_units_written_as_metres_are_offered(unit: str) -> None:
+    rows = rows_for(
+        "Varena ograda u roli",
+        build_rows(PRICE_MAP, LISTINGS, MANUAL, roll_candidates=[roll_candidate(unit=unit)]),
+    )
+    assert [r.listing for r in rows if r.key == "60 cm"] == ["Ograde u roli antracit"]
+
+
 def test_every_map_entry_and_unmapped_line_has_a_row() -> None:
     rows = build_rows(PRICE_MAP, LISTINGS, MANUAL, roll_candidates=[])
     expected = sum(len(e.matches) or 1 for e in PRICE_MAP.entries.values())
@@ -167,3 +228,22 @@ async def test_loaders_read_active_listings_and_roll_candidates(database_url: st
     assert set(listings) == {PANEL_LISTING}  # the sold panel is not active
     assert listings[PANEL_LISTING].variants[0].height == "83"
     assert [c.id for c in candidates] == [900101]  # chain link (baklava) is left out
+
+
+# --- the script's output guard ------------------------------------------------------------
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "price_map_review_sheet.py"
+
+
+@pytest.mark.parametrize("out", ["/tmp/sheet.md", "data", "data/"])
+def test_the_script_writes_only_a_file_under_data(out: str) -> None:
+    # Refused before any database connection: exit 2 from argparse.
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--out", out],
+        capture_output=True,
+        text=True,
+        cwd=SCRIPT.parents[1],
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "--out must be a file under" in result.stderr

@@ -89,6 +89,36 @@ def test_manual_price_of_zero_is_reported() -> None:
     assert [(i.details["item"], i.details["problem"]) for i in issues] == [
         ("anchor_m8x70", "unpriced")
     ]
+    # R2-2: its own text, never the OLX template with "oglas None".
+    message = issues[0].message
+    assert "proizvod „anchor_m8x70“ u manual_products.toml nema cijenu (0 KM)" in message
+    assert "None" not in message
+    assert "Provjerite oglas" not in message
+
+
+def lost_panel_price() -> list[CheckListing]:
+    variants = [
+        dataclasses.replace(v, price=None) if v.height == "153" and v.length == "250 cm" else v
+        for v in VARIANTS[PANEL_LISTING]
+    ]
+    return catalogue({PANEL_LISTING: variants})
+
+
+def test_a_draft_map_issue_does_not_blame_the_variant_for_what_the_customer_sees() -> None:
+    # The check still runs on a draft map (a pre-review check), but while the map is a
+    # draft every line is "na upit" anyway, so the message says so instead.
+    [issue] = check_bom_price_map(PRICE_MAP, lost_panel_price(), MANUAL)
+    assert PRICE_MAP.status == "draft"
+    assert "kupac vidi" not in issue.message
+    assert "nacrt" in issue.message
+    assert "nema cijenu" in issue.message
+
+
+def test_a_reviewed_map_issue_says_the_customer_sees_na_upit() -> None:
+    reviewed = dataclasses.replace(PRICE_MAP, status="reviewed")
+    [issue] = check_bom_price_map(reviewed, lost_panel_price(), MANUAL)
+    assert "kupac vidi „cijena na upit“" in issue.message
+    assert "nacrt" not in issue.message
 
 
 def test_variant_that_disappeared() -> None:

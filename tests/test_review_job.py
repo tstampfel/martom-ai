@@ -4,7 +4,6 @@ A throwaway database per test (see conftest.py); no model and no network.
 """
 
 import json
-import logging
 from collections.abc import AsyncIterator, Sequence
 from datetime import date
 from pathlib import Path
@@ -14,7 +13,7 @@ import pytest
 
 from martom.bom.pricing import PriceMap
 from martom.migrate import run_migrations
-from martom.review.job import run_review_checks
+from martom.review.job import PriceMapCheckSkippedError, run_review_checks
 
 pytestmark = pytest.mark.anyio
 
@@ -250,18 +249,38 @@ async def test_a_broken_price_map_skips_only_the_bom_check(
     conn: psycopg.AsyncConnection,
     tmp_path: Path,
     manual_toml: Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # R1-10: the other checks still raise and resolve issues; the error is logged.
+    # R1-10: the other checks still raise and resolve issues. R2-1: the open BOM price
+    # issues stay open (nothing checked them), and the run reports the failure so the
+    # extraction run becomes 'partial'.
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    bom_open = [row for row in await issues(conn) if row[0] == "bom_price_missing"]
+    assert bom_open  # the shipped map points at listings this database lacks
     await add_listing(conn, 1, state="used")
     broken = tmp_path / "price_map.toml"
     broken.write_text('status = "maybe"\n', encoding="utf-8")
-    with caplog.at_level(logging.ERROR, logger="martom.review.job"):
+    with pytest.raises(PriceMapCheckSkippedError, match="status"):
         await run_review_checks(
             conn, today=TODAY, manual_products_path=manual_toml, price_map_path=broken
         )
+    after = await issues(conn)
+    assert [row for row in after if row[0] == "bom_price_missing"] == bom_open
+    assert ("used_state", 1, "medium", "open") in after
+
+
+@pytest.mark.usefixtures("shipped_price_map")
+async def test_a_missing_price_map_file_is_skipped_the_same_way(
+    conn: psycopg.AsyncConnection, tmp_path: Path, manual_toml: Path
+) -> None:
+    await add_listing(conn, 1, state="used")
+    with pytest.raises(PriceMapCheckSkippedError):
+        await run_review_checks(
+            conn,
+            today=TODAY,
+            manual_products_path=manual_toml,
+            price_map_path=tmp_path / "missing.toml",
+        )
     assert await issues(conn) == [("used_state", 1, "medium", "open")]
-    assert any(r.message == "price map invalid, BOM price check skipped" for r in caplog.records)
 
 
 async def test_issue_of_a_listing_that_goes_inactive_is_resolved_with_the_reason(

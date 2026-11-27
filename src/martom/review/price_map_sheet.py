@@ -16,8 +16,9 @@ candidate variant within 5 cm of the roll height with that 25 m price marked
 # ruff: noqa: RUF001, RUF002, RUF003
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
+from decimal import Decimal
 
 import psycopg
 
@@ -26,8 +27,10 @@ from martom.bom.manual_products import ManualProduct
 from martom.bom.pricing import (
     PriceMap,
     PriceMapEntry,
+    PriceProblem,
     matches_variant,
     normalise,
+    resolve_price,
     written_cm,
 )
 from martom.extract.store import VariantRow
@@ -63,8 +66,20 @@ ITEM_NAMES: dict[Item, str] = {
 ROLL_LENGTH_M = 25  # fence-rules.md: a roll is 25 m
 ROLL_HEIGHT_TOLERANCE_CM = 5  # the same ±5 cm as the search height filter
 
-NOT_ACTIVE = "oglas nije aktivan ili nije obrađen"
 NOT_MAPPED = "nije povezano"
+ON_REQUEST = " → kupac vidi „cijena na upit“"
+
+# Why `resolve_price` (the pricer's rule) gives no price, in Croatian for Toni.
+PROBLEM_TEXT = {
+    PriceProblem.LISTING_INACTIVE: "oglas nije aktivan ili nije obrađen",
+    PriceProblem.VARIANT_MISSING: "varijanta nije pronađena",
+    PriceProblem.VARIANT_AMBIGUOUS: "više varijanti odgovara",
+    PriceProblem.UNPRICED: "varijanta nema cijenu",
+    PriceProblem.PRICES_DIFFER: "boje nemaju istu cijenu",
+    PriceProblem.MANUAL_MISSING: "nema u manual_products.toml",
+}
+# Roll candidates whose unit says "per metre", as listings write it.
+PER_METRE_UNITS = frozenset({"m", "m1", "metar", "metra", "metara", "metru"})
 
 
 @dataclass(frozen=True)
@@ -116,39 +131,58 @@ def _entry_rows(
     listings: Mapping[int, SheetListing],
     manual_products: Mapping[str, ManualProduct],
 ) -> list[SheetRow]:
+    """Each row's price and note come from `resolve_price`, the pricer's rule, so the
+    sheet shows "na upit" exactly where the customer would: the row's own variant table
+    first, then the entry as a whole (tensioner colours that cost differently)."""
     name, size = ITEM_NAMES[entry.item], entry.size or "–"
     if entry.manual_key is not None:
+        lookup = resolve_price(entry, None, manual_products)
         product = manual_products.get(entry.manual_key)
-        if product is None:
-            return [SheetRow(name, size, "bez OLX oglasa", "", "", "", "nema u manual_products")]
+        note = (
+            f"izvor: {product.source}, potvrđeno {product.last_confirmed:%d.%m.%Y}."
+            if product is not None
+            else ""
+        )
+        if lookup.problem is not None:
+            text = (
+                "cijena 0 KM"
+                if lookup.problem == PriceProblem.UNPRICED
+                else PROBLEM_TEXT[lookup.problem]
+            )
+            note = f"{text}{ON_REQUEST}. {note}".strip()
         return [
-            SheetRow(name, size, "bez OLX oglasa (manual_products.toml)", product.name,
-                     format_km(product.price_km), "",
-                     f"izvor: {product.source}, potvrđeno {product.last_confirmed:%d.%m.%Y}.")
+            SheetRow(name, size, "bez OLX oglasa (manual_products.toml)",
+                     product.name if product else "", _price(lookup.price), "", note)
         ]  # fmt: skip
     listing = listings.get(entry.listing_id) if entry.listing_id is not None else None
+    variants = listing.variants if listing is not None else None
+    whole = resolve_price(entry, variants, manual_products)
     rows = []
     for match in entry.matches:
         colour = dict(match).get("colour")
         key = f"boja: {colour}" if len(entry.matches) > 1 and colour else size
+        own = resolve_price(replace(entry, matches=(match,)), variants, manual_products)
+        problem = own.problem or whole.problem
+        note = f"{PROBLEM_TEXT[problem]}{ON_REQUEST}" if problem is not None else ""
         if listing is None:
-            rows.append(SheetRow(name, key, f"oglas {entry.listing_id}", "", "", "", NOT_ACTIVE))
+            rows.append(SheetRow(name, key, f"oglas {entry.listing_id}", "", "", "", note))
             continue
         found = [v for v in listing.variants if matches_variant(v, match)]
-        variant, price, note = "", "", ""
-        if len(found) == 1:
-            variant = found[0].label
-            if found[0].price is not None and found[0].price > 0:
-                price = format_km(found[0].price)
-            else:
-                note = "varijanta nema cijenu"
-        else:
-            note = "varijanta nije pronađena" if not found else "više varijanti odgovara"
+        variant = found[0].label if len(found) == 1 else ""
         rows.append(
-            SheetRow(name, key, listing.title, variant, price, listing_url(listing.slug) or "",
-                     note)
+            SheetRow(name, key, listing.title, variant, _price(own.price),
+                     listing_url(listing.slug) or "", note)
         )  # fmt: skip
     return rows
+
+
+def _price(value: Decimal | None) -> str:
+    return format_km(value) if _usable(value) else ""
+
+
+def _usable(value: Decimal | None) -> bool:
+    """A real price: above 0 and finite (never NaN), as `resolve_price` requires."""
+    return value is not None and value.is_finite() and value > 0
 
 
 def _roll_rows(ref: PriceRef, reason: str, candidates: Sequence[SheetListing]) -> list[SheetRow]:
@@ -164,8 +198,7 @@ def _roll_rows(ref: PriceRef, reason: str, candidates: Sequence[SheetListing]) -
                 variant_height is None
                 or abs(variant_height - height) > ROLL_HEIGHT_TOLERANCE_CM
                 or not _per_metre(variant)
-                or variant.price is None
-                or variant.price <= 0
+                or not _usable(variant.price)
             ):
                 continue
             roll_price = variant.price * ROLL_LENGTH_M
@@ -181,10 +214,10 @@ def _roll_rows(ref: PriceRef, reason: str, candidates: Sequence[SheetListing]) -
 
 
 def _per_metre(variant: VariantRow) -> bool:
-    """The variant's unit says "per metre" ("m", "/M"); only without a unit, its price
-    text ("6,00KM/m")."""
+    """The variant's unit says "per metre" ("m", "/M", "m1", "metar"); only without a
+    unit, its price text ("6,00KM/m")."""
     if variant.unit:
-        return normalise(variant.unit).strip("/") == "m"
+        return normalise(variant.unit).strip("/") in PER_METRE_UNITS
     return normalise(variant.price_text or "").endswith("/m")
 
 
@@ -198,7 +231,8 @@ def render_markdown(rows: Sequence[SheetRow], *, today: date, status: str) -> st
         "Za svaki red stavite ✓ u stupac „OK” ako je oglas, varijanta i cijena ispravna, "
         "ili upišite što je pogrešno. Redovi „nije povezano” kupcu prikazuju „cijena na "
         "upit”. Cijene označene „za potvrdu” su pretpostavka (rola od 25 m = 25 × cijena "
-        "po metru) i kupcu se još ne prikazuju.",
+        "po metru) i kupcu se još ne prikazuju. Popis mogućih rola nije sužen na varenu "
+        "mrežu (ima i PVC i plastificiranih ograda): za svaku visinu označite pravi oglas.",
         "",
         "| " + " | ".join(HEADER) + " |",
         "|" + "---|" * len(HEADER),

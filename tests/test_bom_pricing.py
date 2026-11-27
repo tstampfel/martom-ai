@@ -4,6 +4,7 @@
 
 import dataclasses
 import itertools
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -27,8 +28,11 @@ from martom.bom.pricing import (
     lookup_ref,
     matches_variant,
     resolve_price,
+    written_cm,
 )
 from martom.bom.roll import ROLL_RULES, RollPostModel, roll_fence_bom
+from martom.review.checks import _cm as checks_cm
+from martom.review.checks import _to_decimal as checks_to_decimal
 
 MANUAL = load_manual_products()
 SHIPPED = load_price_map()
@@ -363,6 +367,10 @@ def test_loads_a_minimal_map(tmp_path: Path) -> None:
         ),
         (GOOD_ENTRY.replace('height_cm = 153, length_cm = 250, unit = "panel"', ""), "unit"),
         (GOOD_ENTRY.replace(', unit = "panel"', ""), "unit"),
+        (
+            GOOD_ENTRY.replace('{ height_cm = 153, length_cm = 250, unit = "panel" }', '"153"'),
+            "each variant must be a table",
+        ),
         (GOOD_ENTRY.replace("height_cm = 153", 'price = "53"'), "field 'price'"),
         (GOOD_ENTRY.replace("height_cm = 153", 'label = "Panel"'), "field 'label'"),
         (GOOD_ENTRY.replace("height_cm = 153", 'height = "153"'), "field 'height'"),
@@ -397,3 +405,20 @@ def test_manual_entry_takes_no_variants(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="variants"):
         load_price_map(write_map(tmp_path, body))
+
+
+@pytest.mark.parametrize(
+    ("text", "cm"),
+    [
+        ("1.550 mm", Decimal("155")),
+        ("1.250,5 mm", Decimal("125.05")),
+        ("2.500 m", Decimal("250")),
+        ("4.20 m", Decimal("420")),
+        ("H-125", Decimal("125")),
+    ],
+)
+def test_written_cm_reads_a_thousands_dot_like_the_review_checks(text: str, cm: Decimal) -> None:
+    # R2 note: "1.550 mm" is 1550 mm in checks.py, so here too (not 0.155 cm).
+    assert written_cm(text) == cm
+    digits, unit = re.fullmatch(r"(?:H-)?([\d.,]+)\s*(mm|cm|m)?", text).groups()
+    assert written_cm(text) == checks_cm(checks_to_decimal(digits, unit), unit)
