@@ -82,7 +82,7 @@ Toni's fence know-how lives in `knowledge/` as one Markdown file per chunk, with
 
 BOM calculators live in `src/martom/bom/` (one module per fence system, shared types in `common.py`). Products Toni sells without an OLX listing go in the reviewed `src/martom/bom/manual_products.toml` (table name = BOM item key; name, price as a string, source, `last_confirmed`). Their prices never live in code as constants; a BOM line's `name` may repeat the product name, and a test keeps the two equal.
 
-Every new env var goes into `.env.example` with a fake value and the milestone that first reads it. `.gitignore` drops `*.csv` and `*.jsonl` everywhere except CSV/JSONL under `tests/fixtures/` and JSONL under `evals/` (so data dumps can't slip in); put committed fixtures and eval sets there. Raw OLX or database dumps go only in `/data/` (ignored); never write them elsewhere in the tree.
+Every new env var goes into `.env.example` with a fake value and the milestone that first reads it. `.gitignore` drops `*.csv` and `*.jsonl` everywhere except CSV/JSONL under `tests/fixtures/` and JSONL under `evals/` (so data dumps can't slip in); put committed fixtures and eval sets there. `tests/test_fixture_privacy.py` scans every file under `tests/fixtures/` and `evals/` and fails on phone numbers, emails and seller/user fields (only 036 651 427, the martom-bekaert.com addresses, the fake 060 000 000 and Martom's own OLX shop identity pass), files over 100 KB and files with more than 20 listings; replace private numbers with 060 000 000 when you record a fixture, never widen the allowlist to make it pass. Raw OLX or database dumps go only in `/data/` (ignored); never write them elsewhere in the tree.
 
 ### Frontend (web/)
 
