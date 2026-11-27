@@ -4,7 +4,7 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g).
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it.
 
 | Canvas | Repo |
 | --- | --- |
