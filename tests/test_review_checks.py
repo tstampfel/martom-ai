@@ -14,6 +14,7 @@ from martom.review.checks import (
     CheckListing,
     CheckProduct,
     ReviewIssue,
+    check_allowlist_warnings,
     check_duplicate_listings,
     check_implausible_dimensions,
     check_listing,
@@ -707,3 +708,88 @@ def test_variant_fingerprint_without_a_collision_ignores_the_label() -> None:
         }
 
     assert fingerprints("Panel") == fingerprints("3D panelna ograda")
+
+
+# --- allowlist warnings from the sync (#45) --------------------------------------------------
+
+
+def allowlist_warning(reason: str, **overrides: object) -> dict[str, object]:
+    warning: dict[str, object] = {
+        "listing_id": 18129143,
+        "name": "Španer (zatezač za žicu)",
+        "reason": reason,
+        "expected_category_id": 1126,
+        "category_id": None,
+        "error": None,
+    }
+    return warning | overrides
+
+
+def test_allowlisted_listing_gone_from_olx_is_a_high_issue_without_a_listing_row() -> None:
+    [issue] = check_allowlist_warnings([allowlist_warning("404")])
+
+    assert issue.kind == "allowlist_listing_gone"
+    assert issue.priority == "high"
+    # No listing_id: the listing may never have been stored (FK) or be inactive, which
+    # would hide the issue from Toni's report.
+    assert issue.listing_id is None
+    assert issue.details["allowlisted_listing_id"] == 18129143
+    assert issue.details["reason"] == "404"
+    assert "18129143" in issue.message and "Španer" in issue.message
+
+
+def test_a_new_gone_reason_keeps_the_same_issue() -> None:
+    [first] = check_allowlist_warnings([allowlist_warning("404")])
+    [second] = check_allowlist_warnings([allowlist_warning("inactive")])
+
+    assert first.fingerprint == second.fingerprint
+    assert first.message != second.message
+
+
+def test_allowlisted_listing_of_another_owner_is_gone_too() -> None:
+    [issue] = check_allowlist_warnings([allowlist_warning("not_martom")])
+
+    assert issue.kind == "allowlist_listing_gone"
+
+
+def test_allowlisted_listing_the_sync_no_longer_finds_is_a_medium_issue() -> None:
+    # Active on OLX, but in no category the sync pages: the move OUT of all synced
+    # categories Tomislav wants warned about (R1-3).
+    [issue] = check_allowlist_warnings([allowlist_warning("not_seen")])
+
+    assert issue.kind == "allowlist_listing_not_synced"
+    assert issue.priority == "medium"
+    assert issue.listing_id is None
+    assert issue.details == {
+        "allowlisted_listing_id": 18129143,
+        "reason": "not_seen",
+        "expected_category_id": 1126,
+        "category_id": None,
+    }
+    assert "18129143" in issue.message
+
+
+def test_not_synced_and_gone_are_different_issues() -> None:
+    [not_synced] = check_allowlist_warnings([allowlist_warning("not_seen")])
+    [gone] = check_allowlist_warnings([allowlist_warning("404")])
+
+    assert not_synced.fingerprint != gone.fingerprint
+
+
+def test_old_moved_warnings_raise_nothing() -> None:
+    # Runs recorded before R1-3 could hold "moved"; a seen listing is synced, so no issue.
+    assert check_allowlist_warnings([allowlist_warning("moved", category_id=2091)]) == []
+
+
+def test_failed_checks_raise_no_issue_for_toni() -> None:
+    # A failed GET or a row without a category is a sync-side glitch Toni can't fix.
+    warnings = [
+        allowlist_warning("recheck_failed", error="5xx"),
+        allowlist_warning("recheck_failed", error="no_category_id"),
+    ]
+
+    assert check_allowlist_warnings(warnings) == []
+
+
+def test_malformed_allowlist_warning_is_skipped() -> None:
+    assert check_allowlist_warnings([{"reason": "404"}, "junk"]) == []  # type: ignore[list-item]
