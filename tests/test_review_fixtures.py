@@ -1,7 +1,7 @@
 """The review checks on real listings (tests/fixtures/extraction/) and on the audited copy.
 
-The extracted products come from responses.json (model replies, hand-written for now and
-re-recorded from Haiku later) turned into rows by the same `build_record` the extraction
+The extracted products come from responses.json (replies recorded from claude-haiku-5-5)
+turned into rows by the same `build_record` the extraction
 job uses, so these tests read exactly what `product_variant` would hold. No model and no
 network are called.
 """

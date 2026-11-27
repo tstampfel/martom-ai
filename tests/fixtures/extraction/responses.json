@@ -1,35 +1,31 @@
 {
- "_about": "Model replies for the 10 golden listings (tests/fixtures/extraction/listings.json), keyed by listing id: the ExtractedProduct JSON the structured-output call returns. SOURCE: hand-written to SYSTEM_PROMPT's rules by the M2-1 implementing agent on 27 Nov 2026, because no Anthropic API key was available to it; NOT yet recorded from claude-haiku-5-5. Re-record with real Haiku output: `uv run python scripts/record_extraction_fixtures.py --record` (needs ANTHROPIC_API_KEY in the shell; without --record the script only rewrites golden.json and calls no model), then review the diff and update tests/fixtures/extraction/golden.json.",
- "source": "hand-written",
- "model": null,
+ "_about": "Model replies for the 10 golden listings (listings.json), keyed by listing id, recorded from claude-haiku-5-5 on 2026-11-27 with scripts/record_extraction_fixtures.py --record.",
+ "source": "recorded",
+ "model": "claude-haiku-5-5",
  "prompt_version": "m2-1-v1",
  "responses": {
   "63996799": {
    "product_type": "panelna ograda",
    "brand": null,
-   "material": "čvrsta pocinčana čelična žica s debelim slojem kvalitetne PVC plastifikacije",
-   "wire_thickness": "Ø 4,20 / 4,40 mm",
+   "material": "žica Ø 4,20/4,40 mm, PVC plastificirana, pocinčana čelična žica",
+   "wire_thickness": "Ø 4,20/4,40 mm",
    "mesh": null,
    "colours": [
     "ZELENA RAL 6005",
     "ANTRACIT RAL 7016"
    ],
    "uses": [
-    "ograđivanje obiteljskih kuća",
-    "dvorišta",
-    "vrtova",
-    "vikendica",
-    "poslovnih objekata",
-    "igrališta i sportskih terena"
+    "Ograđivanje obiteljskih kuća, dvorišta, vrtova, vikendica, apartmana, poslovnih objekata, skladišta, škola, igrališta i sportskih terena"
    ],
    "compatible_with": [
-    "stupovi sa stopom",
+    "stupovi za panele",
     "PVC kopče",
     "tiplo ankeri"
    ],
    "synonyms": [
     "3D panelna ograda",
-    "paneli"
+    "paneli",
+    "ogradni sustav"
    ],
    "variants": [
     {
@@ -190,8 +186,8 @@
   "1199211": {
    "product_type": "panelna ograda",
    "brand": "Nylofor",
-   "material": "čelična, pravokutno punktirana žica, pocinčana, s polyesterskim slojem",
-   "wire_thickness": "4,50mm i 4.20mm",
+   "material": "čelična, pravokutno punktirana žica, pocinčavanje, polyesterski završni sloj",
+   "wire_thickness": "Debljina žice 4,50mm i 4.20mm",
    "mesh": null,
    "colours": [
     "MASLINASTO ZELENA RAL 6005",
@@ -199,27 +195,27 @@
     "SIVA 7040"
    ],
    "uses": [
-    "stambeni i poslovni objekti",
-    "barijere protiv buke",
-    "vjetrobrani"
+    "vanjska ograda",
+    "zaštita za stambene i poslovne objekte",
+    "barijera protiv buke",
+    "vjetrobran",
+    "pozadina za vrtne biljke"
    ],
    "compatible_with": [
-    "kvadratni stupovi",
+    "stupovi od profila 50x50mm",
     "trake za zaštitu od pogleda"
    ],
    "synonyms": [
-    "ograda panelna",
-    "panel",
-    "paneli",
+    "ograda Nylofor",
     "panelne ograde",
-    "Nylofor 3D"
+    "paneli"
    ],
    "variants": [
     {
      "label": "2500x 830 mm",
      "height": "830 mm",
      "length": "2500",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -228,7 +224,7 @@
      "label": "2500 x 1030 mm",
      "height": "1030 mm",
      "length": "2500",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -237,7 +233,7 @@
      "label": "2500 x 1230 mm",
      "height": "1230 mm",
      "length": "2500",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -246,7 +242,7 @@
      "label": "2500 x 1530 mm",
      "height": "1530 mm",
      "length": "2500",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -255,7 +251,7 @@
      "label": "2500 x 1730 mm",
      "height": "1730 mm",
      "length": "2500",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -264,7 +260,7 @@
      "label": "2500 x 2030 mm",
      "height": "2030 mm",
      "length": "2500",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -273,7 +269,7 @@
      "label": "2000x 830 mm",
      "height": "830 mm",
      "length": "2000",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -282,7 +278,7 @@
      "label": "2000 x 1030 mm",
      "height": "1030 mm",
      "length": "2000",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -291,7 +287,7 @@
      "label": "2000 x 1230 mm",
      "height": "1230 mm",
      "length": "2000",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -300,7 +296,7 @@
      "label": "2000 x 1530 mm",
      "height": "1530 mm",
      "length": "2000",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -309,7 +305,7 @@
      "label": "2000 x 1730 mm",
      "height": "1730 mm",
      "length": "2000",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -318,7 +314,7 @@
      "label": "2000 x 2030 mm",
      "height": "2030 mm",
      "length": "2000",
-     "colour": null,
+     "colour": "antracit i zelena",
      "size": null,
      "price": null,
      "unit": null
@@ -328,7 +324,7 @@
      "height": "830 mm",
      "length": null,
      "colour": null,
-     "size": "50x50mm",
+     "size": null,
      "price": null,
      "unit": null
     },
@@ -337,7 +333,7 @@
      "height": "1030 mm",
      "length": null,
      "colour": null,
-     "size": "50x50mm",
+     "size": null,
      "price": null,
      "unit": null
     },
@@ -346,7 +342,7 @@
      "height": "1230 mm",
      "length": null,
      "colour": null,
-     "size": "50x50mm",
+     "size": null,
      "price": null,
      "unit": null
     },
@@ -355,7 +351,7 @@
      "height": "1530 mm",
      "length": null,
      "colour": null,
-     "size": "50x50mm",
+     "size": null,
      "price": null,
      "unit": null
     },
@@ -364,7 +360,7 @@
      "height": "1730 mm",
      "length": null,
      "colour": null,
-     "size": "50x50mm",
+     "size": null,
      "price": null,
      "unit": null
     },
@@ -373,7 +369,7 @@
      "height": "2000 mm",
      "length": null,
      "colour": null,
-     "size": "50x50mm",
+     "size": null,
      "price": null,
      "unit": null
     }
@@ -381,25 +377,27 @@
   },
   "24449780": {
    "product_type": "farmer pletivo",
-   "brand": null,
-   "material": null,
+   "brand": "FARMER",
+   "material": "Kovana",
    "wire_thickness": null,
    "mesh": null,
    "colours": [],
    "uses": [
+    "ograđivanje velikih površina pod zasadima",
     "vinogradi",
     "pašnjaci",
     "livade",
-    "zemljišta",
-    "farme",
-    "šume"
+    "zaštita zemljišta, vinograda, farme ili šume",
+    "sprječava ulazak divljači",
+    "štiti usjeve"
    ],
    "compatible_with": [
     "stupovi"
    ],
    "synonyms": [
-    "pletena ogradna mreža",
-    "farmer pletena ogradna mreža"
+    "ogradna mreža",
+    "pletivo",
+    "pletena ogradna mreža"
    ],
    "variants": [
     {
@@ -474,7 +472,7 @@
      "height": null,
      "length": null,
      "colour": null,
-     "size": "30MM",
+     "size": "30MM IBFM",
      "price": "6,75KM",
      "unit": null
     }
@@ -483,57 +481,59 @@
   "54710841": {
    "product_type": "bodljikava žica",
    "brand": null,
-   "material": "Vruće pocinčana",
+   "material": "cinčana (pocinčana, vruće pocinčana)",
    "wire_thickness": "fi 1,80mm",
    "mesh": null,
    "colours": [],
    "uses": [
+    "ograđivanje",
+    "zaštita imanja od neovlaštenog ulaska i divljači",
     "nadvišenje mreža i ograda",
     "ograđivanje stoke i pašnjaka",
-    "zaštita imanja od neovlaštenog ulaska i divljači"
+    "zaštita od ulaska divljači i nepoželjnih gostiju",
+    "sprječavanje bjegova stoke s pašnjaka"
    ],
    "compatible_with": [
     "drveni, betonski ili metalni stupovi"
    ],
    "synonyms": [
-    "cinčana bodljikava žica",
     "pocinčana bodljikava žica"
    ],
    "variants": [
     {
-     "label": "Bodljikava žica cinčana 100 m (fi 1,80mm): 26,00 KM",
+     "label": "Bodljikava žica cinčana 100 m (fi 1,80mm)",
      "height": null,
      "length": "100 m",
      "colour": null,
-     "size": null,
+     "size": "fi 1,80mm",
      "price": "26,00 KM",
-     "unit": null
+     "unit": "100 m"
     },
     {
-     "label": "Bodljikava žica cinčana 250 m (fi 1,80mm): 58,00 KM",
+     "label": "Bodljikava žica cinčana 250 m (fi 1,80mm)",
      "height": null,
      "length": "250 m",
      "colour": null,
-     "size": null,
+     "size": "fi 1,80mm",
      "price": "58,00 KM",
-     "unit": null
+     "unit": "250 m"
     }
    ]
   },
   "35990143": {
    "product_type": "kućica za psa",
    "brand": null,
-   "material": "paneli sa izolacijom",
+   "material": "od panela",
    "wire_thickness": null,
    "mesh": null,
    "colours": [],
    "uses": [
-    "zaštita pasa od hladnoće, vrućine, vlage i buke"
+    "sigurnog i udobnog prostora za ljubimce"
    ],
    "compatible_with": [],
    "synonyms": [
-    "kuća za psa",
-    "kućice za pse"
+    "kuća",
+    "kućice"
    ],
    "variants": [
     {
@@ -566,27 +566,26 @@
    ]
   },
   "59473597": {
-   "product_type": "stup za ogradu",
+   "product_type": "t stup za ogradu",
    "brand": null,
-   "material": "čelik, plastificiran",
+   "material": "metalni plastificirani",
    "wire_thickness": "3,50 mm",
    "mesh": null,
    "colours": [
     "zelena"
    ],
    "uses": [
-    "pletena žica",
-    "farmer pletivo",
-    "plastificirane ograde u roli",
-    "voćnjaci",
-    "dvorišta",
-    "vinogradi"
+    "postavljanje pletene žice",
+    "postavljanje farmer pletiva",
+    "postavljanje plastificiranih ograda u roli (Eurofence)",
+    "ograđivanje dvorišta, vrtova, voćnjaka, vinograda, parcela i gospodarskih objekata"
    ],
    "compatible_with": [
-    "pletivo",
+    "univerzalno pletivo",
+    "farmer pletivo",
+    "plastificirane ograde u roli (Eurofence)",
     "zatezna žica",
-    "zatezači",
-    "Eurofence"
+    "zatezači"
    ],
    "synonyms": [
     "stub",
@@ -600,7 +599,7 @@
      "height": "H-100 cm",
      "length": null,
      "colour": null,
-     "size": null,
+     "size": "35 x 35 x 3,50 mm",
      "price": "11,50 KM",
      "unit": "kom"
     },
@@ -609,7 +608,7 @@
      "height": "H-125 cm",
      "length": null,
      "colour": null,
-     "size": null,
+     "size": "35 x 35 x 3,50 mm",
      "price": "10,00 KM",
      "unit": "kom"
     },
@@ -618,7 +617,7 @@
      "height": "H-150 cm",
      "length": null,
      "colour": null,
-     "size": null,
+     "size": "35 x 35 x 3,50 mm",
      "price": "12,25 KM",
      "unit": "kom"
     },
@@ -627,7 +626,7 @@
      "height": "H-175 cm",
      "length": null,
      "colour": null,
-     "size": null,
+     "size": "35 x 35 x 3,50 mm",
      "price": "14,00 KM",
      "unit": "kom"
     },
@@ -636,26 +635,27 @@
      "height": "H-200 cm",
      "length": null,
      "colour": null,
-     "size": null,
+     "size": "35 x 35 x 3,50 mm",
      "price": "17,00 KM",
      "unit": "kom"
     }
    ]
   },
   "68378185": {
-   "product_type": "mreža za kokoši",
+   "product_type": "mreža ograda za koke",
    "brand": null,
    "material": null,
    "wire_thickness": "0,60MM",
    "mesh": "25MM",
    "colours": [],
    "uses": [
+    "ograda za koke",
     "ograda za kokoši"
    ],
    "compatible_with": [],
    "synonyms": [
-    "ograda za koke",
-    "koke"
+    "okce",
+    "mreža ograda za koke kokoši"
    ],
    "variants": [
     {
@@ -663,36 +663,36 @@
      "height": "H-100CM",
      "length": "20METARA",
      "colour": null,
-     "size": null,
-     "price": "57,50KM",
-     "unit": null
+     "size": "25MM",
+     "price": "57,50 KM",
+     "unit": "20METARA"
     },
     {
      "label": "OGRADA ZA KOKE H-120CM OKCE 25MM FII 0,60MM, 20METARA - 68,75 KM",
      "height": "H-120CM",
      "length": "20METARA",
      "colour": null,
-     "size": null,
+     "size": "25MM",
      "price": "68,75 KM",
-     "unit": null
+     "unit": "20METARA"
     },
     {
      "label": "OGRADA ZA KOKE H-150CM OKCE 25MM FII 0,60MM, 20METARA - 84,00 KM",
      "height": "H-150CM",
      "length": "20METARA",
      "colour": null,
-     "size": null,
+     "size": "25MM",
      "price": "84,00 KM",
-     "unit": null
+     "unit": "20METARA"
     },
     {
      "label": "OGRADA ZA KOKE H-200CM OKCE 25MM FII 0,60MM, 20METARA - 107,50 KM",
      "height": "H-200CM",
      "length": "20METARA",
      "colour": null,
-     "size": null,
+     "size": "25MM",
      "price": "107,50 KM",
-     "unit": null
+     "unit": "20METARA"
     }
    ]
   },
@@ -704,16 +704,29 @@
    "mesh": null,
    "colours": [],
    "uses": [
-    "precizno rezanje i brušenje",
+    "Za metal (željezo)",
+    "precizne poslove",
     "rad u skučenim prostorima"
    ],
    "compatible_with": [],
    "synonyms": [
     "fleksa",
     "flexa",
-    "mala fleksa"
+    "brusilica mala",
+    "ugaona brusilica",
+    "kutna brusilica"
    ],
-   "variants": []
+   "variants": [
+    {
+     "label": "BRUSILICA MALA 125 MM 900W FLEKSA FLEXA TOTAL",
+     "height": null,
+     "length": null,
+     "colour": null,
+     "size": "125 mm",
+     "price": "89,00 KM",
+     "unit": null
+    }
+   ]
   },
   "31905913": {
    "product_type": "tiplo",
@@ -723,17 +736,17 @@
    "mesh": null,
    "colours": [],
    "uses": [
-    "rigips",
-    "cigla",
-    "beton"
+    "za rigips",
+    "učvršćenje za rigips i građevinske materijale",
+    "ugradnja u ciglu, beton i rigips"
    ],
    "compatible_with": [],
    "synonyms": [
-    "fišer"
+    "FIŠER"
    ],
    "variants": [
     {
-     "label": "TIPLO FISCHER FIŠER SX6, -0,15KM",
+     "label": "TIPLO FISCHER FIŠER SX6",
      "height": null,
      "length": null,
      "colour": null,
@@ -742,7 +755,7 @@
      "unit": null
     },
     {
-     "label": "TIPLO FISCHER FIŠER SX8, -0,20KM",
+     "label": "TIPLO FISCHER FIŠER SX8",
      "height": null,
      "length": null,
      "colour": null,
@@ -751,7 +764,7 @@
      "unit": null
     },
     {
-     "label": "TIPLO FISCHER FIŠER SX10 - 0,35KM",
+     "label": "TIPLO FISCHER FIŠER SX10",
      "height": null,
      "length": null,
      "colour": null,
@@ -760,7 +773,7 @@
      "unit": null
     },
     {
-     "label": "TIPLO FISHER FIŠER SX12 - 0,75KM",
+     "label": "TIPLO FISHER FIŠER SX12",
      "height": null,
      "length": null,
      "colour": null,
