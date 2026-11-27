@@ -49,6 +49,7 @@
      "paneli",
      "ogradni sustav"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "3D Panelna ograda 83 x 200 cm (Ø 4,20/4,40 mm PVC): 27,00 KM / panel",
@@ -206,7 +207,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "PANELNA OGRADA 83 103 123 I 153CM FI 4,20/4,40MM 200 I 250CM DUŽI | panelna ograda | ZELENA RAL 6005 ANTRACIT RAL 7016 | 83 103 123 153 203 H-85 cm H-105 cm H-125 cm H-155 cm H-205 cm | Ograđivanje obiteljskih kuća, dvorišta, vrtova, vikendica, apartmana, poslovnih objekata, skladišta, škola, igrališta i sportskih terena | stupovi za panele PVC kopče tiplo ankeri | 3D panelna ograda paneli ogradni sustav",
    "variants": [
     {
@@ -437,6 +438,7 @@
      "panelne ograde",
      "paneli"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "2500x 830 mm",
@@ -603,7 +605,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "Ograde, ograda panelna, panel paneli , panelne ograde | panelna ograda | Nylofor | MASLINASTO ZELENA RAL 6005 ANTRACIT 7016 SIVA 7040 | 830 mm 1030 mm 1230 mm 1530 mm 1730 mm 2030 mm 2000 mm | vanjska ograda zaštita za stambene i poslovne objekte barijera protiv buke vjetrobran pozadina za vrtne biljke | stupovi od profila 50x50mm trake za zaštitu od pogleda | ograda Nylofor panelne ograde",
    "variants": [
     {
@@ -838,6 +840,7 @@
      "pletivo",
      "pletena ogradna mreža"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "100CM (100/8/15) -88,00KM/ROLA 50M",
@@ -878,7 +881,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "FARMER PLETIVO OGRADA ZA ZEMLJIŠTA NJIVE ŠUME FARME | farmer pletivo | FARMER | 100CM 120CM 150CM | ograđivanje velikih površina pod zasadima vinogradi pašnjaci livade zaštita zemljišta, vinograda, farme ili šume sprječava ulazak divljači štiti usjeve | stupovi | ogradna mreža pletena ogradna mreža",
    "variants": [
     {
@@ -945,6 +948,7 @@
     "uses": [],
     "compatible_with": [],
     "synonyms": [],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "50MM - 18,00KM",
@@ -976,7 +980,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "KATANAC DUGI 50,40 I 30MM IBFM | katanac",
    "variants": [
     {
@@ -1055,6 +1059,7 @@
     "synonyms": [
      "pocinčana bodljikava žica"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "Bodljikava žica cinčana 100 m (fi 1,80mm)",
@@ -1077,7 +1082,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "BODLJIKAVA ŽICA 100 I 250 M FI 1,80MM CINČANA | bodljikava žica | ograđivanje zaštita imanja od neovlaštenog ulaska i divljači nadvišenje mreža i ograda ograđivanje stoke i pašnjaka zaštita od ulaska divljači i nepoželjnih gostiju sprječavanje bjegova stoke s pašnjaka | drveni, betonski ili metalni stupovi | pocinčana bodljikava žica",
    "variants": [
     {
@@ -1134,6 +1139,7 @@
      "kuća",
      "kućice"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "KUĆICA ZA PSA MALA 43X50X59CM - 185,00KM",
@@ -1165,7 +1171,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "KUĆA KUĆE KUĆICE ZA PSA PSE OD PANELA MALA SREDNJA I VELIKA | kućica za psa | sigurnog i udobnog prostora za ljubimce",
    "variants": [
     {
@@ -1258,6 +1264,7 @@
      "T-stup",
      "T-profil"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-100 cm: 11,50 KM / kom",
@@ -1307,7 +1314,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "T STUP STUB STUPOVI METALNI 35X35X3,50MM H-100 125 150 175 200 | t stup za ogradu | zelena | H-100 cm H-125 cm H-150 cm H-175 cm H-200 cm | postavljanje pletene žice postavljanje farmer pletiva postavljanje plastificiranih ograda u roli (Eurofence) ograđivanje dvorišta, vrtova, voćnjaka, vinograda, parcela i gospodarskih objekata | univerzalno pletivo farmer pletivo plastificirane ograde u roli (Eurofence) zatezna žica zatezači | T-stup T-profil stubovi",
    "variants": [
     {
@@ -1396,6 +1403,7 @@
      "okce",
      "mreža ograda za koke kokoši"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "OGRADA ZA KOKE H-100CM OKCE 25MM FII 0,60MM , 20METARA - 57,50KM",
@@ -1436,7 +1444,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "MREŽA OGRADA ZA KOKE KOKOŠI H-100, 120, 150 I 200CM - 20 MET | mreža ograda za koke | H-100CM H-120CM H-150CM H-200CM | okce 25MM | ograda za koke ograda za kokoši | okce mreža ograda za koke kokoši",
    "variants": [
     {
@@ -1523,6 +1531,7 @@
      "ugaona brusilica",
      "kutna brusilica"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "BRUSILICA MALA 125 MM 900W FLEKSA FLEXA TOTAL",
@@ -1536,7 +1545,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "BRUSILICA MALA 125 MM 900W FLEKSA FLEXA TOTAL | kutna brusilica | TOTAL | Za metal (željezo) precizne poslove rad u skučenim prostorima | brusilica mala ugaona brusilica kutna brusilica",
    "variants": [
     {
@@ -1585,6 +1594,7 @@
     "synonyms": [
      "FIŠER"
     ],
+    "regional_synonyms": [],
     "variants": [
      {
       "label": "TIPLO FISCHER FIŠER SX6",
@@ -1625,7 +1635,7 @@
     ]
    },
    "model": "recorded",
-   "prompt_version": "m2-1-v1",
+   "prompt_version": "m3-4c-v1",
    "search_text": "TIPLO FISCHER FIŠER SX6 SX8, SX10 I SX12 MM ZA RIGIPS | tiplo | Fischer | za rigips učvršćenje za rigips i građevinske materijale ugradnja u ciglu, beton i rigips",
    "variants": [
     {

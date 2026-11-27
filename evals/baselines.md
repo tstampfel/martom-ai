@@ -33,6 +33,8 @@ recall and MRR.
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, rerank-v5.0-fast, live parser (2.5 s), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #112, branch m3-4b-manual-products-search (review round 1 fixes, agent run) | 2,570 active listings, extraction run 4, plus manual_products.toml (1 entry) | keyword | 15 lines (+ seed-15 anker M8x70, expects the manual entry) | 14 | 0.685 | 0.756 | 0.648 | 0.000 (0 of 2) |
+| 2026-11-27 | #121, branch m3-4c-regional-synonyms (agent run), query expansion only: the catalogue's search_text has no regional synonyms yet (no re-extraction) | 2,570 active listings, extraction run 4, plus manual_products.toml (1 entry) | keyword + draft synonym list (now src/martom/search/synonyms.md) | 15 lines (seed-01 … seed-15) | 14 | 0.726 | 0.821 | 0.695 | 0.000 (0 of 2) |
+| pending | #121, Tomislav's run after `martom extract --all` + `martom embed` | 2,570 active listings, extraction prompt m3-4c-v1 (regional_synonyms) | hybrid, hybrid → rerank-v5.0-fast, full (scripts/eval_retrieve.py) | 15 lines | 14 | — | — | — | — |
 
 Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them by
 hand. **Tomislav only:** agents never pass `--env-file .env` (CLAUDE.md); an agent that needs a
@@ -201,3 +203,21 @@ mode: the manual text is only "Anker M8×70 M8x70", so it matches 2 of the quest
 the foot-plate post listings match "stupove", "stopom", "betonskom" and more (top 3: 81645615,
 32555852, 63996799). Vector and hybrid (Cohere) weren't run: they need the API key. Whether
 seed-15 passes in hybrid and the full pipeline is for Tomislav's run.
+
+### #121 regional synonyms, keyword (2026-11-27)
+
+Agent run on the local copy of the catalogue (extraction run 4, no re-extraction, so the
+listings' `search_text` doesn't contain Haiku's `regional_synonyms` yet): this row measures the
+reviewed list's query expansion alone. The same eval with expansion switched off reproduces the
+#112 keyword row exactly (0.685 / 0.756 / 0.648). Expansion moved three cases and lowered none:
+
+- `seed-12-kolica`: R@10 0.75 → **1.00**. The rule `kolica: tačke, kariola, karijola, civare`
+  brings in the wheelbarrow 47382791 ("KARIOLA KARIOLE TAČKE CIVARE"), now 2nd. The hand truck
+  35992113 is still in the top 10; the grinder 52889522 is not returned.
+- `seed-14-gradjevinska-kolica`: R@10 0.33 → **1.00** (R@5 0.67): all three wheelbarrows; the
+  hand truck and the grinder are not returned.
+- `seed-05-zatezac`: RR 0.33 → **1.00**. `zatezač: španer` puts the BOM tensioner 18129143 first.
+- `seed-04` and `seed-11` swap places 2 and 3 in their top 3; their scores don't change.
+
+The hybrid and full-pipeline numbers (the issue's done-when, against the M3-4 baseline 0.891 /
+0.891 / 0.872) need Tomislav's keyed run after re-extraction; the "pending" row is for them.

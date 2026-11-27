@@ -18,7 +18,7 @@ MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 PRODUCT = ExtractedProduct(
     product_type="tiplo", brand=None, material=None, wire_thickness=None, mesh=None,
-    colours=[], uses=[], compatible_with=[], synonyms=[], variants=[],
+    colours=[], uses=[], compatible_with=[], synonyms=[], regional_synonyms=[], variants=[],
 )  # fmt: skip
 
 

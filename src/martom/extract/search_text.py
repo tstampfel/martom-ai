@@ -2,8 +2,9 @@
 
 Built in plain Python from the title and the extracted facts: title, Bosnian product type,
 brand, colours, heights, mesh, uses, compatibility and synonyms (docs/PLAN.md, "What gets
-indexed"). The marketing description is left out on purpose: its boilerplate ("čvrsta,
-moderna i dugotrajna") would drown out the facts.
+indexed"), plus the regional synonyms Haiku adds for search (#121: "kolica" for a
+"KARIOLA TAČKE" listing). The marketing description is left out on purpose: its
+boilerplate ("čvrsta, moderna i dugotrajna") would drown out the facts.
 
 Parts are joined with " | " in a fixed order, empty parts are skipped and a part that
 repeats an earlier one (ignoring case) is dropped, so the same input always gives the same
@@ -27,6 +28,10 @@ KNOWN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "kokoši": ("koke",),
 }
 
+# The prompt asks Haiku for at most 6 regional synonyms; only the first 6 are indexed, so a
+# runaway or prompt-injected reply can't stuff search_text and inflate its rank (#121).
+MAX_REGIONAL_SYNONYMS = 6
+
 _WORD = re.compile(r"\w+")
 SEPARATOR = " | "
 
@@ -36,9 +41,10 @@ def _words(text: str) -> list[str]:
 
 
 def _synonyms(title: str, product: ExtractedProduct) -> list[str]:
-    """The listing's own synonyms, then known partners of words it uses."""
-    terms = list(product.synonyms)
-    source_words = _words(" ".join([title, product.product_type, *product.synonyms]))
+    """The listing's own synonyms, Haiku's regional synonyms (#121), then known partners
+    of words they use."""
+    terms = [*product.synonyms, *product.regional_synonyms[:MAX_REGIONAL_SYNONYMS]]
+    source_words = _words(" ".join([title, product.product_type, *terms]))
     for word in source_words:
         terms.extend(KNOWN_SYNONYMS.get(word, ()))
     # Drop terms that are already words of the title or product type.

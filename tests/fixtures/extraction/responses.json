@@ -1,5 +1,5 @@
 {
- "_about": "Model replies for the 10 golden listings (listings.json), keyed by listing id, recorded from claude-haiku-5-5 on 2026-11-27 with scripts/record_extraction_fixtures.py --record.",
+ "_about": "Model replies for the 10 golden listings (listings.json), keyed by listing id, recorded from claude-haiku-5-5 on 2026-11-27 with scripts/record_extraction_fixtures.py --record. regional_synonyms (#121, prompt m3-4c-v1) was added by hand as [] to every reply until these replies are re-recorded with --record; prompt_version names the prompt the replies were recorded with.",
  "source": "recorded",
  "model": "claude-haiku-5-5",
  "prompt_version": "m2-1-v1",
@@ -27,6 +27,7 @@
     "paneli",
     "ogradni sustav"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "3D Panelna ograda 83 x 200 cm (Ø 4,20/4,40 mm PVC): 27,00 KM / panel",
@@ -210,6 +211,7 @@
     "panelne ograde",
     "paneli"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "2500x 830 mm",
@@ -399,6 +401,7 @@
     "pletivo",
     "pletena ogradna mreža"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "100CM (100/8/15) -88,00KM/ROLA 50M",
@@ -448,6 +451,7 @@
    "uses": [],
    "compatible_with": [],
    "synonyms": [],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "50MM - 18,00KM",
@@ -499,6 +503,7 @@
    "synonyms": [
     "pocinčana bodljikava žica"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "Bodljikava žica cinčana 100 m (fi 1,80mm)",
@@ -535,6 +540,7 @@
     "kuća",
     "kućice"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "KUĆICA ZA PSA MALA 43X50X59CM - 185,00KM",
@@ -593,6 +599,7 @@
     "T-stup",
     "T-profil"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-100 cm: 11,50 KM / kom",
@@ -657,6 +664,7 @@
     "okce",
     "mreža ograda za koke kokoši"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "OGRADA ZA KOKE H-100CM OKCE 25MM FII 0,60MM , 20METARA - 57,50KM",
@@ -716,6 +724,7 @@
     "ugaona brusilica",
     "kutna brusilica"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "BRUSILICA MALA 125 MM 900W FLEKSA FLEXA TOTAL",
@@ -744,6 +753,7 @@
    "synonyms": [
     "FIŠER"
    ],
+   "regional_synonyms": [],
    "variants": [
     {
      "label": "TIPLO FISCHER FIŠER SX6",

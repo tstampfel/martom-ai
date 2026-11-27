@@ -14,6 +14,7 @@ import pytest
 from martom.evals.retrieval import EvalQuestion, run_keyword_eval
 from martom.extract.store import VariantRow, save_products
 from martom.search.keyword import KeywordHit, SearchFilters, search_keyword, strip_filler_words
+from martom.search.synonyms import QuerySynonyms
 from search_catalogue import (
     BRUSILICA,
     FARMER,
@@ -24,6 +25,7 @@ from search_catalogue import (
     T_POST,
     TIPLO,
     VEZNA_ZICA,
+    add_listing,
     build_catalogue,
     synthetic,
 )
@@ -347,3 +349,82 @@ async def test_run_keyword_eval_returns_ranked_ids_for_every_question(
     assert set(results) == {"brusilica", "off"}
     assert results["brusilica"][0] == BRUSILICA
     assert len(results["brusilica"]) <= 10
+
+
+# --- query expansion with the reviewed synonym list (#121) -----------------------------
+
+WHEELBARROW = 900101  # titled only with regional words, never "kolica"
+HAND_TRUCK = 900102
+
+KOLICA_RULES = QuerySynonyms(
+    rules=(
+        ("kolica", ("tačke", "kariola", "civare")),
+        ("tačke", ("kariola", "civare")),
+    )
+)
+
+
+async def add_carts(conn: psycopg.AsyncConnection) -> None:
+    await add_listing(conn, WHEELBARROW, "KARIOLA TAČKE CIVARE 85L", "kariola-900101")
+    await add_listing(conn, HAND_TRUCK, "KOLICA ZA TERET 200KG", "kolica-900102")
+    await save_products(
+        conn,
+        [
+            synthetic(WHEELBARROW, "kariola", "KARIOLA TAČKE CIVARE 85L | kariola"),
+            synthetic(HAND_TRUCK, "transportna kolica", "KOLICA ZA TERET 200KG | kolica"),
+        ],
+    )
+
+
+async def test_a_query_word_finds_listings_that_use_its_regional_synonym(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await add_carts(conn)
+
+    without = ids(await search_keyword(conn, "kolica", synonyms=QuerySynonyms()))
+    expanded = await search_keyword(conn, "kolica", synonyms=KOLICA_RULES)
+
+    assert WHEELBARROW not in without
+    assert {WHEELBARROW, HAND_TRUCK} <= set(ids(expanded))
+    # Found by full text, through the synonym, not by a typo match.
+    assert next(h for h in expanded if h.listing_id == WHEELBARROW).text_match
+
+
+async def test_expansion_matches_inflected_and_unaccented_query_words(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await add_carts(conn)
+
+    # "kolicima" stems like "kolica"; "tacke" is "tačke" without the accent.
+    assert WHEELBARROW in ids(await search_keyword(conn, "kolicima", synonyms=KOLICA_RULES))
+    assert WHEELBARROW in ids(await search_keyword(conn, "tacke", synonyms=KOLICA_RULES))
+
+
+async def test_a_rule_works_one_way_only(conn: psycopg.AsyncConnection) -> None:
+    await add_carts(conn)
+
+    # "tačke" means wheelbarrows only (seed-14): it must not bring back the hand truck.
+    assert HAND_TRUCK not in ids(await search_keyword(conn, "tačke", synonyms=KOLICA_RULES))
+
+
+async def test_a_synonym_never_makes_a_typo_match(conn: psycopg.AsyncConnection) -> None:
+    # "lopata" matches nothing in the catalogue. Its synonym "brusilca" (a typo of
+    # "brusilica") would find the grinder by trigram, but synonyms only ever join the
+    # full-text query, where "brusilca" stems to nothing: an added word never makes a
+    # typo match.
+    rules = QuerySynonyms(rules=(("lopata", ("brusilca",)),))
+    assert BRUSILICA in ids(await search_keyword(conn, "brusilca", synonyms=QuerySynonyms()))
+    assert await search_keyword(conn, "lopata", synonyms=rules) == []
+
+
+async def test_an_unrelated_rule_changes_nothing(conn: psycopg.AsyncConnection) -> None:
+    rules = QuerySynonyms(rules=(("kolica", ("tačke",)),))
+    baseline = await search_keyword(conn, "brusilica 125 mm", synonyms=QuerySynonyms())
+
+    assert await search_keyword(conn, "brusilica 125 mm", synonyms=rules) == baseline
+
+
+async def test_search_uses_the_reviewed_list_by_default(conn: psycopg.AsyncConnection) -> None:
+    await add_carts(conn)
+
+    assert WHEELBARROW in ids(await search_keyword(conn, "kolica"))

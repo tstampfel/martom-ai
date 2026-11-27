@@ -7,10 +7,12 @@ run without any server. The last test uses the real checks against the test serv
 import asyncio
 import json
 import logging
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+import martom.search.synonyms as synonyms_module
 from martom.api.app import create_app
 from martom.log import JsonFormatter
 from martom.settings import Settings
@@ -172,3 +174,20 @@ def test_an_unhandled_error_is_a_500_with_a_request_id(caplog: pytest.LogCapture
     assert json.loads(JsonFormatter().format(failed[0]))["request_id"] == request_id
     finished = [r for r in caplog.records if r.getMessage() == "request finished"]
     assert [getattr(r, "status_code", None) for r in finished] == [500]
+
+
+def test_the_app_reads_the_synonym_list_at_startup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # #121 review R1-2: a missing or broken list shows up as a warning when the API starts,
+    # not on the first customer search, and the app still starts (search goes on without
+    # query expansion).
+    monkeypatch.setattr(synonyms_module, "DEFAULT_PATH", tmp_path / "missing.md")
+    synonyms_module.default_query_synonyms.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger="martom.search.synonyms"):
+            create_app(Settings(), health_checks={"postgres": healthy, "redis": healthy})
+    finally:
+        synonyms_module.default_query_synonyms.cache_clear()
+
+    assert "synonym list not loaded" in caplog.text

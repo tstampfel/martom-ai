@@ -16,7 +16,7 @@ from langchain_core.runnables import RunnableConfig, RunnableLambda
 from pydantic import SecretStr
 
 from martom.extract.extractor import ExtractionAbortedError, Extractor, make_structured_model
-from martom.extract.prompt import PROMPT_VERSION, ListingInput
+from martom.extract.prompt import PROMPT_VERSION, SYSTEM_PROMPT, ListingInput
 from martom.extract.schema import ExtractedProduct
 from martom.settings import Settings
 
@@ -31,7 +31,7 @@ def anyio_backend() -> str:
 
 PRODUCT = ExtractedProduct(
     product_type="katanac", brand=None, material=None, wire_thickness=None, mesh=None,
-    colours=[], uses=[], compatible_with=[], synonyms=[], variants=[],
+    colours=[], uses=[], compatible_with=[], synonyms=[], regional_synonyms=[], variants=[],
 )  # fmt: skip
 
 
@@ -216,3 +216,11 @@ def test_structured_model_needs_an_api_key(monkeypatch: pytest.MonkeyPatch) -> N
 def test_a_blank_api_key_counts_as_missing() -> None:
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
         make_structured_model(Settings(anthropic_api_key=SecretStr("  ")))
+
+
+def test_regional_synonyms_are_a_separate_required_field_explained_in_the_prompt() -> None:
+    # #121: the model's own synonyms never mix with the copied `synonyms` field, and the
+    # schema makes the model always answer it (an empty list when there are none).
+    schema = ExtractedProduct.model_json_schema()
+    assert {"synonyms", "regional_synonyms"} <= set(schema["required"])
+    assert "regional_synonyms" in SYSTEM_PROMPT

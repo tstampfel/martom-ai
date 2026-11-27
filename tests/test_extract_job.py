@@ -58,7 +58,7 @@ def product(price: str | None = "10,00 KM", label: str = "Stup") -> ExtractedPro
     return ExtractedProduct(
         product_type="stup za ogradu", brand=None, material="pocinčani", wire_thickness=None,
         mesh=None, colours=["zelena"], uses=["ograda"], compatible_with=[], synonyms=[],
-        variants=[
+        regional_synonyms=[], variants=[
             ExtractedVariant(label=f"{label} H-100 cm: 10,00 KM", height="H-100 cm", length=None,
                              colour=None, size=None, price=price, unit="kom"),
             ExtractedVariant(label=f"{label} H-150 cm", height="H-150 cm", length=None,

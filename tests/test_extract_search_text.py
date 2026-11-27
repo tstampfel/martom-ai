@@ -16,7 +16,7 @@ def product(**fields: object) -> ExtractedProduct:
     defaults: dict[str, object] = {
         "product_type": "stup za ogradu", "brand": None, "material": None,
         "wire_thickness": None, "mesh": None, "colours": [], "uses": [],
-        "compatible_with": [], "synonyms": [], "variants": [],
+        "compatible_with": [], "synonyms": [], "regional_synonyms": [], "variants": [],
     }  # fmt: skip
     return ExtractedProduct.model_validate({**defaults, **fields})
 
@@ -73,3 +73,35 @@ def test_leaves_out_the_marketing_description_fields() -> None:
 
     assert "pocinčana" not in text
     assert "dugo" not in text
+
+
+def test_regional_synonyms_are_appended_with_the_listings_own_synonyms() -> None:
+    # #121: the wheelbarrow listing never says "kolica"; Haiku's regional synonyms add it.
+    text = build_search_text(
+        "KARIOLA KARIOLE TAČKE CIVARE",
+        product(
+            product_type="kariola",
+            synonyms=["kariole"],
+            regional_synonyms=["kolica", "Tačke", "građevinska kolica"],
+        ),
+    )
+
+    # "Tačke" is already a word of the title, so only the new ones are added.
+    assert text == "KARIOLA KARIOLE TAČKE CIVARE | kariola | kolica građevinska kolica"
+
+
+def test_known_partners_of_regional_synonyms_are_added_too() -> None:
+    text = build_search_text(
+        "T PROFIL 35X35", product(product_type="profil", regional_synonyms=["stup"])
+    )
+
+    assert text.endswith("| stup stub")
+
+
+def test_only_the_first_six_regional_synonyms_are_indexed() -> None:
+    # #121 review R1-4: the prompt asks for at most 6; a runaway (or prompt-injected) reply
+    # must not stuff search_text with words that inflate its rank.
+    many = [f"ime{n}" for n in range(1, 10)]
+    text = build_search_text("KARIOLA", product(product_type="kariola", regional_synonyms=many))
+
+    assert text.endswith("| ime1 ime2 ime3 ime4 ime5 ime6")
