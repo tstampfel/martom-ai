@@ -40,6 +40,11 @@ their times), so monitoring (M6-3) can watch the fallback rates; never the quest
 pass `fallback=False`: no time limits, and any failure is
 raised, so a degraded answer is never scored as the real one.
 
+Manual products (manual_products.toml, #112) come through the same steps: both searches
+return them, the filters are checked with MANUAL_FILTERS_SQL, and the reranker reads their
+`manual_product.search_text`. A manual hit has `source="manual"`, its TOML key in
+`manual_key`, `listing_id=None` and no OLX link; its price is read from the TOML, never here.
+
 What this does not decide: whether the results are good enough. Hybrid search always
 returns products (vector search has no relevance floor, #15), so "nothing relevant" is for
 the grading step (M4) to judge, with the rerank `relevance` scores as evidence.
@@ -63,9 +68,14 @@ from martom.search.hybrid import (
 )
 from martom.search.keyword import (
     FILTERS_SQL,
-    LISTING_URL,
+    MANUAL_FILTERS_SQL,
+    HitKey,
     SearchFilters,
+    Source,
     filter_params,
+    hit_key,
+    key_from_row,
+    listing_url,
     strip_filler_words,
 )
 from martom.search.query_parser import ParseResult, QueryParser
@@ -85,7 +95,7 @@ TOP_UP = 10
 
 @dataclass(frozen=True)
 class RetrievedHit:
-    listing_id: int
+    listing_id: int | None  # None for a manual product (source "manual")
     title: str
     slug: str | None
     product_type: str
@@ -97,10 +107,18 @@ class RetrievedHit:
     # for a hit whose height or colour couldn't be confirmed (checked in the database).
     # Never over a price limit either way.
     matched_filters: bool = True
+    # "olx" for a listing, "manual" for a manual_products.toml entry (#112), which has no
+    # listing id and no OLX link; `manual_key` is its TOML key (and BOM item key).
+    source: Source = "olx"
+    manual_key: str | None = None
+
+    @property
+    def key(self) -> HitKey:
+        return hit_key(self.source, self.listing_id, self.manual_key)
 
     @property
     def url(self) -> str | None:
-        return LISTING_URL.format(slug=self.slug) if self.slug else None
+        return listing_url(self.source, self.slug)
 
 
 @dataclass(frozen=True)
@@ -227,12 +245,12 @@ async def retrieve(
     top_up_added = 0
     if filters == SearchFilters():
         hybrid = unfiltered[:candidates]
-        matched = {hit.listing_id for hit in hybrid}
+        matched = {hit.key for hit in hybrid}
     else:
         hybrid = await search_hybrid(
             conn, question, filters, embedder=known, limit=candidates, fallback=fallback
         )
-        matched = {hit.listing_id for hit in hybrid}
+        matched = {hit.key for hit in hybrid}
         relaxed = relax_filters(filters)
         if relaxed != filters:
             # Only a price limit (or a type) survives relaxing; without one the prefetched
@@ -253,7 +271,7 @@ async def retrieve(
             # A top-up hit may still pass every filter: it only ranked below the filtered
             # search's top `candidates` (R3-1). Ask the data, not the rank.
             matched |= await _passing_filters(
-                conn, [h.listing_id for h in hybrid if h.listing_id not in matched], filters
+                conn, [h for h in hybrid if h.key not in matched], filters
             )
     filters_dropped = bool(hybrid) and not matched
     if filters_dropped:
@@ -268,7 +286,7 @@ async def retrieve(
         picked = [(h, None) for h in hybrid[:limit]]
     else:
         picked = [(hybrid[index], relevance) for index, relevance in scores[:limit]]
-    hits = [_hit(h, relevance, h.listing_id in matched) for h, relevance in picked]
+    hits = [_hit(h, relevance, h.key in matched) for h, relevance in picked]
     lap("total", started)
     parse_outcome = parse_result.outcome if parse_result else "skipped"
     # One line per search for monitoring (M6-3): the parse and rerank fallback rates come
@@ -302,23 +320,32 @@ async def retrieve(
 
 
 _PASSING_FILTERS_SQL = (
-    "SELECT p.listing_id FROM product AS p"
+    "SELECT 'olx', p.listing_id::text FROM product AS p"
     " JOIN active_olx_listing AS l ON l.id = p.listing_id"
-    " WHERE p.listing_id = ANY(%(ids)s) AND" + FILTERS_SQL
+    " WHERE p.listing_id = ANY(%(ids)s) AND"
+    + FILTERS_SQL
+    + " UNION ALL SELECT 'manual', p.key FROM manual_product AS p"
+    " WHERE p.key = ANY(%(keys)s) AND" + MANUAL_FILTERS_SQL
 )
 
 
 async def _passing_filters(
-    conn: psycopg.AsyncConnection, listing_ids: list[int], filters: SearchFilters
-) -> set[int]:
-    """The ids among `listing_ids` that pass every filter, in one query on the shared
-    FILTERS_SQL, so "passes the filters" has one definition (keyword.py)."""
-    if not listing_ids:
+    conn: psycopg.AsyncConnection, hits: list[HybridHit], filters: SearchFilters
+) -> set[HitKey]:
+    """The keys of the `hits` that pass every filter, in one query on the shared
+    FILTERS_SQL / MANUAL_FILTERS_SQL, so "passes the filters" has one definition
+    (keyword.py)."""
+    if not hits:
         return set()
     cursor = await conn.execute(
-        _PASSING_FILTERS_SQL, {"ids": listing_ids, **filter_params(filters)}
+        _PASSING_FILTERS_SQL,
+        {
+            "ids": [h.listing_id for h in hits if h.source == "olx"],
+            "keys": [h.manual_key for h in hits if h.source == "manual"],
+            **filter_params(filters),
+        },
     )
-    return {row[0] for row in await cursor.fetchall()}
+    return {key_from_row(source, value) for source, value in await cursor.fetchall()}
 
 
 def relax_filters(filters: SearchFilters) -> SearchFilters:
@@ -341,8 +368,8 @@ def _top_up(
 ) -> tuple[list[HybridHit], int]:
     """The filtered hits, then relaxed-search ones they lack: up to `candidates` in all, and
     at least TOP_UP of them (when there are that many)."""
-    seen = {hit.listing_id for hit in filtered}
-    missing = [hit for hit in wider if hit.listing_id not in seen]
+    seen = {hit.key for hit in filtered}
+    missing = [hit for hit in wider if hit.key not in seen]
     added = missing[: max(candidates - len(filtered), TOP_UP)]
     return filtered + added, len(added)
 
@@ -358,6 +385,8 @@ def _hit(hit: HybridHit, relevance: float | None, matched_filters: bool) -> Retr
         keyword_rank=hit.keyword_rank,
         vector_rank=hit.vector_rank,
         matched_filters=matched_filters,
+        source=hit.source,
+        manual_key=hit.manual_key,
     )
 
 
@@ -395,13 +424,21 @@ async def _rerank(
 
 
 async def _search_texts(conn: psycopg.AsyncConnection, hits: list[HybridHit]) -> list[str]:
-    """Each hit's product.search_text (title, type, brand, colours, heights, uses...).
+    """Each hit's product.search_text (title, type, brand, colours, heights, uses...), or
+    manual_product.search_text for a manual product.
 
     The same compact text keyword search indexes; the title alone when it is missing.
     """
     cursor = await conn.execute(
-        "SELECT listing_id, search_text FROM product WHERE listing_id = ANY(%s)",
-        ([h.listing_id for h in hits],),
+        "SELECT 'olx', listing_id::text, search_text FROM product WHERE listing_id = ANY(%(ids)s)"
+        " UNION ALL"
+        " SELECT 'manual', key, search_text FROM manual_product WHERE key = ANY(%(keys)s)",
+        {
+            "ids": [h.listing_id for h in hits if h.source == "olx"],
+            "keys": [h.manual_key for h in hits if h.source == "manual"],
+        },
     )
-    texts = {row[0]: row[1] for row in await cursor.fetchall()}
-    return [texts.get(h.listing_id) or h.title for h in hits]
+    texts: dict[HitKey, str] = {
+        key_from_row(source, value): text for source, value, text in await cursor.fetchall()
+    }
+    return [texts.get(h.key) or h.title for h in hits]

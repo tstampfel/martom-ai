@@ -17,6 +17,10 @@ How `search_hybrid` runs:
    its typo match.
 3. RRF merges the two lists; the first `limit` are returned.
 
+Both searches include manual products (#112). Hits are matched across the lists by
+`HitKey` (("olx", listing id) or ("manual", TOML key)), so a listing and a manual product
+never share an id, and a manual hit keeps `source="manual"` and no link.
+
 If the query can't be embedded (provider down, rate limit, timeout), the search answers
 with keyword results alone and logs a warning: a slower or worse search beats no search.
 Evals pass `fallback=False` instead: no timeout, and an embedding error is raised, so a
@@ -27,16 +31,20 @@ Out of scope here (M3-4): rerank, and parsing filters out of the question.
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass
 
 import psycopg
 
 from martom.embeddings import Embedder
 from martom.search.keyword import (
-    LISTING_URL,
+    HitKey,
     KeywordHit,
     SearchFilters,
+    Source,
+    hit_key,
+    key_from_row,
+    listing_url,
     search_keyword,
     strip_filler_words,
 )
@@ -57,31 +65,39 @@ QUERY_EMBED_TIMEOUT_SECONDS = 5.0
 
 @dataclass(frozen=True)
 class HybridHit:
-    listing_id: int
+    listing_id: int | None  # None for a manual product (source "manual")
     title: str
     slug: str | None
     product_type: str
     score: float  # the RRF score
     keyword_rank: int | None  # 1-based rank in each list, None when that search missed it
     vector_rank: int | None
+    source: Source = "olx"
+    manual_key: str | None = None  # the manual_products.toml key, for source "manual"
+
+    @property
+    def key(self) -> HitKey:
+        return hit_key(self.source, self.listing_id, self.manual_key)
 
     @property
     def url(self) -> str | None:
-        return LISTING_URL.format(slug=self.slug) if self.slug else None
+        return listing_url(self.source, self.slug)
 
 
-def reciprocal_rank_fusion(
-    rankings: Sequence[Sequence[int]], *, k: int = RRF_K
-) -> list[tuple[int, float]]:
+# `[Id: Hashable]` makes this generic, like a TS `<Id>`: any id that can be a dict key and
+# be sorted (an int listing id in the tests, a HitKey in search_hybrid).
+def reciprocal_rank_fusion[Id: Hashable](
+    rankings: Sequence[Sequence[Id]], *, k: int = RRF_K
+) -> list[tuple[Id, float]]:
     """(id, score) pairs, best first. Ranks are 1-based; an id counts once per list.
 
     Equal scores are ordered by the id's best single rank, then by the smaller id, so the
     result never depends on dict order.
     """
-    scores: dict[int, float] = {}
-    best_rank: dict[int, int] = {}
+    scores: dict[Id, float] = {}
+    best_rank: dict[Id, int] = {}
     for ranking in rankings:
-        seen: set[int] = set()
+        seen: set[Id] = set()
         for rank, item in enumerate(ranking, start=1):
             if item in seen:
                 continue
@@ -116,24 +132,26 @@ async def search_hybrid(
             )
         keyword = await _drop_rejected_typo_matches(conn, keyword, vector, embedder.model)
 
-    keyword_ranks = {hit.listing_id: rank for rank, hit in enumerate(keyword, start=1)}
-    vector_ranks = {hit.listing_id: rank for rank, hit in enumerate(vector, start=1)}
+    keyword_ranks = {hit.key: rank for rank, hit in enumerate(keyword, start=1)}
+    vector_ranks = {hit.key: rank for rank, hit in enumerate(vector, start=1)}
     # Title, slug and type are the same in both lists; take them from whichever has the id.
-    details = {hit.listing_id: hit for hit in vector} | {hit.listing_id: hit for hit in keyword}
-    fused = reciprocal_rank_fusion(
-        [[hit.listing_id for hit in keyword], [hit.listing_id for hit in vector]]
-    )
+    details: dict[HitKey, KeywordHit | VectorHit] = {hit.key: hit for hit in vector} | {
+        hit.key: hit for hit in keyword
+    }
+    fused = reciprocal_rank_fusion([[hit.key for hit in keyword], [hit.key for hit in vector]])
     return [
         HybridHit(
-            listing_id=listing_id,
-            title=details[listing_id].title,
-            slug=details[listing_id].slug,
-            product_type=details[listing_id].product_type,
+            listing_id=details[key].listing_id,
+            title=details[key].title,
+            slug=details[key].slug,
+            product_type=details[key].product_type,
             score=score,
-            keyword_rank=keyword_ranks.get(listing_id),
-            vector_rank=vector_ranks.get(listing_id),
+            keyword_rank=keyword_ranks.get(key),
+            vector_rank=vector_ranks.get(key),
+            source=details[key].source,
+            manual_key=details[key].manual_key,
         )
-        for listing_id, score in fused[:limit]
+        for key, score in fused[:limit]
     ]
 
 
@@ -176,16 +194,22 @@ async def _drop_rejected_typo_matches(
     model: str,
 ) -> list[KeywordHit]:
     """Keyword hits without the typo matches vector search had a chance to find and didn't."""
-    vector_ids = {hit.listing_id for hit in vector}
-    unconfirmed = [
-        hit.listing_id for hit in keyword if not hit.text_match and hit.listing_id not in vector_ids
-    ]
+    vector_keys = {hit.key for hit in vector}
+    unconfirmed = [hit for hit in keyword if not hit.text_match and hit.key not in vector_keys]
     if not unconfirmed:
         return keyword
+    listing_ids = [hit.listing_id for hit in unconfirmed if hit.source == "olx"]
+    manual_keys = [hit.manual_key for hit in unconfirmed if hit.source == "manual"]
     cursor = await conn.execute(
-        "SELECT listing_id FROM product"
-        " WHERE listing_id = ANY(%s) AND embedding IS NOT NULL AND embedding_model = %s",
-        (unconfirmed, model),
+        "SELECT 'olx', listing_id::text FROM product"
+        " WHERE listing_id = ANY(%(ids)s) AND embedding IS NOT NULL"
+        " AND embedding_model = %(model)s"
+        " UNION ALL"
+        " SELECT 'manual', key FROM manual_product"
+        " WHERE key = ANY(%(keys)s) AND embedding IS NOT NULL AND embedding_model = %(model)s",
+        {"ids": listing_ids, "keys": manual_keys, "model": model},
     )
-    rejected = {row[0] for row in await cursor.fetchall()}
-    return [hit for hit in keyword if hit.listing_id not in rejected]
+    rejected: set[HitKey] = {
+        key_from_row(source, value) for source, value in await cursor.fetchall()
+    }
+    return [hit for hit in keyword if hit.key not in rejected]
