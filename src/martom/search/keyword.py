@@ -15,6 +15,8 @@ How a query runs (all in one SQL statement):
    "brusilca za metal" finds "brusilica" even though the stems differ. Both halves find
    their candidates through GIN indexes (migration 006); only candidates are ranked.
 5. Filters (type, height, colour, price) narrow the candidates; they never add any.
+6. Regional synonyms from the reviewed list (docs/domain/synonyms.md, #121) widen the
+   full-text query: "kolica" also matches listings that only say "kariola" or "tačke".
 
 Only listings in `active_olx_listing` are returned, never sold ones (CLAUDE.md). Manual
 products (manual_products.toml, indexed in `manual_product` by search/manual.py) are searched
@@ -31,6 +33,8 @@ from decimal import Decimal
 from typing import Literal
 
 import psycopg
+
+from martom.search.synonyms import QuerySynonyms, default_query_synonyms
 
 LISTING_URL = "https://martom.olx.ba/artikal/{slug}"
 
@@ -292,11 +296,19 @@ MANUAL_FILTERS_SQL = """
 
 # %(...)s are psycopg parameters (values are sent separately, never pasted into the SQL).
 #
-# `query` turns the words into an OR tsquery: plainto_tsquery gives 'a' & 'b', and
+# `base` turns the words into an OR tsquery: plainto_tsquery gives 'a' & 'b', and
 # replacing the & with | gives 'a' | 'b' (lexemes are quoted, so that is safe). It also
 # keeps the normalised words for trigram matching, one word at a time (a whole multi-word
 # query is never similar enough to a listing, review R1-3), and `typo_words`: the words
 # allowed to make a match by trigram alone.
+#
+# `expansion` and `query` add the reviewed regional synonyms (#121, docs/domain/
+# synonyms.md, passed as the parallel arrays syn_from / syn_to): a rule applies when its
+# word, normalised and stemmed like the query, matches one of the query's words, so
+# "kolicima" or "tacke" trigger the "kolica" / "tačke" rules. Its synonyms are OR-ed into
+# the full-text query only. `words` and `typo_words` keep the customer's own words, so a
+# synonym never makes a typo match and never changes the trigram part of the score. (The
+# CASE skips plainto_tsquery on an empty text, which would log a notice.)
 #
 # `candidates` collects the matching listings: full text (`search_tsv @@ tsq`) and trigram
 # (`typo_word <% search_norm`, written <%% because % starts a psycopg parameter). `<%` is
@@ -314,7 +326,7 @@ MANUAL_FILTERS_SQL = """
 # ranking; `best_word` the best similarity of a typo word, checked again at the end so the
 # threshold holds even if the setting differs.
 _QUERY_CTE = """
-WITH query AS (
+WITH base AS (
     SELECT
         replace(
             plainto_tsquery('martom', martom_search_normalize(%(text)s))::text, ' & ', ' | '
@@ -329,6 +341,24 @@ WITH query AS (
             regexp_split_to_array(martom_search_normalize(%(text)s), '[^a-z0-9]+'), ''
         ) AS words
     ) AS split
+),
+expansion AS (
+    SELECT coalesce(string_agg(rule.to_words, ' '), '') AS text
+    FROM base
+    CROSS JOIN unnest(%(syn_from)s::text[], %(syn_to)s::text[]) AS rule(from_word, to_words)
+    WHERE to_tsvector('martom', martom_search_normalize(rule.from_word)) @@ base.tsq
+),
+query AS (
+    SELECT
+        CASE WHEN expansion.text = '' THEN base.tsq
+             ELSE base.tsq || replace(
+                 plainto_tsquery('martom', martom_search_normalize(expansion.text))::text,
+                 ' & ', ' | '
+             )::tsquery
+        END AS tsq,
+        base.words,
+        base.typo_words
+    FROM base CROSS JOIN expansion
 )"""
 
 # Needs the alias `p` for a table with search_tsv and search_norm (product, manual_product).
@@ -432,9 +462,15 @@ async def search_keyword(
     filters: SearchFilters | None = None,
     *,
     limit: int = 10,
+    synonyms: QuerySynonyms | None = None,
 ) -> list[KeywordHit]:
-    """Active products matching `query` and `filters`, best first (at most `limit`)."""
+    """Active products matching `query` and `filters`, best first (at most `limit`).
+
+    `synonyms` are the query expansion rules; None reads the reviewed list
+    (docs/domain/synonyms.md), `QuerySynonyms()` searches without expansion.
+    """
     filters = filters or SearchFilters()
+    synonyms = default_query_synonyms() if synonyms is None else synonyms
     text = strip_filler_words(query)
     if not text:
         return []
@@ -447,8 +483,8 @@ async def search_keyword(
             "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)",
             (str(MIN_TRIGRAM_SIMILARITY),),
         )
-        listings = await _run_search(conn, _SEARCH, text, filters, limit)
-        manual = await _run_search(conn, _SEARCH_MANUAL, text, filters, limit)
+        listings = await _run_search(conn, _SEARCH, text, filters, limit, synonyms)
+        manual = await _run_search(conn, _SEARCH_MANUAL, text, filters, limit, synonyms)
     hits = [
         KeywordHit(
             listing_id=row[0],
@@ -479,7 +515,12 @@ async def search_keyword(
 
 
 async def _run_search(
-    conn: psycopg.AsyncConnection, sql: str, text: str, filters: SearchFilters, limit: int
+    conn: psycopg.AsyncConnection,
+    sql: str,
+    text: str,
+    filters: SearchFilters,
+    limit: int,
+    synonyms: QuerySynonyms,
 ) -> list[tuple]:
     cursor = await conn.execute(
         sql,
@@ -490,6 +531,8 @@ async def _run_search(
             "min_trigram": MIN_TRIGRAM_SIMILARITY,
             "min_len": TRIGRAM_MIN_WORD_LENGTH,
             "limit": limit,
+            "syn_from": synonyms.from_words,
+            "syn_to": synonyms.to_words,
         },
     )
     return await cursor.fetchall()
