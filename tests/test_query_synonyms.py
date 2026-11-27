@@ -82,6 +82,7 @@ def test_a_line_after_a_multi_line_comment_keeps_its_line_number(tmp_path: Path)
         "- kolica: ručne tačke",  # a phrase on the right
         "- kolica: ručna-kolica",  # split into two words by search
         "- ručna/kolica: tačke",
+        "- kolica: ručna_kolica",  # "_" splits into two words too
         "- kolica:",  # no synonyms
         "- kolica tačke",  # no colon
         "* kolica: tačke",  # another bullet

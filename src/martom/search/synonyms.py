@@ -38,7 +38,7 @@ DEFAULT_PATH = Path(__file__).with_name("synonyms.md")
 SECTION_HEADING = "## Proširenja upita"
 
 _RULE = re.compile(r"^-\s+(?P<words>[^:]+?)\s*:\s*(?P<synonyms>.+)$")
-_WORD = re.compile(r"^\w+$")  # letters and digits only: no spaces, "-" or "/"
+_WORD = re.compile(r"^[^\W_]+$")  # letters and digits only: no spaces, "-", "/" or "_"
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
