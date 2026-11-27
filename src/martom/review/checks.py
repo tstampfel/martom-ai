@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from martom.bom.manual_products import MAX_AGE_DAYS, ManualProduct, stale_manual_products
-from martom.bom.pricing import PriceMap, PriceProblem, resolve_price
+from martom.bom.pricing import PriceMap, PriceProblem, resolve_price, written_number
 from martom.extract.store import VariantRow
 
 type Priority = Literal["high", "medium", "low"]
@@ -102,15 +102,11 @@ _UNIT = r"(mm|cm|metara|metra|metar|m)(?![^\W\d_])"
 _NOT_IN_A_NUMBER = r"(?<!\d)(?<!\d[.,])"
 _NUMBER_AND_UNIT = re.compile(rf"{_NOT_IN_A_NUMBER}({_NUMBER})(?:\s*{_UNIT})?")
 _CM_PER_UNIT = {"mm": Decimal("0.1"), "cm": Decimal(1), None: Decimal(1)}  # else metres
-_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?")
 
 
 def _to_decimal(digits: str, unit: str | None) -> Decimal:
-    # "1.530 mm" is 1530 mm, but "2.500 m" is 2,5 m: nobody writes thousands of metres.
-    in_metres = unit not in _CM_PER_UNIT
-    if _THOUSANDS.fullmatch(digits) and not (in_metres and "," not in digits):
-        digits = digits.replace(".", "")
-    return Decimal(digits.replace(",", "."))
+    # "1.530 mm" is 1530 mm, but "2.500 m" is 2,5 m (the shared rule in bom.pricing).
+    return written_number(digits, in_metres=unit not in _CM_PER_UNIT)
 
 
 def _cm(number: Decimal, unit: str | None) -> Decimal:
@@ -798,7 +794,12 @@ def check_bom_price_map(
             sees = "(kupac vidi „cijena na upit“)"
         else:
             sees = "(mapa cijena je još nacrt, pa kupac ionako vidi „cijena na upit“ za sve stavke)"
-        if entry.manual_key is not None:
+        if problem == PriceProblem.MANUAL_MISSING:
+            action = (
+                "Javite Tomislavu da doda proizvod u manual_products.toml ili ispravi "
+                "ključ u mapi cijena (price_map.toml)."
+            )
+        elif entry.manual_key is not None:
             action = "Javite Tomislavu ispravnu cijenu za manual_products.toml."
         else:
             action = (

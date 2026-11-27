@@ -25,7 +25,12 @@ logger = logging.getLogger(__name__)
 class PriceMapCheckSkippedError(Exception):
     """price_map.toml couldn't be loaded: every other check ran and was saved, the BOM
     price check didn't, and its open issues were left as they were. Raised after saving, so
-    `martom extract` marks its run 'partial' (a check that breaks is alert-worthy)."""
+    `martom extract` marks its run 'partial' (a check that breaks is alert-worthy); `stats`
+    holds what the other checks did."""
+
+    def __init__(self, message: str, stats: "ReviewStats") -> None:
+        super().__init__(message)
+        self.stats = stats
 
 
 @dataclass(frozen=True)
@@ -44,7 +49,12 @@ async def run_review_checks(
     price_map_path: Path = PRICE_MAP_PATH,
 ) -> ReviewStats:
     """Check every active listing, manual_products.toml, the latest sync's allowlist
-    warnings and the BOM price map (#125); upsert by fingerprint."""
+    warnings and the BOM price map (#125); upsert by fingerprint.
+
+    Raises:
+        PriceMapCheckSkippedError: price_map.toml is broken or missing; raised after the
+            other checks are saved, with their stats.
+    """
     manual_products = load_manual_products(manual_products_path)
     map_error: Exception | None = None
     try:
@@ -78,6 +88,6 @@ async def run_review_checks(
     )
     if map_error is not None:
         raise PriceMapCheckSkippedError(
-            f"price map invalid, BOM price check skipped: {map_error}"
+            f"price map invalid, BOM price check skipped: {map_error}", stats
         ) from map_error
     return stats

@@ -78,6 +78,9 @@ PROBLEM_TEXT = {
     PriceProblem.PRICES_DIFFER: "boje nemaju istu cijenu",
     PriceProblem.MANUAL_MISSING: "nema u manual_products.toml",
 }
+# Problems of the entry as a whole, true of every row; any other problem belongs to the
+# one variant table (colour) that failed and is noted on its own row only (R3-1).
+WHOLE_ENTRY_PROBLEMS = frozenset({PriceProblem.PRICES_DIFFER, PriceProblem.LISTING_INACTIVE})
 # Roll candidates whose unit says "per metre", as listings write it.
 PER_METRE_UNITS = frozenset({"m", "m1", "metar", "metra", "metara", "metru"})
 
@@ -162,8 +165,15 @@ def _entry_rows(
         colour = dict(match).get("colour")
         key = f"boja: {colour}" if len(entry.matches) > 1 and colour else size
         own = resolve_price(replace(entry, matches=(match,)), variants, manual_products)
-        problem = own.problem or whole.problem
-        note = f"{PROBLEM_TEXT[problem]}{ON_REQUEST}" if problem is not None else ""
+        if own.problem is not None:
+            note = f"{PROBLEM_TEXT[own.problem]}{ON_REQUEST}"
+        elif whole.problem in WHOLE_ENTRY_PROBLEMS:
+            note = f"{PROBLEM_TEXT[whole.problem]}{ON_REQUEST}"
+        elif whole.problem is not None:
+            # Another colour failed: this row is fine, but the line still goes "na upit".
+            note = f"druga boja nije ispravna{ON_REQUEST}"
+        else:
+            note = ""
         if listing is None:
             rows.append(SheetRow(name, key, f"oglas {entry.listing_id}", "", "", "", note))
             continue

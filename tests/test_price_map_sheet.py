@@ -162,6 +162,22 @@ def test_the_note_follows_the_pricing_rule_when_colours_cost_differently() -> No
     assert [r.price for r in rows] == ["1,65 KM", "1,80 KM", "1,65 KM"]
 
 
+def test_one_missing_colour_is_noted_only_on_its_own_row() -> None:
+    # R3-1: the found, priced colours keep their price and never say "nije pronađena".
+    variants = [v for v in VARIANTS[TENSIONER_LISTING] if v.colour != "Antracit"]
+    listings = {**LISTINGS, TENSIONER_LISTING: dataclasses.replace(
+        LISTINGS[TENSIONER_LISTING], variants=variants)}  # fmt: skip
+    rows = rows_for("Zatezač (španer)", build_rows(PRICE_MAP, listings, MANUAL, roll_candidates=[]))
+    by_key = {r.key: r for r in rows}
+    assert by_key["boja: Antracit"].note == (
+        "varijanta nije pronađena → kupac vidi „cijena na upit“"
+    )
+    for key in ("boja: Zeleni", "boja: Cinčani"):
+        assert by_key[key].price == "1,65 KM"
+        assert "nije pronađena" not in by_key[key].note
+        assert by_key[key].note == "druga boja nije ispravna → kupac vidi „cijena na upit“"
+
+
 def test_a_manual_price_of_zero_is_noted_like_the_pricer_sees_it() -> None:
     zero = {
         key: dataclasses.replace(product, price_km=Decimal("0.00"))

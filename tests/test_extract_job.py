@@ -335,6 +335,9 @@ async def test_a_broken_price_map_makes_the_run_partial(
     [(status, error)] = await fetch(conn, "SELECT status, error FROM sync_run")
     assert status == "partial"
     assert "price map invalid" in error
+    # Every other check ran and was saved: the error says so, and the stats are kept.
+    assert "review checks failed" not in error
+    assert stats.review is not None and stats.review.raised >= 1
     rows = await fetch(conn, "SELECT kind, listing_id FROM review_issue")
     assert ("height_without_price", 1) in rows
 

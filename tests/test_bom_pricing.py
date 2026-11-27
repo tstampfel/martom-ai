@@ -4,7 +4,6 @@
 
 import dataclasses
 import itertools
-import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -31,8 +30,6 @@ from martom.bom.pricing import (
     written_cm,
 )
 from martom.bom.roll import ROLL_RULES, RollPostModel, roll_fence_bom
-from martom.review.checks import _cm as checks_cm
-from martom.review.checks import _to_decimal as checks_to_decimal
 
 MANUAL = load_manual_products()
 SHIPPED = load_price_map()
@@ -418,7 +415,5 @@ def test_manual_entry_takes_no_variants(tmp_path: Path) -> None:
     ],
 )
 def test_written_cm_reads_a_thousands_dot_like_the_review_checks(text: str, cm: Decimal) -> None:
-    # R2 note: "1.550 mm" is 1550 mm in checks.py, so here too (not 0.155 cm).
+    # "1.550 mm" is 1550 mm (not 0.155 cm): the rule `written_number` shares with checks.py.
     assert written_cm(text) == cm
-    digits, unit = re.fullmatch(r"(?:H-)?([\d.,]+)\s*(mm|cm|m)?", text).groups()
-    assert written_cm(text) == checks_cm(checks_to_decimal(digits, unit), unit)

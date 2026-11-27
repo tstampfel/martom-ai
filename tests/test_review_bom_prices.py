@@ -161,6 +161,10 @@ def test_manual_entry_missing() -> None:
     assert [(i.details["item"], i.details["problem"], i.listing_id) for i in issues] == [
         ("anchor_m8x70", "manual_missing", None)
     ]
+    # The fix is the entry, not a price.
+    assert "ispravnu cijenu" not in issues[0].message
+    assert "manual_products.toml" in issues[0].message.split(":", 1)[1]
+    assert "doda proizvod" in issues[0].message
 
 
 def test_run_all_checks_includes_the_price_map_when_given() -> None:
