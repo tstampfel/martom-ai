@@ -280,3 +280,37 @@ async def test_a_database_error_marks_the_run_failed(conn: psycopg.AsyncConnecti
     [(status, error)] = await fetch(conn, "SELECT status, error FROM sync_run")
     assert status == "failed"
     assert "product_variant" in error
+
+
+async def test_review_checks_run_after_extraction(conn: psycopg.AsyncConnection) -> None:
+    await add_listing(conn, 1)
+
+    stats = await run_extraction(conn, extractor(FakeModel()))
+
+    assert stats.status == "succeeded"
+    assert stats.review is not None and stats.review.new >= 1
+    # product() lists "Stup H-150 cm" without a price.
+    rows = await fetch(conn, "SELECT kind, listing_id FROM review_issue ORDER BY kind")
+    assert ("height_without_price", 1) in rows
+
+    # Rerunning (nothing left to extract) keeps one row per problem.
+    await run_extraction(conn, extractor(FakeModel()))
+    assert await fetch(conn, "SELECT kind, listing_id FROM review_issue ORDER BY kind") == rows
+
+
+async def test_a_review_check_error_makes_the_run_partial(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await add_listing(conn, 1)
+
+    async def broken(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("checks broke")
+
+    monkeypatch.setattr("martom.extract.job.run_review_checks", broken)
+    stats = await run_extraction(conn, extractor(FakeModel()))
+
+    # The products were saved; only the review queue is out of date.
+    assert (stats.status, stats.extracted) == ("partial", 1)
+    [(status, error)] = await fetch(conn, "SELECT status, error FROM sync_run")
+    assert status == "partial"
+    assert "review checks" in error and "checks broke" in error
