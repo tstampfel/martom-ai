@@ -195,6 +195,17 @@ def test_panel_tape_roll_length_in_centimetres_is_still_checked() -> None:
     assert kinds(issues) == ["implausible_dimension"]
 
 
+# R1-2: the tape's width read into the height is not a panel height either.
+def test_panel_tape_width_in_the_height_is_plausible() -> None:
+    issues = check_implausible_dimensions(
+        listing(
+            product_type="pvc traka za panelnu ogradu",
+            variants=[variant("TRAKA ZA PANELE 19CM X 35M", height="19CM", length="35M")],
+        )
+    )
+    assert issues == []
+
+
 def test_unreadable_sizes_are_ignored() -> None:
     issues = check_implausible_dimensions(listing(variants=[variant(height="visoka", length=None)]))
     assert issues == []
@@ -455,6 +466,98 @@ def test_identical_labels_without_sizes_are_compared() -> None:
     )
     assert kinds(issues) == ["price_conflict"]
     assert issues[0].key.startswith("label:")
+    # R1-5: no size was written, so the message doesn't speak of "ista mjera".
+    assert "isti artikal" in issues[0].message
+
+
+def bare(price: str) -> Price:
+    """A price the listing wrote without "KM" ("- 12")."""
+    return {"price_text": price, "price": Decimal(price.replace(",", "."))}
+
+
+# R1-1: a bare price text that is also a size in the label is not the price.
+def test_a_size_with_the_same_number_as_a_bare_price_is_not_removed() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Lanac 6mm", **bare("6")),
+                variant("Lanac 8mm", **bare("8")),
+                variant("Cijev fi 20", **bare("20")),
+                variant("Cijev fi 25", **bare("25")),
+                variant("Vijak M12", **bare("12")),
+                variant("Vijak M10", **bare("10")),
+                variant("Pločica 30", **bare("30")),
+                variant("Pločica 40", **bare("40")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+# R1-1: labels that are only a price say nothing about being the same product.
+def test_labels_that_are_only_a_price_are_not_compared() -> None:
+    issues = check_price_conflicts(
+        listing(variants=[variant("1,50 KM", **km("1,50 KM")), variant("2,00 KM", **km("2,00 KM"))])
+    )
+    assert issues == []
+
+
+# R1-7: the label writes the price without "KM", the price text with it.
+def test_price_number_without_km_in_the_label_is_removed() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Točak 75mm - 12,00", size="75mm", **km("12,00 KM")),
+                variant("Točak 75mm - 14,00", size="75mm", **km("14,00 KM")),
+            ]
+        )
+    )
+    assert kinds(issues) == ["price_conflict"]
+
+
+# R1-3: only a unit after "KM/" belongs to the price.
+def test_a_word_after_km_slash_that_is_not_a_unit_is_kept() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Kapa 62KM/INOX", **km("62KM")),
+                variant("Kapa 41KM/CINK", **km("41KM")),
+                variant("Mreža 9,00KM/m", unit="m", **km("9,00KM")),
+                variant("Mreža 10,75 km / M", unit="m", **km("10,75 km")),
+            ]
+        )
+    )
+    assert [issue.details["labels"] for issue in issues] == [
+        ["Mreža 9,00KM/m", "Mreža 10,75 km / M"]
+    ]
+
+
+# R1-4: removing separators must not join two numbers into a third.
+def test_separators_between_numbers_are_kept() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Set 1,5-10 - 18,00 KM", **km("18,00 KM")),
+                variant("Set 1,510 - 31,50 KM", **km("31,50 KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
+# R1-6: when one size group splits into two conflicts, the first keeps the old key.
+def test_first_conflict_of_a_size_keeps_the_plain_key() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Panel 153 zeleni", height="153", **km("50 KM")),
+                variant("Panel 153 zeleni", height="153", **km("55 KM")),
+                variant("Panel 153 crni", height="153", **km("60 KM")),
+                variant("Panel 153 crni", height="153", **km("65 KM")),
+            ]
+        )
+    )
+    assert [issue.key for issue in issues] == ["153||||", "153|||||label:panel153crni"]
 
 
 def test_listing_price_compares_cents() -> None:
