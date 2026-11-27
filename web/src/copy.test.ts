@@ -49,7 +49,7 @@ describe('copy', () => {
     const canvasSteps = [
       'Razumijem: 25 m · dvorište · 150 cm',
       'Pronašao panele, stupove i pribor',
-      'Popis: 10 panela · 11 stupova · 44 kopče',
+      'Gotov popis: 905,10 KM okvirno',
     ]
     expect(copy.agentCard.steps.map((step) => step.text)).toEqual(canvasSteps)
   })
