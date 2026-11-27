@@ -35,10 +35,10 @@ One run (kind `nightly`, or `full`, a manual pass that re-fetches everything), i
    (logged as `request_budget_exceeded`); the slice gets only what is left and is
    trimmed or deferred (`rolling_deferred`; it doesn't change the status). Its GETs
    follow the same rules as step 3 (failures go to `failed_listing_ids`; a detail GET
-   never deactivates). The budget is checked before each batch, so only retries or 429s
-   inside the last batch can push past it. An active listing that isn't on the listing
-   pages can't be in the slice; the step 5 re-check saves its detail when OLX says it is
-   still active, so it stays fresh too.
+   never deactivates). The budget is checked before each slice GET, so only the retries
+   of the one GET in flight (at most 4) can push past it. An active listing that isn't
+   on the listing pages can't be in the slice; the step 5 re-check saves its detail when
+   OLX says it is still active, so it stays fresh too.
 8. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
    'partial' below 100% coverage or when a GET still failed after its retries (those ids
    go in `failed_listing_ids`, and the next run fetches and re-checks them first),
@@ -739,9 +739,12 @@ async def _rolling_refresh(
     Only listings seen this run (a detail is saved with the summary hash of the row it
     belongs to) and not already fetched in step 3 (`due`). The slice is
     ceil(active / days), trimmed to what the run's earlier requests of every kind left of
-    `request_budget`. The budget is checked again before each batch, so a retry or a 429
-    inside the slice shrinks the rest of it; the listings left out are `rolling_deferred`
-    (never more than the pool had) and are not carried over as failed.
+    `request_budget`. The budget is checked again before each slice GET: once the run has
+    sent `request_budget` requests no new GET starts, so a retry or a 429 inside the slice
+    shrinks the rest of it, and the run ends at most `budget + (max_attempts - 1)` (4 by
+    default: the retries of the one GET in flight) when the slice starts under the
+    budget. The listings left out are `rolling_deferred` (never more than the pool had)
+    and are not carried over as failed.
     """
     wanted = rolling_slice_size(await store.count_active(conn), refresh_days=refresh_days)
     pool = set(seen) - set(due)
@@ -762,24 +765,26 @@ async def _rolling_refresh(
     ids = await store.oldest_detail_ids(
         conn, pool, limit=min(wanted, max(0, request_budget - must_do))
     )
-    attempted = 0
-    while attempted < len(ids):
-        room = request_budget - sent_this_run()
-        if room <= 0:
-            break
-        batch = ids[attempted : attempted + min(room, DETAIL_BATCH_SIZE)]
-        attempted += len(batch)
+    attempted = 0  # slice GETs started (fetched or failed)
+    for batch in itertools.batched(ids, DETAIL_BATCH_SIZE):
         todo.update(batch)
         rows = {i: seen[i] for i in batch}  # oldest first: dicts keep insertion order
         try:
-            # No stored hashes: every listing in `rows` is fetched, unchanged or not.
-            details = await fetch_changed_details(olx, rows, {})
+            # No stored hashes: every listing in `rows` is fetched, unchanged or not. No new
+            # GET starts once the run has sent `request_budget` requests.
+            details = await fetch_changed_details(
+                olx, rows, {}, stop=lambda: sent_this_run() >= request_budget
+            )
         except DetailFetchAbortedError as exc:
             stats.rolling_refreshed += len(exc.partial.fetched)
             await _save_details(conn, exc.partial, stored, stats, todo)
             raise
         stats.rolling_refreshed += len(details.fetched)
+        attempted += len(details.fetched) + len(details.failed)
         await _save_details(conn, details, stored, stats, todo)
+        if details.not_started:
+            todo.difference_update(details.not_started)  # deferred, not carried over
+            break
     stats.rolling_deferred = min(wanted, len(pool)) - attempted
     logger.info(
         "rolling refresh: %d listings re-fetched, %d deferred (%d requests before it, budget %d)",

@@ -30,7 +30,7 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any, Self
@@ -380,6 +380,8 @@ class DetailFetchResult:
     unchanged: tuple[int, ...] = ()  # summary hash matched: not requested
     # Failed listings keep their old stored hash, so the next run tries them again.
     failed: dict[int, OlxApiError] = field(default_factory=dict)
+    # Never requested because `stop` said so (the rolling refresh's request budget).
+    not_started: tuple[int, ...] = ()
 
 
 class DetailFetchAbortedError(OlxRateLimitAbortError):
@@ -399,11 +401,16 @@ async def fetch_changed_details(
     olx: OlxClient,
     rows: Mapping[int, Mapping[str, Any]],
     stored_summary_hashes: Mapping[int, str],
+    *,
+    stop: Callable[[], bool] | None = None,
 ) -> DetailFetchResult:
     """Fetch details for listings that are new or whose summary hash changed.
 
     `rows` is listing id -> listing-page row (`SyncResult.listings` from M1-2);
     `stored_summary_hashes` is listing id -> the summary hash saved at the last fetch.
+    `stop`, when given, is asked before each new GET: once it says True no further GET
+    starts, and the listings left are returned in `not_started` (a GET already started
+    still finishes, with its retries).
 
     One failed listing (a 404 because it sold meanwhile, a malformed body) is recorded in
     `failed` and the rest continue. When OLX stops the run (`OlxRateLimitAbortError`, see
@@ -413,10 +420,14 @@ async def fetch_changed_details(
     fetched: dict[int, FetchedDetail] = {}
     unchanged: list[int] = []
     failed: dict[int, OlxApiError] = {}
+    not_started: list[int] = []
     for listing_id, row in rows.items():
         new_hash = summary_hash(row)
         if new_hash == stored_summary_hashes.get(listing_id):
             unchanged.append(listing_id)
+            continue
+        if not_started or (stop is not None and stop()):
+            not_started.append(listing_id)
             continue
         try:
             detail = ListingDetail.from_api(await olx.get_listing(listing_id))
@@ -439,12 +450,15 @@ async def fetch_changed_details(
         fetched[listing_id] = FetchedDetail(detail=detail, summary_hash=new_hash)
 
     logger.info(
-        "detail fetch: %d fetched, %d unchanged, %d failed",
+        "detail fetch: %d fetched, %d unchanged, %d failed, %d not started",
         len(fetched),
         len(unchanged),
         len(failed),
+        len(not_started),
     )
-    return DetailFetchResult(fetched=fetched, unchanged=tuple(unchanged), failed=failed)
+    return DetailFetchResult(
+        fetched=fetched, unchanged=tuple(unchanged), failed=failed, not_started=tuple(not_started)
+    )
 
 
 __all__ = [

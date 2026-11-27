@@ -2030,6 +2030,64 @@ async def test_an_age_query_error_never_fails_a_clean_run(
     assert (await last_run(conn))["status"] == "succeeded"
 
 
+async def slice_shop_and_must_do(conn: psycopg.AsyncConnection) -> tuple[FakeShop, int]:
+    """30 stored listings (a slice of 5) and the requests a night sends before the slice."""
+    server = FakeShop({i: f"Listing {i}" for i in range(1, 31)})
+    await sync(conn, server)
+    server.requests.clear()
+    await sync(conn, server, max_attempts=2)  # no slice: only the must-do requests
+    must_do = len(server.requests)
+    await age_by_one_day(conn)
+    server.requests.clear()
+    return server, must_do
+
+
+async def test_no_new_slice_get_starts_once_the_budget_is_reached(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, must_do = await slice_shop_and_must_do(conn)
+    monkeypatch.setattr(job, "DETAIL_BATCH_SIZE", 2)
+    server.flaky[1] = 1  # listing 1's first GET answers 500, its retry succeeds
+
+    stats = await sync(conn, server, max_attempts=2, refresh_days=7, request_budget=must_do + 2)
+
+    # Listing 1 used both requests; listing 2 (same batch) never started.
+    assert len(server.requests) == must_do + 2
+    assert server.detail_requests() == [1, 1]
+    assert (stats.rolling_refreshed, stats.rolling_deferred) == (1, 4)
+    assert stats.failed_listing_ids is None  # deferred ids aren't carried over
+    assert stats.retried_count == 1
+
+
+async def test_a_multi_batch_slice_with_retries_stays_within_the_budget(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, must_do = await slice_shop_and_must_do(conn)
+    monkeypatch.setattr(job, "DETAIL_BATCH_SIZE", 2)
+    server.flaky[1] = 1
+    server.flaky[3] = 1
+
+    stats = await sync(conn, server, max_attempts=2, refresh_days=7, request_budget=must_do + 5)
+
+    # Batches [1, 2], [3, 4], [5]: 1 and 3 took two requests each, so 4 never started.
+    assert len(server.requests) == must_do + 5
+    assert server.detail_requests() == [1, 1, 2, 3, 3]
+    assert (stats.rolling_refreshed, stats.rolling_deferred) == (3, 2)
+
+
+async def test_only_the_retries_of_the_get_in_flight_pass_the_budget(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, must_do = await slice_shop_and_must_do(conn)
+    monkeypatch.setattr(job, "DETAIL_BATCH_SIZE", 2)
+    server.flaky[1] = 1  # started with one request of room: its retry may finish
+
+    stats = await sync(conn, server, max_attempts=2, refresh_days=7, request_budget=must_do + 1)
+
+    assert len(server.requests) == must_do + 2  # budget + the one retry (max_attempts - 1)
+    assert (stats.rolling_refreshed, stats.rolling_deferred) == (1, 4)
+
+
 def test_cli_passes_the_request_budget_and_refresh_days_settings(
     cli_env: FakeShop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
