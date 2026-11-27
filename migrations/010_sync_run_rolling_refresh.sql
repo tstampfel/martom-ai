@@ -1,4 +1,4 @@
--- 011: rolling refresh counters on `sync_run` (#135). The nightly sync re-fetches the
+-- 010: rolling refresh counters on `sync_run` (#135). The nightly sync re-fetches the
 -- details of about 1/7 of the active listings (oldest `detail_fetched_at` first), so
 -- every listing is refreshed within 7 nights; this replaced the weekly full run.
 -- Re-runs safely (IF NOT EXISTS).
