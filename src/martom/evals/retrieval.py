@@ -31,6 +31,17 @@ class EvalQuestion:
     note: str | None = None
 
 
+def _listing_ids(value: object) -> tuple[int, ...]:
+    """A JSON list of integer ids. Strings, floats and booleans are rejected, not converted
+    (a string "63996799" would otherwise become the digits 6, 3, 9, ...)."""
+    # bool is a subclass of int in Python (True == 1), so it has to be ruled out by name.
+    if not isinstance(value, list) or not all(
+        isinstance(i, int) and not isinstance(i, bool) for i in value
+    ):
+        raise ValueError(f"expected_listing_ids must be a list of integers, got {value!r}")
+    return tuple(value)
+
+
 def load_questions(path: Path) -> list[EvalQuestion]:
     """Read a JSONL eval set: one JSON object per line, blank lines skipped."""
     questions: list[EvalQuestion] = []
@@ -43,7 +54,7 @@ def load_questions(path: Path) -> list[EvalQuestion]:
             question = EvalQuestion(
                 id=str(row["id"]),
                 question=str(row["question"]),
-                expected_listing_ids=tuple(int(i) for i in row["expected_listing_ids"]),
+                expected_listing_ids=_listing_ids(row["expected_listing_ids"]),
                 source=str(row["source"]),
                 note=row.get("note"),
             )

@@ -16,7 +16,7 @@ import pytest
 from martom.evals.retrieval import EvalQuestion, run_keyword_eval
 from martom.extract.store import ProductRecord, VariantRow, save_products
 from martom.migrate import run_migrations
-from martom.search.keyword import KeywordHit, SearchFilters, search_keyword
+from martom.search.keyword import KeywordHit, SearchFilters, search_keyword, strip_filler_words
 
 pytestmark = pytest.mark.anyio
 
@@ -145,6 +145,20 @@ async def test_a_typo_still_finds_the_product(conn: psycopg.AsyncConnection) -> 
     assert BRUSILICA in ids(await search_keyword(conn, "brusilca"))
 
 
+async def test_a_typo_in_a_multi_word_query_still_finds_the_product(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # Trigram works per word: "brusilca" is close to "brusilica" even when the other
+    # words ("za metal") are nowhere in the listing (R1-3).
+    assert ids(await search_keyword(conn, "brusilca za metal"))[0] == BRUSILICA
+
+
+async def test_typos_in_every_word_still_find_the_panels(conn: psycopg.AsyncConnection) -> None:
+    # The typo seed (seed-08) without its colour word, so full text can't help at all.
+    assert set(ids(await search_keyword(conn, "panelan ogarda"))[:2]) == PANELS
+    assert set(ids(await search_keyword(conn, "panelan ogarda antracit"))[:2]) == PANELS
+
+
 async def test_query_without_diacritics_matches_slash_joined_words(
     conn: psycopg.AsyncConnection,
 ) -> None:
@@ -174,6 +188,25 @@ async def test_never_returns_inactive_listings(conn: psycopg.AsyncConnection) ->
 
 async def test_limit_caps_the_results(conn: psycopg.AsyncConnection) -> None:
     assert len(await search_keyword(conn, "ograda", limit=2)) == 2
+
+
+async def test_a_unit_glued_to_its_number_is_not_a_search_word(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # "125mm" must count as "125", never as "125" | "mm": the padlock and the wall plugs
+    # share only "mm" with this query (R1-2).
+    glued = await search_keyword(conn, "brusilica 125mm", limit=50)
+    spaced = await search_keyword(conn, "brusilica 125 mm", limit=50)
+    assert ids(glued) == ids(spaced)
+    assert KATANAC not in ids(glued)
+    assert TIPLO not in ids(glued)
+
+
+def test_strip_filler_words_splits_glued_units_and_drops_punctuation() -> None:
+    assert strip_filler_words("Brusilica 125MM, 900W") == "Brusilica 125 900"
+    assert strip_filler_words("ograda 1,5m") == "ograda 1,5"
+    assert strip_filler_words("!!! ? panel ,") == "panel"
+    assert strip_filler_words("treba mi ?") == ""
 
 
 async def test_a_query_of_only_filler_words_returns_nothing(
@@ -251,6 +284,12 @@ async def test_min_price_filter(conn: psycopg.AsyncConnection) -> None:
         ("100CM", Decimal("100")),
         ("1,5 m", Decimal("150")),
         ("2 m", Decimal("200")),
+        ("1,5 met", Decimal("150")),
+        ("1,5 metara", Decimal("150")),
+        ("1,5 metra", Decimal("150")),
+        ("1.5m", Decimal("150")),
+        ("1,5", Decimal("150")),  # no unit and below 10: metres
+        ("20 METARA", Decimal("2000")),
         ("153 X 2500CM", Decimal("153")),
         ("H-", None),
         (None, None),

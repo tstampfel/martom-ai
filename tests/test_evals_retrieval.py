@@ -127,6 +127,15 @@ def test_load_questions_rejects_duplicate_ids(tmp_path: Path) -> None:
         load_questions(path)
 
 
+@pytest.mark.parametrize("bad", ['"63996799"', "[1.5]", "[true]", "63996799", '["1"]'])
+def test_load_questions_needs_a_list_of_integer_ids(tmp_path: Path, bad: str) -> None:
+    path = tmp_path / "set.jsonl"
+    line = f'{{"id": "q1", "question": "x", "expected_listing_ids": {bad}, "source": "seed"}}'
+    path.write_text(line + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="line 1"):
+        load_questions(path)
+
+
 def test_load_questions_names_the_bad_line(tmp_path: Path) -> None:
     path = tmp_path / "set.jsonl"
     path.write_text('{"id": "q1", "question": "x"}\n', encoding="utf-8")

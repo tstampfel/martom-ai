@@ -53,4 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--set", type=Path, default=DEFAULT_SET, help="JSONL eval set")
     parser.add_argument("--limit", type=int, default=10, help="results per question")
     args = parser.parse_args()
+    if args.limit < 10:
+        # recall@10 over fewer than 10 results would be recall@limit under another name.
+        parser.error("--limit must be at least 10, or recall@10 means nothing")
     asyncio.run(main(args.set, args.limit))
