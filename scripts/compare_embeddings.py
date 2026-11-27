@@ -28,6 +28,7 @@ import psycopg
 from martom.embed_job import run_embedding
 from martom.embeddings import FileCachedEmbeddings, make_embedder
 from martom.evals.retrieval import (
+    ISSUE_102_CASES,
     RunScores,
     case_status,
     load_questions,
@@ -44,9 +45,6 @@ DEFAULT_MODELS = (
     "local:intfloat/multilingual-e5-large",
     "local:BAAI/bge-m3",
 )
-# #102: the eval cases whose hybrid result each model's row shows ("ok" = full recall@10
-# and no forbidden id in the top 10; see case_status).
-CASES = ("seed-12-kolica", "seed-13-typo-panelan", "seed-14-gradjevinska-kolica")
 
 
 def forbidden_rate(scores: RunScores) -> str:
@@ -55,7 +53,7 @@ def forbidden_rate(scores: RunScores) -> str:
 
 
 def case_cells(scores: RunScores) -> str:
-    return "".join(f" {case_status(scores, case):<22}" for case in CASES)
+    return "".join(f" {case_status(scores, case):<22}" for case in ISSUE_102_CASES)
 
 
 async def compare(models: list[str], eval_set: Path) -> None:
@@ -110,7 +108,9 @@ async def compare(models: list[str], eval_set: Path) -> None:
     for row in rows:
         print(row)
     print()
-    print(f"{'#102 cases, hybrid (or keyword)':<40}" + "".join(f" {c:<22}" for c in CASES))
+    print(
+        f"{'#102 cases, hybrid (or keyword)':<40}" + "".join(f" {c:<22}" for c in ISSUE_102_CASES)
+    )
     for row in case_rows:
         print(row)
     print("forbid = forbidden hit rate (lower is better); FORBIDDEN = a forbidden id in the top 10")

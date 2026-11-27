@@ -191,6 +191,11 @@ def score_run(questions: Sequence[EvalQuestion], results: Mapping[str, Sequence[
     )
 
 
+# The #102 eval cases the comparison scripts show per run: "kolica" and "građevinska kolica"
+# must not return the grinder, the bare typo "panelan" must find the panels.
+ISSUE_102_CASES = ("seed-12-kolica", "seed-13-typo-panelan", "seed-14-gradjevinska-kolica")
+
+
 def case_status(scores: RunScores, question_id: str) -> str:
     """One question's result in a few characters, for a comparison table: "ok" (full recall@10
     and no forbidden id in the top 10), else "FORBIDDEN" and/or "R@10 0.50"; "-" when the run
