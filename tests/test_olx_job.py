@@ -406,17 +406,22 @@ async def test_the_next_run_rechecks_the_stored_failed_ids_first(
 ) -> None:
     server = FakeShop({i: f"Listing {i}" for i in range(1, 21)})
     await sync(conn, server)
-    del server.listed[19], server.listed[20]  # 2 of 20 = 10%: allowed
-    server.detail_errors = {20: 503}
+    del server.listed[20]
+    server.detail_errors = {20: 503}  # its re-check fails, so it stays active
     await sync(conn, server)
     assert (await last_run(conn))["failed_listing_ids"] == [20]
     server.detail_errors = {}
+    del server.listed[19]  # 19 and 20 are both candidates now: 2 of 20 = 10%, allowed
     server.requests.clear()
 
     await sync(conn, server)
 
-    assert server.detail_requests()[0] == 20
-    assert (await listings(conn))[20]["active"] is False
+    # Id order would be [19, 20]; 20 failed last run, so it is re-checked first. Nothing
+    # changed on the listing pages, so these are the only GET /listings/{id} requests.
+    assert server.detail_requests() == [20, 19]
+    stored = await listings(conn)
+    assert stored[19]["active"] is False
+    assert stored[20]["active"] is False
 
 
 # --- Deactivation -----------------------------------------------------------------------
