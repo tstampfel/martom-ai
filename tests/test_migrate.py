@@ -71,6 +71,15 @@ def test_repo_migrations_are_valid() -> None:
     assert names[0] == "001_extensions.sql"
 
 
+def fake_manual_sync(calls: list[str], label: str | None = None):
+    """A stand-in for the manual products sync (#112) that records its call."""
+
+    async def sync(database_url: str) -> None:
+        calls.append(label or database_url)
+
+    return sync
+
+
 def test_cli_migrate_without_database_url_uses_the_local_compose_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,10 +92,12 @@ def test_cli_migrate_without_database_url_uses_the_local_compose_database(
 
     monkeypatch.setattr("martom.cli.run_migrations", fake_run_migrations)
     monkeypatch.setattr("martom.cli.setup_checkpointer", used_urls.append)
+    monkeypatch.setattr("martom.cli._sync_manual_if_indexed", fake_manual_sync(used_urls))
 
     assert main(["migrate"]) == 0
-    # Same fake value as DATABASE_URL in .env.example, for the SQL and the checkpointer.
-    assert used_urls == ["postgresql://martom:martom@localhost:5432/martom"] * 2
+    # Same fake value as DATABASE_URL in .env.example, for the SQL, the checkpointer and the
+    # manual products sync.
+    assert used_urls == ["postgresql://martom:martom@localhost:5432/martom"] * 3
 
 
 def test_cli_migrate_prefers_database_url_from_the_environment(
@@ -101,12 +112,13 @@ def test_cli_migrate_prefers_database_url_from_the_environment(
 
     monkeypatch.setattr("martom.cli.run_migrations", fake_run_migrations)
     monkeypatch.setattr("martom.cli.setup_checkpointer", used_urls.append)
+    monkeypatch.setattr("martom.cli._sync_manual_if_indexed", fake_manual_sync(used_urls))
 
     assert main(["migrate"]) == 0
-    assert used_urls == ["postgresql://u:p@db.example:6543/other"] * 2
+    assert used_urls == ["postgresql://u:p@db.example:6543/other"] * 3
 
 
-def test_cli_migrate_sets_up_the_checkpointer_after_the_sql_migrations(
+def test_cli_migrate_sets_up_the_checkpointer_and_the_manual_index_after_the_sql_migrations(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -120,9 +132,10 @@ def test_cli_migrate_sets_up_the_checkpointer_after_the_sql_migrations(
 
     monkeypatch.setattr("martom.cli.run_migrations", fake_run_migrations)
     monkeypatch.setattr("martom.cli.setup_checkpointer", fake_setup_checkpointer)
+    monkeypatch.setattr("martom.cli._sync_manual_if_indexed", fake_manual_sync(calls, "manual"))
 
     assert main(["migrate"]) == 0
-    assert calls == ["sql", "checkpointer"]
+    assert calls == ["sql", "checkpointer", "manual"]
 
 
 def test_cli_migrate_skips_the_checkpointer_when_a_migration_fails(
