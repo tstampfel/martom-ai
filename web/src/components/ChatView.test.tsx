@@ -115,6 +115,57 @@ describe('ChatView', () => {
     expect(within(color).getByRole('button', { name: /Zelena/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('shows the side fields only for a known number of corners, as in the mockup', async () => {
+    renderChat(FENCE, recordingClient().client)
+    const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    expect(screen.queryByRole('group', { name: 'Dužina svake strane (m)' })).not.toBeInTheDocument()
+    fireEvent.click(within(corners).getByRole('button', { name: '1' }))
+    const sides = screen.getByRole('group', { name: 'Dužina svake strane (m)' })
+    expect(within(sides).getAllByRole('textbox')).toHaveLength(2)
+    expect(within(sides).queryByRole('button', { name: copy.chat.clarify.addSide })).not.toBeInTheDocument()
+    fireEvent.click(within(corners).getByRole('button', { name: 'Ne znam' }))
+    expect(screen.queryByRole('group', { name: 'Dužina svake strane (m)' })).not.toBeInTheDocument()
+  })
+
+  it('lets "Ne znam" corners be sent without side lengths', async () => {
+    const { client, requests } = recordingClient()
+    renderChat(FENCE, client)
+    const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    fireEvent.click(within(corners).getByRole('button', { name: 'Ne znam' }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Gdje idu stupovi?' })).getByRole('button', { name: /pločicom/ }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Koja boja?' })).getByRole('button', { name: /Antracit/ }))
+    fireEvent.click(screen.getByRole('button', { name: copy.chat.clarify.submit }))
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1].answers).toEqual({ corners: 'unknown', closed: 'no', posts: 'plate', color: 'antracit' })
+  })
+
+  it('raises the corners with "+ strana" from 4+ so corners and sides agree', async () => {
+    renderChat(FENCE, recordingClient().client)
+    const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    fireEvent.click(within(corners).getByRole('button', { name: '4+' }))
+    const sides = screen.getByRole('group', { name: 'Dužina svake strane (m)' })
+    expect(within(sides).getAllByRole('textbox')).toHaveLength(5)
+    fireEvent.click(within(sides).getByRole('button', { name: copy.chat.clarify.addSide }))
+    expect(within(sides).getAllByRole('textbox')).toHaveLength(6)
+    expect(screen.getByRole('complementary', { name: copy.chat.project.label })).toHaveTextContent('5 kutova')
+  })
+
+  it('shows the closed-loop question as the "Ide okolo (zatvoreno)" toggle under the corners', async () => {
+    renderChat(FENCE, recordingClient().client)
+    const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    expect(screen.queryByRole('group', { name: 'Ide li ograda okolo (zatvoreno)?' })).not.toBeInTheDocument()
+    const toggle = within(corners).getByRole('button', { name: copy.chat.clarify.closedToggle })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(within(corners).getByRole('button', { name: '4+' })).toHaveAttribute('aria-pressed', 'true')
+    const sides = screen.getByRole('group', { name: 'Dužina svake strane (m)' })
+    expect(within(sides).getAllByRole('textbox')).toHaveLength(4)
+    const panel = screen.getByRole('complementary', { name: copy.chat.project.label })
+    expect(panel).toHaveTextContent('4 kuta, zatvoreno')
+    expect(panel).toHaveTextContent('? + ? + ? + ? m')
+  })
+
   it('keeps "Prikaži prijedlog" disabled until every question is answered', async () => {
     renderChat(FENCE, recordingClient().client)
     const submit = await screen.findByRole('button', { name: copy.chat.clarify.submit })
@@ -131,9 +182,9 @@ describe('ChatView', () => {
 
     const card = (await screen.findByRole('heading', { name: 'Panelna ograda 3D (Nylofor)' })).closest('article')!
     expect(requests[1]).toEqual({
-      message: '2 · 10 + 5 + 10 m · Na beton, s pločicom · Antracit (RAL 7016)',
+      message: '2 kuta · 10 + 5 + 10 m · Na beton, s pločicom · Antracit (RAL 7016)',
       threadId: '3b6f2a0e-7c1d-4e7a-9a43-2f1c5d8e9b10',
-      answers: { corners: '2', sides: '10 + 5 + 10', posts: 'plate', color: 'antracit' },
+      answers: { corners: '2', closed: 'no', sides: '10 + 5 + 10', posts: 'plate', color: 'antracit' },
     })
     expect(screen.getByText(requests[1].message)).toBeInTheDocument()
 

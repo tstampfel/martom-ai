@@ -44,6 +44,7 @@ describe('chatReducer', () => {
     const clarify = replay(fixtures.fenceClarify)
     expect(lastReply(clarify).chips?.questions.map((question) => question.id)).toEqual([
       'corners',
+      'closed',
       'sides',
       'posts',
       'color',

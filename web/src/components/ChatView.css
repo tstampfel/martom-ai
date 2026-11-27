@@ -156,6 +156,10 @@
   color: var(--color-success);
 }
 
+.step-card__step--needs_input .step-card__mark {
+  color: var(--color-step-question);
+}
+
 /* Clarify questions */
 
 .clarify__question,
@@ -269,6 +273,10 @@
   opacity: 0.8;
 }
 
+.clarify__closed {
+  align-self: flex-start;
+}
+
 .clarify__note,
 .clarify__hint {
   margin: 0;
@@ -355,7 +363,11 @@
 .product-card__photo {
   position: relative;
   height: 170px;
-  background: repeating-linear-gradient(135deg, #deded9 0 14px, #e8e8e4 14px 28px);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-photo-stripe) 0 14px,
+    var(--color-photo-stripe-light) 14px 28px
+  );
   display: flex;
   align-items: flex-end;
 }

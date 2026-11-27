@@ -18,6 +18,15 @@ export function telHref(phone: string): string {
   return `tel:${international}`
 }
 
+/** Bosnian plural: 1 kut, 2–4 kuta, 5+ kutova (21 kut, 22 kuta, 11–14 kutova). */
+function cornerWord(n: number): string {
+  const lastTwo = n % 100
+  const last = n % 10
+  if (last === 1 && lastTwo !== 11) return 'kut'
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return 'kuta'
+  return 'kutova'
+}
+
 export const copy = {
   shop,
   topStrip: {
@@ -109,8 +118,13 @@ export const copy = {
     },
     clarify: {
       side: (n: number) => `Strana ${n}`,
+      // Shown under the corners chips for a question with id "closed".
+      closedToggle: 'Ide okolo (zatvoreno)',
+      // The corners in the customer's bubble and the "Vaš projekt" panel.
+      corners: (n: number) => (n === 0 ? 'bez kutova' : `${n} ${cornerWord(n)}`),
+      cornersUnknown: 'Kutovi: ne znam',
+      closedSuffix: ', zatvoreno',
       addSide: '+ strana',
-      removeSide: 'Ukloni zadnju stranu',
       total: (metres: string) => `= ${metres} m`,
       submit: 'Prikaži prijedlog',
       incomplete: 'Odgovorite na sva pitanja ili napišite odgovor ispod.',
@@ -127,6 +141,7 @@ export const copy = {
     project: {
       label: 'Vaš projekt',
       length: 'Dužina',
+      sides: 'Strane',
       unanswered: '—',
       hint: 'Promijenite bilo šta u razgovoru — popis materijala se ponovo izračuna.',
     },

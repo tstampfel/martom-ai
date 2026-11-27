@@ -1,11 +1,11 @@
-import { useEffect, useId, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import type { ChatClient } from '../api/chatClient'
 import type { ChatError, Turn } from '../chat'
-import { answerSummary, answersForRequest, type ClarifyAnswers } from '../clarify'
+import { answerSummary, answersForRequest, initialAnswers, type ClarifyAnswers } from '../clarify'
 import { copy } from '../copy'
 import { useChat } from '../useChat'
 import { BomPreview } from './BomPreview'
-import { ClarifyForm } from './ClarifyForm'
+import { ClarifyForm, type UpdateAnswers } from './ClarifyForm'
 import { ArrowIcon } from './Icons'
 import { ProductCards } from './ProductCards'
 import { ProjectPanel } from './ProjectPanel'
@@ -19,8 +19,6 @@ type ChatViewProps = {
   onBack: () => void
 }
 
-const EMPTY_ANSWERS: ClarifyAnswers = { single: {}, sides: [''] }
-
 /**
  * The conversation (2-clarify.html, 3-results.html): the customer's
  * messages, and for each reply its steps, streaming text, clarify chips,
@@ -29,8 +27,9 @@ const EMPTY_ANSWERS: ClarifyAnswers = { single: {}, sides: [''] }
  */
 export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
   const { state, send } = useChat(client, firstMessage)
-  // Answers to the newest reply's chips; a new message starts them afresh.
-  const [answers, setAnswers] = useState(EMPTY_ANSWERS)
+  // Answers to the newest reply's chips; null until the customer touches
+  // them, and again after every message, so new chips start afresh.
+  const [answersState, setAnswersState] = useState<ClarifyAnswers | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
 
   // The control that opened the chat is gone, so move focus here; screen
@@ -43,14 +42,21 @@ export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
   const lastReply = state.turns[lastIndex].reply
   const openChips = lastReply.error ? null : lastReply.chips
   const busy = lastReply.streaming
+  const answers = answersState ?? (openChips ? initialAnswers(openChips) : null)
+
+  const updateAnswers: UpdateAnswers = (update) => {
+    if (!openChips) return
+    const chips = openChips
+    setAnswersState((current) => update(current ?? initialAnswers(chips)))
+  }
 
   function sendMessage(text: string, requestAnswers: Record<string, string> | null = null) {
-    setAnswers(EMPTY_ANSWERS)
+    setAnswersState(null)
     send(text, requestAnswers)
   }
 
   function submitAnswers() {
-    if (!openChips) return
+    if (!openChips || !answers) return
     sendMessage(answerSummary(openChips, answers), answersForRequest(openChips, answers))
   }
 
@@ -62,8 +68,8 @@ export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
             key={index}
             turn={turn}
             clarify={
-              index === lastIndex && openChips
-                ? { answers, onChange: setAnswers, onSubmit: submitAnswers, canSubmit: !busy }
+              index === lastIndex && openChips && answers
+                ? { answers, onChange: updateAnswers, onSubmit: submitAnswers, canSubmit: !busy }
                 : null
             }
           />
@@ -73,14 +79,16 @@ export function ChatView({ firstMessage, client, onBack }: ChatViewProps) {
           {copy.chat.back}
         </button>
       </section>
-      {openChips ? <ProjectPanel title={state.turns[0].text} chips={openChips} answers={answers} /> : null}
+      {openChips && answers ? (
+        <ProjectPanel title={state.turns[0].text} chips={openChips} answers={answers} />
+      ) : null}
     </div>
   )
 }
 
 type ClarifyControls = {
   answers: ClarifyAnswers
-  onChange: Dispatch<SetStateAction<ClarifyAnswers>>
+  onChange: UpdateAnswers
   onSubmit: () => void
   canSubmit: boolean
 }
