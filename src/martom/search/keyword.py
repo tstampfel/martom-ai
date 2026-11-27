@@ -258,16 +258,27 @@ scored AS (
                   AND (%(height_cm)s::numeric IS NULL
                        OR abs(martom_height_cm(v.height) - %(height_cm)s::numeric)
                           <= %(tolerance)s::numeric)
-                  AND (%(min_price)s::numeric IS NULL OR v.price >= %(min_price)s::numeric)
-                  AND (%(max_price)s::numeric IS NULL OR v.price <= %(max_price)s::numeric)
+                  AND (
+                      (%(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
+                      -- A price filter needs a real price: never 0 (how OLX stores
+                      -- "Na upit") and never a listing sold by agreement (R3-1).
+                      OR (v.price > 0 AND NOT coalesce(l.price_by_agreement, false)
+                          AND (%(min_price)s::numeric IS NULL
+                               OR v.price >= %(min_price)s::numeric)
+                          AND (%(max_price)s::numeric IS NULL
+                               OR v.price <= %(max_price)s::numeric))
+                  )
             )
             -- A listing that sells one thing has no variants; its price is on the listing
-            -- (R2-1). A height filter can't match it: there is no height to read.
+            -- (R2-1). A height filter can't match it: there is no height to read. Same
+            -- real-price rule as above (R3-1).
             OR (
                 %(height_cm)s::numeric IS NULL
                 AND NOT EXISTS (
                     SELECT 1 FROM product_variant AS v WHERE v.listing_id = p.listing_id
                 )
+                AND l.price > 0
+                AND NOT coalesce(l.price_by_agreement, false)
                 AND (%(min_price)s::numeric IS NULL OR l.price >= %(min_price)s::numeric)
                 AND (%(max_price)s::numeric IS NULL OR l.price <= %(max_price)s::numeric)
             )

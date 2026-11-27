@@ -6,6 +6,7 @@ plus a few small synthetic products for the cases the golden set doesn't cover.
 
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -290,6 +291,47 @@ async def test_price_filter_uses_the_listing_price_when_there_are_no_variants(
         await search_keyword(conn, "brusilica", SearchFilters(max_price=50))
     )
     assert BRUSILICA in ids(await search_keyword(conn, "brusilica", SearchFilters(min_price=50)))
+
+
+async def _add_kolica(
+    conn: psycopg.AsyncConnection,
+    listing_id: int,
+    *,
+    price: float,
+    by_agreement: bool,
+    variants: list[VariantRow],
+) -> None:
+    """A synthetic wheelbarrow listing ("kolica"), matched by no golden listing."""
+    await conn.execute(
+        "INSERT INTO olx_listing (id, slug, title, summary, detail_hash, price,"
+        " price_by_agreement) VALUES (%s, %s, 'KOLICA', '{}', 'h', %s, %s)",
+        (listing_id, f"kolica-{listing_id}", price, by_agreement),
+    )
+    record = replace(_synthetic(listing_id, "kolica", "KOLICA | kolica"), variants=variants)
+    await save_products(conn, [record])
+
+
+def _variant(price: str | None) -> VariantRow:
+    return VariantRow("v", None, None, None, None, price, Decimal(price) if price else None, "kom")
+
+
+async def test_a_price_on_request_listing_never_passes_a_price_filter(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # OLX stores "Na upit" as price 0.0 with price_by_agreement (R3-1); 0 is not a price.
+    await _add_kolica(conn, 900101, price=0.0, by_agreement=True, variants=[])
+    await _add_kolica(conn, 900102, price=0.0, by_agreement=False, variants=[])
+    await _add_kolica(conn, 900103, price=0.0, by_agreement=True, variants=[_variant("10.00")])
+    await _add_kolica(conn, 900104, price=0.0, by_agreement=False, variants=[_variant("0")])
+    await _add_kolica(conn, 900105, price=120.0, by_agreement=False, variants=[])
+    await _add_kolica(conn, 900106, price=0.0, by_agreement=False, variants=[_variant("10.00")])
+
+    unfiltered = ids(await search_keyword(conn, "kolica", limit=50))
+    assert set(unfiltered) == {900101, 900102, 900103, 900104, 900105, 900106}
+    under_150 = ids(await search_keyword(conn, "kolica", SearchFilters(max_price=Decimal(150))))
+    assert set(under_150) == {900105, 900106}
+    over_1 = ids(await search_keyword(conn, "kolica", SearchFilters(min_price=Decimal(1))))
+    assert set(over_1) == {900105, 900106}
 
 
 async def test_a_height_filter_never_matches_a_listing_without_variants(
