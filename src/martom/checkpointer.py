@@ -63,13 +63,20 @@ def _library_version(conn: psycopg.Connection) -> int:
     return -1 if row is None else row[0]
 
 
+class CheckpointerNotReadyError(RuntimeError):
+    """The checkpointer tables are missing or older than the pinned library expects."""
+
+
 @asynccontextmanager
 async def open_checkpointer(database_url: str) -> AsyncGenerator[AsyncPostgresSaver]:
     """Yield a checkpointer backed by a small connection pool; closes the pool on exit.
 
     Pass it to `builder.compile(checkpointer=...)`. Like a `try/finally` around a
     resource in TS: open it once for the app's lifetime (e.g. in FastAPI's lifespan),
-    not once per request. The tables must already exist (`martom migrate`).
+    not once per request. The tables must already exist (`martom migrate`): opening
+    checks them read-only and raises `CheckpointerNotReadyError` at startup instead of
+    failing every chat turn; it never creates them. A bad database URL also fails here,
+    once the pool's connect timeout runs out.
     """
     # `open=False` + `await pool.open()`: the async pool must be opened inside the event loop.
     # `check`: test each connection before handing it out, so the first chat turn after an
@@ -81,8 +88,27 @@ async def open_checkpointer(database_url: str) -> AsyncGenerator[AsyncPostgresSa
         check=AsyncConnectionPool.check_connection,
         open=False,
     )
-    await pool.open()
+    await pool.open(wait=True)
     try:
+        await _check_tables(pool)
         yield AsyncPostgresSaver(pool)
     finally:
         await pool.close()
+
+
+async def _check_tables(pool: AsyncConnectionPool) -> None:
+    """Raise unless the library's last migration has been applied (read-only)."""
+    expected = len(AsyncPostgresSaver.MIGRATIONS) - 1
+    async with pool.connection() as conn, conn.cursor(row_factory=tuple_row) as cur:
+        await cur.execute("SELECT to_regclass('checkpoint_migrations')")
+        exists = await cur.fetchone()
+        version = -1
+        if exists is not None and exists[0] is not None:
+            await cur.execute("SELECT coalesce(max(v), -1) FROM checkpoint_migrations")
+            row = await cur.fetchone()
+            version = -1 if row is None else row[0]
+    if version < expected:
+        raise CheckpointerNotReadyError(
+            f"checkpointer tables are at library migration {version}, expected {expected}: "
+            "run `martom migrate` first"
+        )
