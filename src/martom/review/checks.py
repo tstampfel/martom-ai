@@ -356,6 +356,13 @@ _PUNCTUATION = re.compile(r"(?<!\d)[.,/]|[.,/](?!\d)|[^\w\s.,/]|_")
 # A space that doesn't stand between two digits ("153 x 250" = "153X250", but "1,5 10" stays
 # two numbers).
 _SPACE_NOT_BETWEEN_DIGITS = re.compile(r"(?<!\d) | (?!\d)")
+# Where a price was removed from the label (a character no label contains).
+_PRICE_MARK = "\x00"
+# Filler words that, written after the price and before the end of the label, don't name a
+# different variant: "... - 2,55KM/KOM I", "100mm - 2,00KM - NEMA" (Tomislav, 27 Nov 2026).
+_FILLER_AFTER_PRICE = re.compile(
+    rf"{_PRICE_MARK}(?:[^\w{_PRICE_MARK}]*(?<![^\W\d_])(?:i|nema)(?![^\W\d_]))+[^\w]*$"
+)
 
 
 def _without_accents(text: str) -> str:
@@ -378,7 +385,7 @@ def _remove_bare_price(label: str, price_text: str | None) -> str:
     if not matches:
         return label
     last = matches[-1]
-    return f"{label[: last.start()]}{last.group(1)} {label[last.end() :]}"
+    return f"{label[: last.start()]}{last.group(1)}{_PRICE_MARK}{label[last.end() :]}"
 
 
 def _label_without_price(v: VariantRow) -> str:
@@ -386,10 +393,12 @@ def _label_without_price(v: VariantRow) -> str:
     punctuation: "60mm - 1,50KM" and "60MM - 1,25KM" are both "60mm".
 
     Removes every "<number> KM" and the variant's own price where the label writes it
-    without "KM" (`_remove_bare_price`). Spaces go, except between two numbers.
+    without "KM" (`_remove_bare_price`), then filler written after the last price ("I",
+    "NEMA"). Spaces go, except between two numbers.
     """
-    label = _PRICE_IN_LABEL.sub(" ", v.label.casefold())
+    label = _PRICE_IN_LABEL.sub(_PRICE_MARK, v.label.casefold())
     label = _remove_bare_price(label, v.price_text)
+    label = _FILLER_AFTER_PRICE.sub("", label).replace(_PRICE_MARK, " ")
     label = " ".join(_PUNCTUATION.sub(" ", _without_accents(label)).split())
     return _SPACE_NOT_BETWEEN_DIGITS.sub("", label)
 

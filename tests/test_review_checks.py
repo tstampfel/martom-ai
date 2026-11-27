@@ -475,6 +475,38 @@ def bare(price: str) -> Price:
     return {"price_text": price, "price": Decimal(price.replace(",", "."))}
 
 
+# Tomislav, 27 Nov 2026: filler after the price ("I", "NEMA") doesn't make a different
+# variant; the advisor can't pick a price either way, so Toni should name the difference.
+def test_filler_after_the_price_still_conflicts() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                # 27244397
+                variant("DIMENZIJE 50X160 - 2,50KM/KOM", size="50X160", unit="KOM", **km("2,50KM")),
+                variant(
+                    "DIMENZIJE 50X160 - 2,55KM/KOM I", size="50X160", unit="KOM", **km("2,55KM")
+                ),
+                # 21629676
+                variant("100mm - 2.50KM", size="100mm", **km("2.50KM")),
+                variant("100mm - 2,00KM - NEMA", size="100mm", **km("2,00KM")),
+            ]
+        )
+    )
+    assert [issue.details["prices"] for issue in issues] == [["2.50", "2.55"], ["2.00", "2.50"]]
+
+
+def test_filler_words_before_the_price_still_count() -> None:
+    issues = check_price_conflicts(
+        listing(
+            variants=[
+                variant("Panel 153 NEMA - 50,00 KM", height="153", **km("50,00 KM")),
+                variant("Panel 153 - 55,00 KM", height="153", **km("55,00 KM")),
+            ]
+        )
+    )
+    assert issues == []
+
+
 # R1-1: a bare price text that is also a size in the label is not the price.
 def test_a_size_with_the_same_number_as_a_bare_price_is_not_removed() -> None:
     issues = check_price_conflicts(
