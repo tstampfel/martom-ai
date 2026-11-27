@@ -10,7 +10,7 @@ provide the variables, in production ECS injects them from Secrets Manager.
 import re
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # CORS may only ever allow the public customer site and local development servers.
@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Fake local credentials, the same as .env.example and docker-compose.yml.
     database_url: str = "postgresql://martom:martom@localhost:5432/martom"
     redis_url: str = "redis://localhost:6379/0"
+
+    # OLX.ba public API (no token). Read by `martom sync`.
+    olx_api_base_url: str = "https://api.olx.ba"
+    olx_shop_username: str = "martom"
+    # Seconds between OLX request starts. Politeness rule: 2.0 s by default, never
+    # configured below 1.3 s; after a 429 the client raises it for the rest of the run.
+    olx_request_interval: float = Field(default=2.0, ge=1.3)
 
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")

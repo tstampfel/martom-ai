@@ -45,7 +45,7 @@ The hard part is messy product data, not the AI. These are the facts the design 
 **OLX.ba API**
 
 - `GET https://api.olx.ba/users/martom/listings` and `GET /listings/{id}` work **without a token**.
-- It returns HTTP 429 on bursts. About 1 request every 1.3 s ran 2,500+ requests without one 429.
+- It returns HTTP 429 on bursts, and also at a steady 1 request per 1.3 s: a real full sync got two 429s (Retry-After 171 s, then 2,298 s). So the client sends 1 request every 2.0 s by default (`OLX_REQUEST_INTERVAL`, never below 1.3 s), raises the interval by 50% after each 429 for the rest of the run (at most 6 s), and honours Retry-After (Tomislav, #8).
 - Plain pagination is broken: 129 pages returned 2,585 rows but only 993 unique listings. Paging per category (`&category_id=`) returns exact totals, so the sync works per category.
 - Working listing links have this format: `https://martom.olx.ba/artikal/{slug}`, where the slug already ends in the id. `olx.ba/artikal/{id}` does not open.
 
@@ -68,7 +68,7 @@ flowchart TB
     api --> redis["Redis sidecar<br/>query cache"]
     api --> cohere["Cohere Rerank 4<br/>reorders top 30"]
     api --> claude["Claude<br/>Sonnet + Haiku"]
-    olx["OLX.ba API<br/>~2,600 public listings"] --> sync["Nightly sync job<br/>per category, 1 req / 1.3 s<br/>Haiku extracts variants"]
+    olx["OLX.ba API<br/>~2,600 public listings"] --> sync["Nightly sync job<br/>per category, 1 req / 2 s<br/>Haiku extracts variants"]
     sync --> pg
     sync --> review["Review queue<br/>listing errors for Toni"]
 ```
@@ -185,10 +185,10 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 
 | ID | Issue | Done when |
 | --- | --- | --- |
-| M1-1 | OLX client: 1 request / 1.3 s limiter, 429/5xx backoff honouring Retry-After, timeouts | Unit tests with a fake transport prove pacing and retries |
+| M1-1 | OLX client: 1 request / 2.0 s limiter by default (1.3 s floor, ×1.5 after each 429, max 6 s), 429/5xx backoff honouring Retry-After, timeouts | Unit tests with a fake transport prove pacing and retries |
 | M1-2 | Category sync: discovery, per-category pagination, dedupe, coverage reconciliation | Test reproduces the duplicate-pagination bug; nothing deactivated below 100% coverage |
 | M1-3 | Detail fetch, HTML cleanup (footer strip), summary/detail hashes | Fixture tests on real descriptions; unchanged listings are not re-fetched |
-| M1-4 | Persistence (psycopg 3), `sync_run` records, CLI `martom sync` | Integration test against Postgres in CI; a full sync of ~2,600 listings finishes without 429 |
+| M1-4 | Persistence (psycopg 3), `sync_run` records, CLI `martom sync` | Integration test against Postgres in CI; a full sync of ~2,600 listings: any 429 is honoured (Retry-After) and the run completes |
 
 ### M2 — Extraction and data quality
 

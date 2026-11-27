@@ -21,7 +21,8 @@ Known gap: the summary row doesn't carry the description, so an edit that change
 the description (not the title, price, images, ...) is not noticed until something in the
 summary changes too. The OLX `date` field can't help: OLX bumps it whenever the shop
 refreshes a listing (every recorded row was dated the day it was recorded), so hashing it
-would re-fetch the whole shop every night. M1-4 may add a periodic full re-fetch.
+would re-fetch the whole shop every night. The weekly `martom sync --full` (M1-4)
+re-fetches every detail to close that gap.
 """
 
 import hashlib

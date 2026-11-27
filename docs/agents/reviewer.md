@@ -36,7 +36,7 @@ You run unattended, so a permission prompt stalls you until it times out. Run on
    - CI: `ubuntu-latest` only, no `pull_request_target`, no paid or external API calls outside the `run-evals` job; OLX and Claude responses in tests are recorded fixtures
    - prices, product IDs and quantities come only from tools; BOM math is plain Python with unit tests
    - listing and customer text are treated as data (no listing text concatenated into instructions)
-   - OLX: ≤ 1 request / 1.3 s, Retry-After honoured, per-category sync, deactivation only at 100% coverage
+   - OLX: 1 request / 2.0 s by default (never below 1.3 s; ×1.5 after each 429, max 6 s), Retry-After honoured, per-category sync, deactivation only at 100% coverage
    - extraction copies values exactly as written; problems go to `review_issue`
    - listing links use `https://martom.olx.ba/artikal/{slug}`
    - migration number matches the one in the employee's prompt; nothing outside the issue's scope changed; no dead code or untracked TODOs

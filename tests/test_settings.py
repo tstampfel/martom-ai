@@ -7,7 +7,16 @@ from pydantic import ValidationError
 
 from martom.settings import Settings
 
-ENV_VARS = ["APP_ENV", "LOG_LEVEL", "CORS_ALLOWED_ORIGINS", "DATABASE_URL", "REDIS_URL"]
+ENV_VARS = [
+    "APP_ENV",
+    "LOG_LEVEL",
+    "CORS_ALLOWED_ORIGINS",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "OLX_API_BASE_URL",
+    "OLX_SHOP_USERNAME",
+    "OLX_REQUEST_INTERVAL",
+]
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +36,27 @@ def test_defaults_point_at_the_local_compose_stack() -> None:
         "http://localhost:5173",
         "https://martom-savjetnik.pages.dev",
     ]
+
+
+def test_olx_defaults_match_the_politeness_rule() -> None:
+    settings = Settings()
+
+    assert settings.olx_api_base_url == "https://api.olx.ba"
+    assert settings.olx_shop_username == "martom"
+    assert settings.olx_request_interval == 2.0
+
+
+def test_rejects_an_olx_interval_below_1_3_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLX_REQUEST_INTERVAL", "1.2")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_olx_interval_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLX_REQUEST_INTERVAL", "3.5")
+
+    assert Settings().olx_request_interval == 3.5
 
 
 def test_reads_values_from_environment_variables(monkeypatch: pytest.MonkeyPatch) -> None:
