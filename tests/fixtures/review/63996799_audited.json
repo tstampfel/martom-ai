@@ -1,0 +1,205 @@
+{
+  "_about": "MODIFIED, not a real listing state. Listing 63996799's extracted product from tests/fixtures/extraction/responses.json (a hand-written model reply, not yet recorded from claude-haiku-5-5) with two variants added after the panels to reproduce the 26 Nov 2026 audit findings (docs/PLAN.md, 'What we learned'): an impossible size 'PANEL 153 X 2500CM' and a height (173 cm) listed without a price. The real listing as recorded on 26 Nov 2026 no longer has these errors. Used by tests/test_review_fixtures.py for the M2-2 done-when test.",
+  "listing_id": 63996799,
+  "product": {
+    "product_type": "panelna ograda",
+    "brand": null,
+    "material": "čvrsta pocinčana čelična žica s debelim slojem kvalitetne PVC plastifikacije",
+    "wire_thickness": "Ø 4,20 / 4,40 mm",
+    "mesh": null,
+    "colours": [
+      "ZELENA RAL 6005",
+      "ANTRACIT RAL 7016"
+    ],
+    "uses": [
+      "ograđivanje obiteljskih kuća",
+      "dvorišta",
+      "vrtova",
+      "vikendica",
+      "poslovnih objekata",
+      "igrališta i sportskih terena"
+    ],
+    "compatible_with": [
+      "stupovi sa stopom",
+      "PVC kopče",
+      "tiplo ankeri"
+    ],
+    "synonyms": [
+      "3D panelna ograda",
+      "paneli"
+    ],
+    "variants": [
+      {
+        "label": "3D Panelna ograda 83 x 200 cm (Ø 4,20/4,40 mm PVC): 27,00 KM / panel",
+        "height": "83",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price": "27,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 83 x 250 cm (Ø 4,20/4,40 mm PVC): 31,00 KM / panel",
+        "height": "83",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price": "31,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 103 x 200 cm (Ø 4,20/4,40 mm PVC): 31,00 KM / panel",
+        "height": "103",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price": "31,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 103 x 250 cm (Ø 4,20/4,40 mm PVC): 41,00 KM / panel",
+        "height": "103",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price": "41,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 123 x 200 cm (Ø 4,20/4,40 mm PVC): 36,00 KM / panel",
+        "height": "123",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price": "36,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 123 x 250 cm (Ø 4,20/4,40 mm PVC): 44,00 KM / panel",
+        "height": "123",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price": "44,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 153 x 200 cm (Ø 4,20/4,40 mm PVC): 44,00 KM / panel",
+        "height": "153",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price": "44,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 153 x 250 cm (Ø 4,20/4,40 mm PVC): 53,00 KM / panel",
+        "height": "153",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price": "53,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 203 x 200 cm (Ø 4,20/4,40 mm PVC): 56,00 KM / panel",
+        "height": "203",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price": "56,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 203 x 250 cm (Ø 4,20/4,40 mm PVC): 85,00 KM / panel",
+        "height": "203",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price": "85,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "PANEL 153 X 2500CM",
+        "height": "153",
+        "length": "2500CM",
+        "colour": null,
+        "size": null,
+        "price": "53,00 KM",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 173 x 250 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "173",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price": null,
+        "unit": "panel"
+      },
+      {
+        "label": "Stup H-85 cm sa stopom (za panele visine 83 cm): 16,80 KM / kom",
+        "height": "H-85 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price": "16,80 KM",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-105 cm sa stopom (za panele visine 103 cm): 19,00 KM / kom",
+        "height": "H-105 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price": "19,00 KM",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-125 cm sa stopom (za panele visine 123 cm): 21,50 KM / kom",
+        "height": "H-125 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price": "21,50 KM",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-155 cm sa stopom (za panele visine 153 cm): 24,90 KM / kom",
+        "height": "H-155 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price": "24,90 KM",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-205 cm sa stopom (za panele visine 203 cm): 31,00 KM / kom",
+        "height": "H-205 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price": "31,00 KM",
+        "unit": "kom"
+      },
+      {
+        "label": "PVC kopča sa samorezivim vijkom: 1,00 KM / kom",
+        "height": null,
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price": "1,00 KM",
+        "unit": "kom"
+      },
+      {
+        "label": "Tiplo anker FI 10 / M8 x 80 mm (za pričvršćivanje stope stupa u beton): 1,30 KM / kom",
+        "height": null,
+        "length": null,
+        "colour": null,
+        "size": "FI 10 / M8 x 80 mm",
+        "price": "1,30 KM",
+        "unit": "kom"
+      }
+    ]
+  }
+}
