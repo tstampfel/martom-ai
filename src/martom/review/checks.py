@@ -397,15 +397,23 @@ _MATERIAL_WORDS: Mapping[str, tuple[str, ...]] = {
 
 
 def check_material(listing: CheckListing) -> list[ReviewIssue]:
-    """An OLX material attribute the listing contradicts, e.g. "Kovana" on wire mesh."""
-    parts = [listing.title]
-    if listing.product:
-        parts += [listing.product.product_type, listing.product.material or ""]
-    text = " ".join(parts).casefold()
+    """An OLX material attribute the listing contradicts, e.g. "Kovana" on wire mesh.
+
+    The model sees the OLX fields too, so the extracted `material` may just repeat the
+    attribute ("Kovana"). That copy is removed before matching: the attribute can't be
+    its own evidence.
+    """
     issues = []
     for name, value in listing.attributes:
         words = _MATERIAL_WORDS.get(value.casefold())
-        if name.casefold() == "materijal ograde" and words and not any(w in text for w in words):
+        if name.casefold() != "materijal ograde" or not words:
+            continue
+        parts = [listing.title]
+        if listing.product:
+            material = (listing.product.material or "").casefold().replace(value.casefold(), "")
+            parts += [listing.product.product_type, material]
+        text = " ".join(parts).casefold()
+        if not any(w in text for w in words):
             issues.append(
                 ReviewIssue(
                     "wrong_material",

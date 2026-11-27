@@ -57,6 +57,7 @@ def listing(
     *,
     variants: list[VariantRow] | None = None,
     product_type: str = "panelna ograda",
+    material: str | None = None,
     **overrides: object,
 ) -> CheckListing:
     base = CheckListing(
@@ -70,7 +71,7 @@ def listing(
         state="new",
         attributes=(),
         photo_count=1,
-        product=CheckProduct(product_type=product_type, material=None, variants=variants or []),
+        product=CheckProduct(product_type=product_type, material=material, variants=variants or []),
     )
     return replace(base, **overrides)  # type: ignore[arg-type]
 
@@ -324,6 +325,30 @@ def test_wrought_attribute_on_wire_mesh() -> None:
     )
     assert kinds(issues) == ["wrong_material"]
     assert "Kovana" in issues[0].message
+
+
+def test_material_that_only_repeats_the_attribute_is_not_evidence() -> None:
+    # The prompt shows the model the OLX fields, so it may copy "Kovana" into `material`
+    # (real reply for 24449780). That echo must not confirm the attribute it came from.
+    issues = check_material(
+        listing(
+            title="FARMER PLETIVO OGRADA",
+            product_type="farmer pletivo",
+            material="Kovana",
+            attributes=(("Materijal ograde", "Kovana"),),
+        )
+    )
+    assert kinds(issues) == ["wrong_material"]
+
+
+def test_material_from_the_listing_text_still_counts() -> None:
+    wrought = listing(
+        title="OGRADA ZA DVORIŠTE",
+        product_type="ograda",
+        material="kovano željezo",
+        attributes=(("Materijal ograde", "Kovana"),),
+    )
+    assert check_material(wrought) == []
 
 
 def test_material_attribute_that_matches_passes() -> None:
