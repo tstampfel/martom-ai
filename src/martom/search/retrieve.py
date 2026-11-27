@@ -20,11 +20,13 @@ This is the "Retrieve" node of the agent graph (docs/PLAN.md, Agent graph):
    (search/rerank.py) and the best `limit` are returned with their relevance, in the
    reranker's order. Without a rerank, the filtered hits come first.
 
-Each hit says whether it passed every parsed filter (`RetrievedHit.matched_filters`); a
-top-up hit didn't (its height or colour couldn't be confirmed). The order is left to the
-reranker on purpose: putting every matched hit first would push the "T STUP 150 CM" that
-the top-up exists for back out of the top 10. Whether to offer an unmatched hit, and how
-to word it ("height not stated in the listing"), is for the agent (M4) to decide.
+Each hit says whether it passed every parsed filter (`RetrievedHit.matched_filters`),
+checked against the data with the shared FILTERS_SQL, not inferred from which search found
+it: a top-up hit can pass every filter and only have ranked below the filtered top 30.
+The order is left to the reranker on purpose: putting every matched hit first would push
+the "T STUP 150 CM" that the top-up exists for back out of the top 10. Whether to offer
+an unmatched hit, and how to word it ("height not stated in the listing"), is for the
+agent (M4) to decide.
 
 Every outside call has a fallback, so a customer's search never fails because a provider is
 down or slow: no filters if Haiku fails, keyword results only if the embedding fails
@@ -53,7 +55,13 @@ from martom.search.hybrid import (
     HybridHit,
     search_hybrid,
 )
-from martom.search.keyword import LISTING_URL, SearchFilters, strip_filler_words
+from martom.search.keyword import (
+    FILTERS_SQL,
+    LISTING_URL,
+    SearchFilters,
+    filter_params,
+    strip_filler_words,
+)
 from martom.search.query_parser import QueryParser
 from martom.search.rerank import Reranker
 
@@ -80,8 +88,8 @@ class RetrievedHit:
     keyword_rank: int | None
     vector_rank: int | None
     # True when the hit passed every parsed filter (always, when none were parsed); False
-    # for a top-up hit whose height or colour couldn't be confirmed. Never over a price
-    # limit either way.
+    # for a hit whose height or colour couldn't be confirmed (checked in the database).
+    # Never over a price limit either way.
     matched_filters: bool = True
 
     @property
@@ -197,6 +205,11 @@ async def retrieve(
             fallback=fallback,
         )
         hybrid, top_up_added = _top_up(hybrid, wider, candidates)
+        # A top-up hit may still pass every filter: it only ranked below the filtered
+        # search's top `candidates` (R3-1). Ask the data, not the rank.
+        matched |= await _passing_filters(
+            conn, [h.listing_id for h in hybrid if h.listing_id not in matched], filters
+        )
     filters_dropped = bool(hybrid) and not matched
     if filters_dropped:
         logger.info("no candidate passed every parsed filter; relaxed height and colour")
@@ -219,6 +232,26 @@ async def retrieve(
         reranked=scores is not None,
         timings_ms=timings,
     )
+
+
+_PASSING_FILTERS_SQL = (
+    "SELECT p.listing_id FROM product AS p"
+    " JOIN active_olx_listing AS l ON l.id = p.listing_id"
+    " WHERE p.listing_id = ANY(%(ids)s) AND" + FILTERS_SQL
+)
+
+
+async def _passing_filters(
+    conn: psycopg.AsyncConnection, listing_ids: list[int], filters: SearchFilters
+) -> set[int]:
+    """The ids among `listing_ids` that pass every filter, in one query on the shared
+    FILTERS_SQL, so "passes the filters" has one definition (keyword.py)."""
+    if not listing_ids:
+        return set()
+    cursor = await conn.execute(
+        _PASSING_FILTERS_SQL, {"ids": listing_ids, **filter_params(filters)}
+    )
+    return {row[0] for row in await cursor.fetchall()}
 
 
 def relax_filters(filters: SearchFilters) -> SearchFilters:

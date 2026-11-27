@@ -407,3 +407,27 @@ async def test_retrieve_eval_raises_instead_of_scoring_a_fallback(
             parser=None,
             reranker=FakeReranker(error=RuntimeError("cohere down")),
         )
+
+
+async def test_matched_filters_comes_from_the_data_not_the_rank(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    # R3-1: with candidates=1 only one listing fits the filtered search, so the others that
+    # pass the height filter come back through the top-up. They still pass it: the flag
+    # must say so.
+    parser = parser_replying(
+        ParsedQuery(height="153 cm", colour=None, min_price=None, max_price=None)
+    )
+    result = await retrieve(
+        conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None, candidates=1
+    )
+    passing = {
+        hit.listing_id
+        for hit in await search_hybrid(
+            conn, "panelna ograda", SearchFilters(height_cm=153.0), embedder=embedder, limit=50
+        )
+    }
+    assert len(passing) > 1  # more listings pass than fit in the filtered search
+    returned = {hit.listing_id: hit.matched_filters for hit in result.hits}
+    assert set(returned) & passing - {result.hits[0].listing_id}  # some came via top-up
+    assert returned == {listing_id: listing_id in passing for listing_id in returned}
