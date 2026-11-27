@@ -149,3 +149,22 @@ def test_the_repo_eval_set_loads_and_has_seed_questions() -> None:
     assert all(q.source in {"seed", "toni"} for q in questions)
     # At least one off-topic question that expects no listing.
     assert any(not q.expected_listing_ids for q in questions)
+
+
+def test_run_eval_asks_every_question_and_keeps_the_ranked_ids() -> None:
+    import asyncio
+
+    from martom.evals.retrieval import EvalQuestion, run_eval
+
+    questions = [
+        EvalQuestion("a", "panel", (1,), "seed"),
+        EvalQuestion("b", "stup", (2,), "seed"),
+    ]
+    asked: list[str] = []
+
+    async def search(text: str) -> list[int]:
+        asked.append(text)
+        return [len(text), 9]
+
+    assert asyncio.run(run_eval(questions, search)) == {"a": [5, 9], "b": [4, 9]}
+    assert asked == ["panel", "stup"]
