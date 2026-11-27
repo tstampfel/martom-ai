@@ -1,10 +1,12 @@
-# VPC with two public subnets (load balancer, Fargate tasks) and two private subnets (RDS).
+# VPC with two public subnets (Fargate tasks) and two private subnets (internal ALB, RDS).
 #
 # No NAT gateway: it would cost ~$35/month on its own. Fargate tasks run in the public
 # subnets with a public IP so they can reach ECR, Secrets Manager, CloudWatch, OLX, Claude,
 # Cohere and LangSmith, while their security groups accept no traffic from the internet
-# (only the load balancer may reach the API port). RDS stays in private subnets with no
-# route to the internet. The ALB and RDS subnet group both need two availability zones.
+# (only the load balancer may reach the API port). The internal ALB and RDS stay in private
+# subnets with no route to the internet; CloudFront reaches the ALB through a VPC origin.
+# The internet gateway is also required for CloudFront VPC origins. The ALB and the RDS
+# subnet group both need two availability zones.
 
 data "aws_availability_zones" "available" {
   state = "available"

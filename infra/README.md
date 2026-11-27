@@ -7,9 +7,9 @@ customer page (Cloudflare Pages)
         │ HTTPS
         ▼
 CloudFront  https://<id>.cloudfront.net    no caching, SSE passed straight through
-        │ HTTP + secret X-Origin-Verify header
+        │ VPC origin: HTTP over the AWS network, never the public internet
         ▼
-ALB (public subnets, accepts CloudFront addresses only)
+internal ALB (private subnets, no public address)
         │ :8000
         ▼
 ECS Fargate service: API task = `martom api` + Redis sidecar (localhost:6379)
@@ -25,9 +25,9 @@ RDS Postgres 16 + pgvector (private subnets)     │
 | --- | --- |
 | `bootstrap/` | One-time module with local state: the S3 bucket for the main state (versioned, encrypted, private) |
 | `versions.tf` | Terraform ≥ 1.10, providers, S3 backend with native locking (`use_lockfile`, no DynamoDB) |
-| `network.tf` | VPC, 2 public + 2 private subnets, no NAT gateway |
+| `network.tf` | VPC, 2 public subnets (tasks) + 2 private subnets (ALB, RDS), no NAT gateway |
 | `security_groups.tf` | CloudFront → ALB → API → RDS, job → RDS, outbound HTTPS |
-| `alb.tf`, `cloudfront.tf` | Load balancer and the CloudFront distribution in front of it |
+| `alb.tf`, `cloudfront.tf` | Internal load balancer, and the CloudFront distribution that reaches it through a VPC origin |
 | `rds.tf` | Postgres 16, db.t4g.micro, single AZ, 7 days of backups |
 | `secrets.tf` | Secrets Manager: `database-url` (written by Terraform), `app` (JSON, set by hand) |
 | `ecr.tf`, `ecs.tf` | Image repository, cluster, API service, job task definition, env var mapping |
@@ -167,12 +167,12 @@ On-demand eu-central-1 list prices, checked 27 Nov 2026 from memory of the AWS p
 | Fargate, API task | 0.25 vCPU, 1 GB, 24/7 | ~$12 |
 | Fargate, job task | 0.5 vCPU, 1 GB, ~50 h | ~$1.50 |
 | RDS Postgres | db.t4g.micro single-AZ + 20 GB gp3 (backups free up to the DB size) | ~$16 |
-| Public IPv4 addresses | $0.005/h each: 2 for the ALB, 1 for the API task, the job task while it runs | ~$11 |
+| Public IPv4 addresses | $0.005/h each: 1 for the API task, 1 for the job task while it runs (the internal ALB has none) | ~$4 |
 | Secrets Manager | 2 secrets | ~$0.80 |
 | CloudWatch Logs | ~1 GB ingested | ~$1 |
 | ECR | ≤ 10 images | ~$0.50 |
 | CloudFront | always-free tier: 1 TB and 10 M requests | $0 |
-| **Total** | | **~$63** |
+| **Total** | | **~$56** |
 
 What isn't here: NAT gateway (~$35, avoided with public IPs on the tasks), Multi-AZ RDS (double the RDS line), Container Insights, WAF. Claude, Cohere and LangSmith are billed separately (see `docs/PLAN.md`, Running costs).
 
@@ -180,7 +180,7 @@ What isn't here: NAT gateway (~$35, avoided with public IPs on the tasks), Multi
 
 Two options, with what each keeps and loses.
 
-### Pause: stop RDS and scale the API to 0 (~$33/month left)
+### Pause: stop RDS and scale the API to 0 (~$25/month left)
 
 ```sh
 terraform -chdir=infra apply -var api_desired_count=0 -var schedules_enabled=false
@@ -191,7 +191,7 @@ terraform -chdir=infra apply
 ```
 
 - **Kept:** everything. All database data, secrets, images, logs, the CloudFront address.
-- **Still billed:** the ALB and its two IPv4 addresses (~$28), RDS storage and backups (~$3), Secrets Manager.
+- **Still billed:** the ALB (~$21), RDS storage and backups (~$3), Secrets Manager.
 - **Saved:** the RDS instance (~$13), the API task and its IP (~$16), the nightly job.
 - **AWS starts a stopped RDS instance by itself after 7 days.** Stop it again each week, or destroy instead if the pause is longer. Run `terraform apply` while the database is stopped only to change `api_desired_count` or `schedules_enabled`.
 
@@ -213,9 +213,39 @@ terraform -chdir=infra destroy -var db_deletion_protection=false
 - **Secrets:** both secrets are scheduled for deletion with a 7-day recovery window. Within that window a new apply fails because the names are taken: run `aws secretsmanager restore-secret --secret-id martom/production/app` (and the same for `.../database-url`), then `terraform import` them, or wait out the 7 days and set the app secret again (step 3).
 - **Before the next destroy**, delete or rename the old `martom-production-final` snapshot, or the destroy fails because that snapshot name already exists.
 
+## Checking the code
+
+No AWS credentials and no backend are needed: these commands only format, lint and
+validate the code. They run pinned tool versions in throwaway containers (`--rm`) that see
+only `infra/`, with no `~/.aws` and no environment passed in. Run them from the repo root.
+
+```sh
+TF="docker run --rm -v $PWD/infra:/w -w /w hashicorp/terraform:1.10.5"
+$TF fmt -check -recursive
+$TF init -backend=false -input=false          # downloads the providers into infra/.terraform (git-ignored)
+$TF validate
+docker run --rm -v "$PWD/infra/bootstrap:/w" -w /w hashicorp/terraform:1.10.5 init -backend=false -input=false
+docker run --rm -v "$PWD/infra/bootstrap:/w" -w /w hashicorp/terraform:1.10.5 validate
+
+# tflint with the AWS ruleset (.tflint.hcl); --init downloads the ruleset inside the container
+for d in infra infra/bootstrap; do
+  docker run --rm -v "$PWD/$d:/data" -w /data --entrypoint sh \
+    ghcr.io/terraform-linters/tflint:v0.55.1 -c "tflint --init >/dev/null && tflint --format compact"
+done
+
+# checkov over both modules; accepted findings and their reasons are in .checkov.yaml
+docker run --rm -v "$PWD/infra:/tf" -w /tf bridgecrew/checkov:3.2.334 \
+  -d . --config-file .checkov.yaml --compact --quiet
+```
+
+The `.terraform.lock.hcl` files pin the provider versions and hold their checksums for
+macOS (arm64 and x86) and Linux x86. After a provider upgrade, refresh them with
+`$TF providers lock -platform=darwin_arm64 -platform=darwin_amd64 -platform=linux_amd64`
+(and the same in `infra/bootstrap`).
+
 ## Notes
 
 - **Non-overlapping syncs:** `martom sync` has no lock, so the schedules keep it apart. The weekly full run starts 4 h after that night's nightly run, which stops itself at its 3 h deadline. Keep that gap if you change a cron.
 - **SSE through CloudFront:** CloudFront drops an origin connection after 60 s without bytes. The `/api/chat` stream must send something (a token or a `: keep-alive` comment) at least every 60 s.
 - **pgvector:** RDS for PostgreSQL 16.5 and later ship pgvector 0.8.0; the engine version is `16`, so RDS picks its current default minor. Migration 007 checks the version itself.
-- **Secrets in state:** the generated database password and the CloudFront origin header are in the Terraform state, which is why the state bucket is private, encrypted and versioned.
+- **Secrets in state:** the generated database password is in the Terraform state, which is why the state bucket is private, encrypted and versioned.

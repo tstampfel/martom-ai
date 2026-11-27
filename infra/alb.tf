@@ -1,27 +1,21 @@
 # Application Load Balancer in front of the API tasks.
 #
-# There is no custom domain, so there is no TLS certificate for the ALB: CloudFront ends
-# HTTPS at its *.cloudfront.net address and talks plain HTTP to the ALB. Two guards keep
-# everyone else out:
-#   1. the ALB security group accepts only CloudFront's origin-facing addresses, and
-#   2. the listener forwards only requests carrying a secret header that CloudFront adds,
-#      so another CloudFront distribution (someone else's) can't use our ALB either.
-
-resource "random_password" "origin_verify" {
-  length  = 48
-  special = false
-}
-
-locals {
-  origin_verify_header = "X-Origin-Verify"
-}
+# The ALB is *internal*: it sits in the private subnets with private addresses only, so
+# nothing on the internet can reach it. CloudFront reaches it through a VPC origin
+# (cloudfront.tf), which sends origin traffic over the AWS network into the VPC instead of
+# across the public internet. That also means the ALB needs no public IPv4 addresses
+# (~$7/month saved) and no shared-secret header to tell CloudFront apart from everyone else.
+#
+# The CloudFront → ALB leg is HTTP: there is no custom domain, so there is no certificate
+# for the ALB. It runs only inside AWS's network (VPC origin → private ALB address); the
+# viewer → CloudFront leg is HTTPS.
 
 resource "aws_lb" "api" {
   name               = "${local.prefix}-api"
   load_balancer_type = "application"
-  internal           = false
+  internal           = true
   security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
+  subnets            = aws_subnet.private[*].id
 
   # SSE answers stay open while the agent works. CloudFront closes an origin connection
   # after 60 s without bytes (origin_read_timeout); the ALB must wait longer than that.
@@ -56,30 +50,7 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  # Anything without the CloudFront header gets a 403.
   default_action {
-    type = "fixed-response"
-
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "Forbidden"
-      status_code  = "403"
-    }
-  }
-}
-
-resource "aws_lb_listener_rule" "from_cloudfront" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 10
-
-  condition {
-    http_header {
-      http_header_name = local.origin_verify_header
-      values           = [random_password.origin_verify.result]
-    }
-  }
-
-  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
   }

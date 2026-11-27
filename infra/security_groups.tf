@@ -1,6 +1,6 @@
 # Who may talk to whom:
 #
-#   CloudFront --80--> ALB --8000--> API task --5432--> RDS
+#   CloudFront (VPC origin) --80--> internal ALB --8000--> API task --5432--> RDS
 #                                     job task --5432--> RDS
 #   API and job tasks --443--> the internet (ECR, Secrets Manager, CloudWatch, OLX, Claude, Cohere, LangSmith)
 #
@@ -13,7 +13,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
 
 resource "aws_security_group" "alb" {
   name        = "${local.prefix}-alb"
-  description = "Load balancer: HTTP from CloudFront only"
+  description = "Internal load balancer: HTTP from CloudFront VPC origins only"
   vpc_id      = aws_vpc.main.id
 }
 

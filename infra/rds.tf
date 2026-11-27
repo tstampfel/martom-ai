@@ -39,12 +39,12 @@ resource "aws_db_instance" "main" {
   # downtime until AWS recovers it; the nightly backups cover data loss.
   multi_az = false
 
-  backup_retention_period  = var.db_backup_retention_days
+  backup_retention_period = var.db_backup_retention_days
   # Times are UTC (local time is UTC+1, UTC+2 in summer): after the nightly job has
   # finished (it starts at 01:00 local and stops by its 3 h deadline) and before the shop
   # opens. Maintenance (which may restart the database) avoids Monday, the weekly full run.
-  backup_window      = "04:00-04:30"
-  maintenance_window = "wed:04:30-wed:05:30"
+  backup_window            = "04:00-04:30"
+  maintenance_window       = "wed:04:30-wed:05:30"
   copy_tags_to_snapshot    = true
   delete_automated_backups = false # keep them for their retention period after a destroy
 

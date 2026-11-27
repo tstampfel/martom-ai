@@ -262,7 +262,7 @@ resource "aws_ecs_service" "api" {
     container_port   = 8000
   }
 
-  depends_on = [aws_lb_listener_rule.from_cloudfront]
+  depends_on = [aws_lb_listener.http]
 }
 
 # --- Job task definition (scheduled sync pipeline and one-off commands) ---
