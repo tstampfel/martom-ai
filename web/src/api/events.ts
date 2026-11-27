@@ -76,6 +76,8 @@ export interface ProjectSummary {
   /** Total length from the message in metres; a straight fence sends it as its one side. */
   length_m: number | null
   facts: ProjectFact[]
+  /** Single question ids in panel row order; unlisted ones follow in question order. */
+  panel_order: string[]
 }
 
 /** The clarify questions the advisor still needs answered. */

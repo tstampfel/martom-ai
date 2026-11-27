@@ -634,12 +634,21 @@
           },
           "title": "Facts",
           "type": "array"
+        },
+        "panel_order": {
+          "description": "Single question ids in the order the panel lists them, e.g. ['color', 'posts'] (the panel's order can differ from the form's). Questions not listed follow in question order.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Panel Order",
+          "type": "array"
         }
       },
       "required": [
         "title",
         "length_m",
-        "facts"
+        "facts",
+        "panel_order"
       ],
       "title": "ProjectSummary",
       "type": "object"

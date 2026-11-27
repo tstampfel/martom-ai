@@ -58,7 +58,7 @@ const SHAPES = {
     default: true,
   } satisfies Nullability<ChipQuestion>,
   ProjectFact: { label: false, value: false } satisfies Nullability<ProjectFact>,
-  ProjectSummary: { title: false, length_m: true, facts: false } satisfies Nullability<ProjectSummary>,
+  ProjectSummary: { title: false, length_m: true, facts: false, panel_order: false } satisfies Nullability<ProjectSummary>,
   ChipsEvent: { type: false, intro: true, project: true, questions: false } satisfies Nullability<ChipsEvent>,
   Variant: { label: false, price: true } satisfies Nullability<Variant>,
   ProductCard: {

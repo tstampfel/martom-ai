@@ -177,6 +177,12 @@ class ProjectSummary(_Event):
         "A straight fence (0 corners) sends it back as its one side.",
     )
     facts: list[ProjectFact] = Field(default_factory=list)
+    panel_order: list[str] = Field(
+        default_factory=list,
+        description="Single question ids in the order the panel lists them, e.g. "
+        "['color', 'posts'] (the panel's order can differ from the form's). Questions "
+        "not listed follow in question order.",
+    )
 
 
 class ChipsEvent(_Event):
@@ -196,6 +202,13 @@ class ChipsEvent(_Event):
             raise ValueError(f"question ids must be unique, got {ids}")
         if sum(1 for question in self.questions if question.kind == "layout") > 1:
             raise ValueError("a chips event has at most one layout question")
+        if self.project is not None:
+            order = self.project.panel_order
+            singles = {question.id for question in self.questions if question.kind == "single"}
+            if len(set(order)) != len(order) or not set(order) <= singles:
+                raise ValueError(
+                    f"panel_order {order} must name each single question id at most once"
+                )
         return self
 
 

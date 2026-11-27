@@ -80,8 +80,21 @@ function validSide(text: string): number | null {
   return metres !== null && metres <= MAX_SIDE_M ? metres : null
 }
 
-/** True when a typed side is longer than MAX_SIDE_M (no BOM for it). */
-export function hasSideTooLong(answers: ClarifyAnswers): boolean {
+/**
+ * The one side a straight fence sends without a side field: the length from
+ * the message (0 corners, no field shown). null otherwise.
+ */
+function straightLength(chips: ChipsEvent, answers: ClarifyAnswers): number | null {
+  return answers.corners === 0 && answers.sides.length === 0 ? knownLength(chips) : null
+}
+
+/**
+ * True when a side is longer than MAX_SIDE_M (no BOM for it): a typed side,
+ * or the length from the message sent as the one side of a straight fence.
+ */
+export function hasSideTooLong(chips: ChipsEvent, answers: ClarifyAnswers): boolean {
+  const straight = straightLength(chips, answers)
+  if (straight !== null && straight > MAX_SIDE_M) return true
   return answers.sides.some((side) => (parseMetres(side) ?? 0) > MAX_SIDE_M)
 }
 
@@ -140,7 +153,11 @@ export function addSide(answers: ClarifyAnswers): ClarifyAnswers {
 export function isComplete(chips: ChipsEvent, answers: ClarifyAnswers): boolean {
   return chips.questions.every((question) => {
     if (question.kind === 'layout') {
-      return answers.cornerOption !== null && answers.sides.every((side) => validSide(side) !== null)
+      return (
+        answers.cornerOption !== null &&
+        answers.sides.every((side) => validSide(side) !== null) &&
+        !hasSideTooLong(chips, answers)
+      )
     }
     return question.id in answers.single
   })
@@ -157,10 +174,8 @@ export function requestAnswers(chips: ChipsEvent, answers: ClarifyAnswers): Requ
     if (question.kind === 'single' && question.id in answers.single) choices[question.id] = answers.single[question.id]
   }
   if (!layoutQuestion(chips)) return { choices, sides: [], closed: false }
-  const length = knownLength(chips)
-  if (answers.corners === 0 && answers.sides.length === 0 && length !== null) {
-    return { choices, sides: [length], closed: false }
-  }
+  const straight = straightLength(chips, answers)
+  if (straight !== null) return { choices, sides: [straight], closed: false }
   const sides = answers.sides.map((side) => validSide(side)).filter((side) => side !== null)
   return { choices, sides, closed: answers.closed && sides.length >= 3 }
 }
@@ -184,6 +199,22 @@ export function panelCornersText(answers: ClarifyAnswers): string | null {
   if (answers.cornerOption === null) return null
   if (answers.corners === null) return clarify.cornerUnknown
   return answers.closed ? `${answers.corners}${project.closedSuffix}` : String(answers.corners)
+}
+
+/**
+ * The single questions in panel row order: those in `project.panel_order`
+ * first, in that order, then the rest in question order. The canvas lists
+ * Boja before Stupovi though the form asks posts first.
+ */
+export function panelQuestions(chips: ChipsEvent): ChipQuestion[] {
+  const singles = chips.questions.filter((question) => question.kind === 'single')
+  const order = chips.project?.panel_order ?? []
+  const rank = (question: ChipQuestion) => {
+    const index = order.indexOf(question.id)
+    return index === -1 ? order.length : index
+  }
+  // Array.prototype.sort is stable, so unlisted questions keep their order.
+  return [...singles].sort((a, b) => rank(a) - rank(b))
 }
 
 /** The customer's bubble: the corners, the sides and the picked labels, in question order. */

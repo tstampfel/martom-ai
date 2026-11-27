@@ -50,6 +50,8 @@ export const fenceClarify: ChatEvent[] = [
       title: 'Ograda za dvorište',
       length_m: 25,
       facts: [{ label: 'Visina', value: 'oko 150 cm' }],
+      // The canvas lists Boja before Stupovi, though the form asks posts first.
+      panel_order: ['color', 'posts'],
     },
     questions: [
       // Corners, the "Ide okolo" toggle and the side fields; the answer goes

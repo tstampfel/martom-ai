@@ -41,7 +41,7 @@ type ClarifyFormProps = {
  */
 export function ClarifyForm({ chips, text, answers, onChange, onSubmit, canSubmit }: ClarifyFormProps) {
   const complete = isComplete(chips, answers)
-  const tooLong = hasSideTooLong(answers)
+  const tooLong = hasSideTooLong(chips, answers)
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()

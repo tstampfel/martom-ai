@@ -1,5 +1,5 @@
 import type { ChipQuestion, ChipsEvent } from '../api/events'
-import { formatMetres, panelCornersText, sidesTotal, type ClarifyAnswers } from '../clarify'
+import { formatMetres, panelCornersText, panelQuestions, sidesTotal, type ClarifyAnswers } from '../clarify'
 import { copy } from '../copy'
 
 type ProjectPanelProps = {
@@ -44,11 +44,9 @@ export function ProjectPanel({ fallbackTitle, chips, answers }: ProjectPanelProp
           <Row label={project.sides} value={`${answers.sides.map((side) => side.trim() || '?').join(' + ')} m`} />
         ) : null}
         {summary?.facts.map((fact) => <Row key={fact.label} label={fact.label} value={fact.value} />)}
-        {chips.questions
-          .filter((question) => question.kind === 'single')
-          .map((question) => (
-            <Row key={question.id} label={question.label ?? question.text} value={answerLabel(question)} />
-          ))}
+        {panelQuestions(chips).map((question) => (
+          <Row key={question.id} label={question.label ?? question.text} value={answerLabel(question)} />
+        ))}
       </dl>
       <p className="project-panel__hint">{project.hint}</p>
     </aside>

@@ -112,8 +112,14 @@ The clarify questions and the "Vaš projekt" summary (`docs/mockups/*/2-clarify.
 `project` (or `null`) fills the dark panel before the customer answers: a short `title`
 ("Ograda za dvorište"), the total `length_m` the advisor understood from the message
 (or `null`), and `facts` it already knows, each a `label` and a `value` ("Visina", "oko
-150 cm"). Without a `project` the panel falls back to the customer's first message as
-its title.
+150 cm"). `panel_order` lists single question ids in the order the panel shows their
+rows, which can differ from the form's order (the canvas asks posts before colour but
+lists Boja before Stupovi); questions not listed follow in question order. Without a
+`project` the panel falls back to the customer's first message as its title.
+
+`length_m` may be over 300 m (a long fence with corners is valid). The form never sends
+it back as one side above 300 m: with 0 corners it shows the "too long" hint instead
+and keeps the submit button disabled.
 
 Each question has the full `text` for the form and an optional short `label` for its
 panel row ("Stupovi"; the panel uses `text` when it is `null`). There are two kinds:
@@ -138,7 +144,8 @@ Question ids are unique within the event.
   "project": {
     "title": "Ograda za dvorište",
     "length_m": 25,
-    "facts": [{"label": "Visina", "value": "oko 150 cm"}]
+    "facts": [{"label": "Visina", "value": "oko 150 cm"}],
+    "panel_order": ["color", "posts"]
   },
   "questions": [
     {"id": "layout", "text": "Koliko ima kutova?", "label": "Kutovi", "kind": "layout", "options": [], "default": null},

@@ -110,8 +110,8 @@ describe('ChatView', () => {
       'Dužina',
       'Kutovi',
       'Visina',
-      'Stupovi',
       'Boja',
+      'Stupovi',
     ])
     expect(panelValue('Dužina')).toBe('25 m')
     expect(panelValue('Kutovi')).toBe(copy.chat.project.unanswered)
@@ -216,6 +216,22 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByRole('button', { name: copy.chat.clarify.submit }))
     await expect.poll(() => requests.length).toBe(2)
     expect(requests[1].answers).toEqual({ choices: { posts: 'plate', color: 'antracit' }, sides: [25], closed: false })
+  })
+
+  it('refuses a straight fence over 300 m from the message with the same hint', async () => {
+    const long = fixtures.fenceClarify.map((event) =>
+      event.type === 'chips' && event.project ? { ...event, project: { ...event.project, length_m: 400 } } : event,
+    )
+    const { client, requests } = recordingClient(() => long)
+    renderChat('Treba mi 400 m ograde', client)
+    const corners = await screen.findByRole('group', { name: 'Koliko ima kutova?' })
+    fireEvent.click(within(corners).getByRole('button', { name: '0' }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Koja boja?' })).getByRole('button', { name: /Antracit/ }))
+    const submit = screen.getByRole('button', { name: copy.chat.clarify.submit })
+    expect(submit).toBeDisabled()
+    expect(screen.getByText(copy.chat.clarify.sideTooLong)).toBeInTheDocument()
+    fireEvent.click(submit)
+    expect(requests).toHaveLength(1)
   })
 
   it('refuses a side over 300 m with its own hint', async () => {

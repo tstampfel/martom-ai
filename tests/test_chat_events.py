@@ -223,6 +223,7 @@ def test_chips_carry_the_project_summary() -> None:
         "title": "Ograda za dvorište",
         "length_m": 25,
         "facts": [{"label": "Visina", "value": "oko 150 cm"}],
+        "panel_order": [],
     }
     assert dumped["questions"][1]["default"] == "plate"
     assert dumped["questions"][1]["label"] == "Stupovi"
@@ -241,6 +242,28 @@ def test_project_and_short_labels_are_optional() -> None:
 def test_project_length_is_positive(length_m: float) -> None:
     with pytest.raises(ValidationError, match="length_m"):
         parse_event(chips([posts_question()], project={"title": "x", "length_m": length_m}))
+
+
+def test_panel_order_lists_single_question_ids() -> None:
+    color = posts_question(id="color", label="Boja", default=None)
+    event = parse_event(
+        chips(
+            [layout_question(), posts_question(), color],
+            project={"title": "x", "panel_order": ["color", "posts"]},
+        )
+    )
+    assert event.model_dump(mode="json")["project"]["panel_order"] == ["color", "posts"]
+
+
+@pytest.mark.parametrize("order", [["wood"], ["layout"], ["posts", "posts"]])
+def test_panel_order_names_each_single_question_once(order: list[str]) -> None:
+    with pytest.raises(ValidationError, match="panel_order"):
+        parse_event(
+            chips(
+                [layout_question(), posts_question()],
+                project={"title": "x", "panel_order": order},
+            )
+        )
 
 
 def test_default_must_be_one_of_the_options() -> None:

@@ -11,6 +11,7 @@ import {
   initialAnswers,
   isComplete,
   panelCornersText,
+  panelQuestions,
   parseMetres,
   pickCorners,
   pickOption,
@@ -180,9 +181,26 @@ describe('isComplete', () => {
   it('refuses a side over 300 m (the cap rule)', () => {
     const tooLong = { ...answered(), sides: ['10', '300,5', '10'] }
     expect(isComplete(chips, tooLong)).toBe(false)
-    expect(hasSideTooLong(tooLong)).toBe(true)
+    expect(hasSideTooLong(chips, tooLong)).toBe(true)
     expect(isComplete(chips, { ...answered(), sides: ['10', '300', '10'] })).toBe(true)
-    expect(hasSideTooLong(answered())).toBe(false)
+    expect(hasSideTooLong(chips, answered())).toBe(false)
+  })
+
+  it('refuses a straight fence whose length from the message is over 300 m', () => {
+    const long = (length_m: number): ChipsEvent => ({ ...chips, project: { ...chips.project!, length_m } })
+    const straight = (event: ChipsEvent) => pickCorners(event, answered(), '0')
+    expect(isComplete(long(300), straight(long(300)))).toBe(true)
+    expect(hasSideTooLong(long(300), straight(long(300)))).toBe(false)
+    expect(requestAnswers(long(300), straight(long(300))).sides).toEqual([300])
+    expect(isComplete(long(300.5), straight(long(300.5)))).toBe(false)
+    expect(hasSideTooLong(long(300.5), straight(long(300.5)))).toBe(true)
+  })
+
+  it('accepts a long total when the fence has corners', () => {
+    const long: ChipsEvent = { ...chips, project: { ...chips.project!, length_m: 400 } }
+    const answers = { ...pickCorners(long, answered(), '1'), sides: ['200', '200'] }
+    expect(isComplete(long, answers)).toBe(true)
+    expect(hasSideTooLong(long, answers)).toBe(false)
   })
 
   it('needs no layout answer without a layout question', () => {
@@ -249,5 +267,19 @@ describe('panelCornersText', () => {
     expect(panelCornersText(answered())).toBe('2')
     expect(panelCornersText(toggleClosed(chips, answered()))).toBe('4 · zatvoreno')
     expect(panelCornersText(pickCorners(chips, answered(), 'unknown'))).toBe('Ne znam')
+  })
+})
+
+describe('panelQuestions', () => {
+  it('follows project.panel_order: Boja before Stupovi, as on the canvas', () => {
+    expect(panelQuestions(chips).map((q) => q.id)).toEqual(['color', 'posts'])
+  })
+
+  it('keeps question order without a panel order, and puts unlisted questions last', () => {
+    expect(panelQuestions(noLength).map((q) => q.id)).toEqual(['posts', 'color'])
+    const partial: ChipsEvent = { ...chips, project: { ...chips.project!, panel_order: ['color'] } }
+    expect(panelQuestions(partial).map((q) => q.id)).toEqual(['color', 'posts'])
+    const none: ChipsEvent = { ...chips, project: { ...chips.project!, panel_order: [] } }
+    expect(panelQuestions(none).map((q) => q.id)).toEqual(['posts', 'color'])
   })
 })
