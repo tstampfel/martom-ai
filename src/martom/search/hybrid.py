@@ -125,9 +125,11 @@ async def search_hybrid(
     if vector is None:
         vector = []  # keyword results only; every typo match stays
     else:
-        if not vector:
+        # Manual products don't count: their few vectors would hide a catalogue with no
+        # listing embedded for this model (R1-5).
+        if not any(hit.source == "olx" for hit in vector):
             logger.warning(
-                "vector search returned nothing; has `martom embed` run for this model?",
+                "vector search returned no listing; has `martom embed` run for this model?",
                 extra={"embedding_model": embedder.model},
             )
         keyword = await _drop_rejected_typo_matches(conn, keyword, vector, embedder.model)

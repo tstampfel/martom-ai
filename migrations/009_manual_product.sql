@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS manual_product (
     key             text PRIMARY KEY,           -- the TOML table name, e.g. "anchor_m8x70"
     name            text NOT NULL,              -- as written in the TOML, e.g. "Anker M8×70"
     product_type    text NOT NULL,
-    price_km        numeric(12, 2) NOT NULL,    -- copy of the TOML price, for the filter only
+    -- Copy of the TOML price, for the filter only. Plain numeric: the TOML loader accepts
+    -- any precision, and a rounded copy could disagree with the price shown (R1-4).
+    price_km        numeric NOT NULL,
     search_text     text NOT NULL,
     search_tsv      tsvector
         GENERATED ALWAYS AS (to_tsvector('martom', martom_search_normalize(search_text))) STORED,

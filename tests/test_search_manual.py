@@ -7,6 +7,7 @@ synced into `manual_product`. Vectors come from a fake whose meaning the test co
 # The tests quote the name with the real "×" sign, as in the TOML.
 # ruff: noqa: RUF001, RUF003
 
+import logging
 import unicodedata
 from collections.abc import AsyncIterator, Sequence
 from datetime import date
@@ -317,3 +318,22 @@ async def test_every_eval_mode_scores_the_manual_anchor_by_its_key(
         results = await run_search_eval(conn, [question], mode, embedder=embedder)
         assert ANCHOR in results["m"], mode
         assert score_run([question], results).recall_at_10 == 1.0, mode
+
+
+async def test_hybrid_still_warns_when_only_manual_products_have_vectors(
+    conn: psycopg.AsyncConnection, embedder: Embedder, caplog: pytest.LogCaptureFixture
+) -> None:
+    # No listing embedded for this model (a model switch whose product embed failed): the
+    # manual row's vector must not hide the warning (R1-5).
+    await conn.execute("UPDATE product SET embedding = NULL, embedding_model = NULL")
+    with caplog.at_level(logging.WARNING, logger="martom.search.hybrid"):
+        await search_hybrid(conn, "Anker M8x70", embedder=embedder)
+    assert any("vector search returned no listing" in r.getMessage() for r in caplog.records)
+
+
+async def test_the_price_copy_keeps_every_decimal_of_the_toml_price(database_url: str) -> None:
+    # A rounded copy would disagree with the TOML price the customer sees (R1-4).
+    async with await build_catalogue(database_url) as c:
+        await sync_manual_products(c, {ANCHOR: product(price="0.004")})
+        cursor = await c.execute("SELECT price_km FROM manual_product")
+        assert (await cursor.fetchone())[0] == Decimal("0.004")
