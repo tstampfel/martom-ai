@@ -6,9 +6,9 @@ import dataclasses
 from datetime import date
 from decimal import Decimal
 
-from bom_pricing_fixture import PANEL_LISTING, T_POST_LISTING, VARIANTS
+from bom_pricing_fixture import PANEL_LISTING, T_POST_LISTING, TENSIONER_LISTING, VARIANTS
 from martom.bom.common import Item, PriceRef
-from martom.bom.manual_products import load_manual_products
+from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.bom.pricing import load_price_map
 from martom.extract.store import VariantRow
 from martom.review.checks import CheckListing, CheckProduct, check_bom_price_map, run_all_checks
@@ -64,9 +64,31 @@ def test_variant_that_lost_its_price() -> None:
         "size": "153 × 250 cm",
         "listing_id": PANEL_LISTING,
         "problem": "unpriced",
-        "variants": [{"height": "153", "length": "250 cm", "unit": "panel"}],
+        "variants": [{"height_cm": 153, "length_cm": 250, "unit": "panel"}],
     }
-    assert "153" in issue.message and "cijena na upit" in issue.message
+    assert "„153 cm / 250 cm / panel“" in issue.message
+    assert "cijena na upit" in issue.message
+
+
+def test_only_the_failing_colour_is_named() -> None:
+    # R1-9: Toni sees which tensioner colour to fix, not all three.
+    variants = [v for v in VARIANTS[TENSIONER_LISTING] if v.colour != "Antracit"]
+    issues = check_bom_price_map(PRICE_MAP, catalogue({TENSIONER_LISTING: variants}), MANUAL)
+    assert len(issues) == 1
+    assert issues[0].details["variants"] == [{"colour": "Antracit", "unit": "kom"}]
+    assert "Antracit" in issues[0].message
+    assert "Zeleni" not in issues[0].message
+
+
+def test_manual_price_of_zero_is_reported() -> None:
+    zero = {
+        key: ManualProduct(p.key, p.name, Decimal("0.00"), p.source, p.last_confirmed)
+        for key, p in MANUAL.items()
+    }
+    issues = check_bom_price_map(PRICE_MAP, catalogue(), zero)
+    assert [(i.details["item"], i.details["problem"]) for i in issues] == [
+        ("anchor_m8x70", "unpriced")
+    ]
 
 
 def test_variant_that_disappeared() -> None:
@@ -80,8 +102,8 @@ def test_variant_that_disappeared() -> None:
 def test_inactive_listing_has_no_listing_id_so_the_report_still_shows_it() -> None:
     listings = [listing for listing in catalogue() if listing.id != T_POST_LISTING]
     issues = check_bom_price_map(PRICE_MAP, listings, MANUAL)
-    # Every T-post entry (5 heights) is now "na upit".
-    assert len(issues) == 5
+    # Every mapped T-post entry (125, 150, 175, 200 cm) is now "na upit".
+    assert len(issues) == 4
     assert {issue.details["problem"] for issue in issues} == {"listing_inactive"}
     assert {issue.listing_id for issue in issues} == {None}
 
@@ -115,7 +137,7 @@ def test_run_all_checks_includes_the_price_map_when_given() -> None:
     listings = [x for x in catalogue() if x.id != T_POST_LISTING]
     with_map = run_all_checks(listings, MANUAL, today=date(2026, 11, 27), price_map=PRICE_MAP)
     without = run_all_checks(listings, MANUAL, today=date(2026, 11, 27))
-    assert sum(i.kind == "bom_price_missing" for i in with_map) == 5
+    assert sum(i.kind == "bom_price_missing" for i in with_map) == 4
     assert not any(i.kind == "bom_price_missing" for i in without)
 
 

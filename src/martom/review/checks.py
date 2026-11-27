@@ -773,12 +773,15 @@ def check_bom_price_map(
     issues: list[ReviewIssue] = []
     for entry in price_map.entries.values():
         variants = active.get(entry.listing_id) if entry.listing_id is not None else None
-        problem = resolve_price(entry, variants, manual_products).problem
+        lookup = resolve_price(entry, variants, manual_products)
+        problem = lookup.problem
         if problem is None:
             continue
         line = f"{entry.item.value} {entry.size}" if entry.size else entry.item.value
-        match_dicts = [dict(match) for match in entry.matches]
-        fields = ", ".join("„" + " / ".join(m.values()) + "“" for m in match_dicts)
+        # Only the variant that failed (one tensioner colour), or all for an inactive
+        # listing or colours whose prices differ.
+        match_dicts = [dict(match) for match in lookup.failed_matches or entry.matches]
+        fields = ", ".join(_match_text(m) for m in match_dicts)
         reason = _PRICE_PROBLEM_TEXT[problem].format(
             listing=entry.listing_id, fields=fields, manual=entry.manual_key
         )
@@ -802,6 +805,14 @@ def check_bom_price_map(
             )
         )
     return issues
+
+
+def _match_text(match: Mapping[str, str | int]) -> str:
+    """A map variant table as Toni reads it: „153 cm / 250 cm / panel“."""
+    parts = [
+        f"{value} cm" if field.endswith("_cm") else str(value) for field, value in match.items()
+    ]
+    return "„" + " / ".join(parts) + "“"
 
 
 # --- all checks ----------------------------------------------------------------------------------

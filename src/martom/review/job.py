@@ -40,7 +40,13 @@ async def run_review_checks(
     """Check every active listing, manual_products.toml, the latest sync's allowlist
     warnings and the BOM price map (#125); upsert by fingerprint."""
     manual_products = load_manual_products(manual_products_path)
-    price_map = load_price_map(price_map_path)
+    try:
+        price_map = load_price_map(price_map_path)
+    except (OSError, ValueError):
+        # A broken map must not stop the listing, manual and allowlist checks; the shipped
+        # map is checked by the tests, and the pricer refuses to start on it.
+        logger.exception("price map invalid, BOM price check skipped")
+        price_map = None
     listings = await load_check_listings(conn)
     issues = run_all_checks(
         listings,

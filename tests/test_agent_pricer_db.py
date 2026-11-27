@@ -2,6 +2,8 @@
 
 # ruff: noqa: RUF001
 
+import dataclasses
+import logging
 from decimal import Decimal
 
 import psycopg
@@ -12,12 +14,17 @@ from martom.agent.pricer import PostgresBomPricer
 from martom.agent.tools import build_bom_event
 from martom.bom.common import BomLine, Item
 from martom.bom.panel import panel_fence_bom
+from martom.bom.pricing import load_price_map
 from martom.bom.roll import roll_fence_bom
 from martom.extract.store import ProductRecord, save_products
 from martom.migrate import run_migrations
 from search_catalogue import REPO, add_listing
 
 pytestmark = pytest.mark.anyio
+
+# The shipped map is a draft, which prices nothing (Tomislav, R1-7); these tests price
+# through the same entries marked reviewed.
+REVIEWED = dataclasses.replace(load_price_map(), status="reviewed")
 
 
 @pytest.fixture
@@ -60,7 +67,7 @@ async def build(database_url: str, *, inactive: frozenset[int] = frozenset()):
 
 async def test_panel_bom_is_priced_from_the_database(database_url: str) -> None:
     async with await build(database_url) as conn:
-        pricer = PostgresBomPricer(conn)
+        pricer = PostgresBomPricer(conn, price_map=REVIEWED)
         lines = panel_fence_bom(sides_m=[25], panel_height_cm=153)
         event = await build_bom_event(lines, pricer, summary="s", extra_lines=[], notes=[])
     # fence-rules.md: 905,10 KM with the OLX prices of 26 Nov 2026.
@@ -72,7 +79,7 @@ async def test_roll_bom_prices_mapped_lines_and_leaves_the_roll_on_request(
     database_url: str,
 ) -> None:
     async with await build(database_url) as conn:
-        pricer = PostgresBomPricer(conn)
+        pricer = PostgresBomPricer(conn, price_map=REVIEWED)
         bom = roll_fence_bom(sides_m=[30], roll_height_cm=125, post_model="foot_plate")
         prices = {line.item: await pricer.unit_price(line) for line in bom.lines_with_wire()}
     assert prices == {
@@ -88,7 +95,7 @@ async def test_roll_bom_prices_mapped_lines_and_leaves_the_roll_on_request(
 
 async def test_inactive_listing_is_on_request(database_url: str) -> None:
     async with await build(database_url, inactive=frozenset({T_POST_LISTING})) as conn:
-        pricer = PostgresBomPricer(conn)
+        pricer = PostgresBomPricer(conn, price_map=REVIEWED)
         line = BomLine(Item.POST_T, "T-stup 150 cm", 10, size="150 cm")
         assert await pricer.unit_price(line) is None
 
@@ -101,15 +108,56 @@ async def test_variant_that_lost_its_price_is_on_request(database_url: str) -> N
             (PANEL_LISTING,),
         )
         line = BomLine(Item.PANEL, "Panel 153 × 250 cm", 10, size="153 × 250 cm")
-        assert await PostgresBomPricer(conn).unit_price(line) is None
+        assert await PostgresBomPricer(conn, price_map=REVIEWED).unit_price(line) is None
 
 
 async def test_unmapped_and_on_request_lines_never_query_a_price(database_url: str) -> None:
     async with await build(database_url) as conn:
-        pricer = PostgresBomPricer(conn)
+        pricer = PostgresBomPricer(conn, price_map=REVIEWED)
         on_request = BomLine(
             Item.PANEL, "Panel", 1, size="153 × 250 cm", unit_price_on_request=True
         )
         unknown_size = BomLine(Item.PANEL, "Panel", 1, size="153 × 300 cm")
         assert await pricer.unit_price(on_request) is None
         assert await pricer.unit_price(unknown_size) is None
+
+
+async def test_a_database_error_makes_only_that_line_on_request(
+    database_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    # R1-2: the BOM still comes back; the failed lookups are "cijena na upit".
+    conn = await build(database_url)
+    pricer = PostgresBomPricer(conn, price_map=REVIEWED)
+    await conn.close()  # every query now raises psycopg.OperationalError
+    lines = panel_fence_bom(sides_m=[25], panel_height_cm=153)
+    with caplog.at_level(logging.WARNING, logger="martom.agent.pricer"):
+        event = await build_bom_event(lines, pricer, summary="s", extra_lines=[], notes=[])
+    assert [line.price_on_request for line in event.lines] == [True] * len(lines)
+    assert event.total is None
+    record = next(r for r in caplog.records if r.message == "bom price lookup failed")
+    assert record.listing_id == PANEL_LISTING  # type: ignore[attr-defined]
+
+
+async def test_needs_an_autocommit_connection(database_url: str) -> None:
+    # R1-5: a connection idle in a transaction would hold locks between chats, and one
+    # error would abort every later lookup.
+    run_migrations(database_url, REPO / "migrations")
+    async with await psycopg.AsyncConnection.connect(database_url) as conn:
+        with pytest.raises(ValueError, match="autocommit"):
+            PostgresBomPricer(conn)
+
+
+async def test_a_draft_map_prices_nothing_and_warns_once(
+    database_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    # R1-7 (Tomislav): until Tomislav and Toni review the map, every line is on request.
+    async with await build(database_url) as conn:
+        with caplog.at_level(logging.WARNING, logger="martom.agent.pricer"):
+            pricer = PostgresBomPricer(conn)  # the shipped map, status "draft"
+            lines = panel_fence_bom(sides_m=[25], panel_height_cm=153)
+            event = await build_bom_event(lines, pricer, summary="s", extra_lines=[], notes=[])
+    assert pricer.price_map.status == "draft"
+    assert event.total is None
+    assert all(line.price_on_request for line in event.lines)
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert [r.message for r in warnings] == ["price map is a draft: every BOM line is on request"]

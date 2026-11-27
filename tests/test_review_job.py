@@ -4,6 +4,7 @@ A throwaway database per test (see conftest.py); no model and no network.
 """
 
 import json
+import logging
 from collections.abc import AsyncIterator, Sequence
 from datetime import date
 from pathlib import Path
@@ -245,13 +246,22 @@ async def test_shipped_price_map_is_read_by_default(conn: psycopg.AsyncConnectio
 
 
 @pytest.mark.usefixtures("shipped_price_map")
-async def test_a_broken_price_map_fails_the_review_run(
-    conn: psycopg.AsyncConnection, tmp_path: Path
+async def test_a_broken_price_map_skips_only_the_bom_check(
+    conn: psycopg.AsyncConnection,
+    tmp_path: Path,
+    manual_toml: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # R1-10: the other checks still raise and resolve issues; the error is logged.
+    await add_listing(conn, 1, state="used")
     broken = tmp_path / "price_map.toml"
     broken.write_text('status = "maybe"\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="status"):
-        await run_review_checks(conn, today=TODAY, price_map_path=broken)
+    with caplog.at_level(logging.ERROR, logger="martom.review.job"):
+        await run_review_checks(
+            conn, today=TODAY, manual_products_path=manual_toml, price_map_path=broken
+        )
+    assert await issues(conn) == [("used_state", 1, "medium", "open")]
+    assert any(r.message == "price map invalid, BOM price check skipped" for r in caplog.records)
 
 
 async def test_issue_of_a_listing_that_goes_inactive_is_resolved_with_the_reason(

@@ -1,8 +1,9 @@
 """Which synced price a BOM line uses: the reviewed price map and the exact-match rules (#125).
 
 The BOM calculators return quantities only. `price_map.toml` (data, reviewed in a PR)
-maps each BOM item + size to an OLX listing and the variant(s) that price it, written
-exactly as extraction stored them, or to a `manual_products.toml` entry. This module
+maps each BOM item + size to an OLX listing and the variant(s) that price it (heights and
+lengths in centimetres, colour / size / unit and a piece of the label as extraction wrote
+them), or to a `manual_products.toml` entry. This module
 loads that file and resolves one entry against the variants the database returned.
 
 Plain Python, no database: the DB pricer (`martom.agent.pricer`) and Toni's review check
@@ -12,7 +13,9 @@ anything unmapped, inactive, missing, ambiguous, unpriced or with colours that d
 None, which the BOM card shows as "cijena na upit". Never a guess.
 """
 
+import re
 import tomllib
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -26,15 +29,30 @@ from martom.extract.store import VariantRow
 
 DEFAULT_PATH = Path(__file__).with_name("price_map.toml")
 
-# The product_variant columns an entry may match on: the text columns extraction copies
-# from the listing. Never `price` / `price_text`: a match must not depend on the price.
-MATCH_FIELDS = frozenset({"label", "height", "length", "colour", "size", "unit"})
+# What a variant table in the map may name, and the product_variant column it reads.
+# Never `price` / `price_text`, and never the whole label (extraction sometimes writes the
+# price into it): a match must not depend on the price.
+#   height_cm, length_cm : a whole number of centimetres; the column must be one number
+#                          with an optional "H-" and mm / cm / m ("H-125", "H-125 cm",
+#                          "125 cm" and "1250 mm" are all 125)
+#   colour, size, unit   : the column as written, compared normalised (case, accents and
+#                          spaces ignored: "2,70MM" == "2,70 mm")
+#   label_contains       : normalised text the label must contain ("PVC kopča")
+# `unit` is required, so each entry states what one BOM quantity is priced per (a piece, a
+# panel, a 100 m coil), and a per-metre price can never price a per-piece line.
+CM_FIELDS = {"height_cm": "height", "length_cm": "length"}
+TEXT_FIELDS = {"colour": "colour", "size": "size", "unit": "unit", "label_contains": "label"}
+MATCH_FIELDS = frozenset(CM_FIELDS) | frozenset(TEXT_FIELDS)
 
 type Status = Literal["draft", "reviewed"]
 STATUSES: tuple[Status, ...] = ("draft", "reviewed")
 
-# One variant match: (field, value) pairs, e.g. (("height", "153"), ("length", "250 cm")).
-type Match = tuple[tuple[str, str], ...]
+# One variant match: (field, value) pairs, e.g. (("height_cm", 153), ("unit", "panel")).
+type Match = tuple[tuple[str, str | int], ...]
+
+# One number and an optional unit, nothing else: "H-125", "h - 125CM", "250 cm", "1250 mm".
+_ONE_SIZE = re.compile(r"(?:h\s*[-.]?\s*)?(\d+(?:[.,]\d+)?)\s*(mm|cm|m)?", re.IGNORECASE)
+_CM_PER = {"mm": Decimal("0.1"), "cm": Decimal(1), "m": Decimal(100), None: Decimal(1)}
 
 
 @dataclass(frozen=True)
@@ -72,6 +90,47 @@ class PriceProblem(StrEnum):
 class PriceLookup:
     price: Decimal | None
     problem: PriceProblem | None = None
+    # The variant tables behind the problem: the one that is missing, ambiguous or
+    # unpriced, or all of them when their prices differ (Toni's message quotes these).
+    failed_matches: tuple[Match, ...] = ()
+
+
+def normalise(text: str) -> str:
+    """Casefold, drop accents and every space: "Cinčani 2,70 MM" -> "cincani2,70mm"."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c) and not c.isspace())
+
+
+def written_cm(text: str | None) -> Decimal | None:
+    """The centimetres of a field that holds one size ("H-125 cm" -> 125), else None.
+
+    "125 x 250 cm" or "153 maslinasto" hold more than one number or a word: None, so such
+    a field never matches a height (no guess).
+    """
+    found = _ONE_SIZE.fullmatch(text.strip()) if text else None
+    if found is None:
+        return None
+    number = Decimal(found.group(1).replace(",", "."))
+    unit = found.group(2).lower() if found.group(2) else None
+    return number * _CM_PER[unit]
+
+
+def matches_variant(variant: VariantRow, match: Match) -> bool:
+    """Whether the variant has every field of one variant table of the map."""
+    for field, wanted in match:
+        if field in CM_FIELDS:
+            if written_cm(getattr(variant, CM_FIELDS[field])) != Decimal(wanted):
+                return False
+            continue
+        written = getattr(variant, TEXT_FIELDS[field])
+        if written is None:
+            return False
+        if field == "label_contains":
+            if normalise(str(wanted)) not in normalise(written):
+                return False
+        elif normalise(written) != normalise(str(wanted)):
+            return False
+    return True
 
 
 def lookup_ref(line: BomLine) -> PriceRef | None:
@@ -95,30 +154,33 @@ def resolve_price(
 
     `variants` are the extracted variants of `entry.listing_id`, or None when that listing
     is not active (or has no product row yet). Every match must fit exactly one variant
-    (all its fields equal, as written); each of those variants needs a price above 0; and
-    when there are several matches (colours) their prices must be equal.
+    (`matches_variant`); each of those variants needs a price above 0; and when there are
+    several matches (colours) their prices must be equal. A manual product needs a price
+    above 0 too: 0 KM is never a price.
     """
     if entry.manual_key is not None:
         product = manual_products.get(entry.manual_key)
         if product is None:
             return PriceLookup(None, PriceProblem.MANUAL_MISSING)
+        if not product.price_km.is_finite() or product.price_km <= 0:
+            return PriceLookup(None, PriceProblem.UNPRICED)
         return PriceLookup(product.price_km)
     if variants is None:
         return PriceLookup(None, PriceProblem.LISTING_INACTIVE)
 
     prices: set[Decimal] = set()
     for match in entry.matches:
-        found = [v for v in variants if all(getattr(v, f) == value for f, value in match)]
+        found = [v for v in variants if matches_variant(v, match)]
         if not found:
-            return PriceLookup(None, PriceProblem.VARIANT_MISSING)
+            return PriceLookup(None, PriceProblem.VARIANT_MISSING, (match,))
         if len(found) > 1:
-            return PriceLookup(None, PriceProblem.VARIANT_AMBIGUOUS)
+            return PriceLookup(None, PriceProblem.VARIANT_AMBIGUOUS, (match,))
         price = found[0].price
         if price is None or not price.is_finite() or price <= 0:
-            return PriceLookup(None, PriceProblem.UNPRICED)
+            return PriceLookup(None, PriceProblem.UNPRICED, (match,))
         prices.add(price)
     if len(prices) != 1:
-        return PriceLookup(None, PriceProblem.PRICES_DIFFER)
+        return PriceLookup(None, PriceProblem.PRICES_DIFFER, entry.matches)
     return PriceLookup(prices.pop())
 
 
@@ -187,14 +249,17 @@ def _entry(raw: dict[str, Any]) -> PriceMapEntry:
 
 
 def _match(name: str, raw: object) -> Match:
-    if not isinstance(raw, dict) or not raw:
-        raise ValueError(f"price map: {name}: each variant needs at least one field")
+    if not isinstance(raw, dict) or "unit" not in raw:
+        raise ValueError(f"price map: {name}: each variant needs a unit (what it is priced per)")
     for field, value in raw.items():
         if field not in MATCH_FIELDS:
             raise ValueError(
                 f"price map: {name}: field {field!r} is not one of {sorted(MATCH_FIELDS)}"
             )
-        if not isinstance(value, str) or not value:
+        if field in CM_FIELDS:
+            if not is_int(value) or value <= 0:
+                raise ValueError(f"price map: {name}: {field} must be a positive whole number")
+        elif not isinstance(value, str) or not value.strip():
             raise ValueError(f"price map: {name}: {field} must be a non-empty string")
     return tuple(raw.items())
 

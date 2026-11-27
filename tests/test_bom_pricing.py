@@ -10,19 +10,22 @@ from pathlib import Path
 import pytest
 
 from bom_pricing_fixture import (
+    GOLDEN_VARIANTS,
     PANEL_LISTING,
     T_POST_LISTING,
     TENSIONER_LISTING,
     VARIANTS,
+    WIRE_LISTING,
 )
 from martom.bom.common import BomLine, Item, PriceRef
-from martom.bom.manual_products import load_manual_products
+from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.bom.panel import PANEL_RULES, PANEL_WIDTHS_CM, panel_fence_bom
 from martom.bom.pricing import (
     PriceMap,
     PriceProblem,
     load_price_map,
     lookup_ref,
+    matches_variant,
     resolve_price,
 )
 from martom.bom.roll import ROLL_RULES, RollPostModel, roll_fence_bom
@@ -95,10 +98,7 @@ def test_a_priced_line_has_exactly_its_mapped_variant_price() -> None:
             continue
         variants = VARIANTS[entry.listing_id]
         matched = {
-            v.price
-            for match in entry.matches
-            for v in variants
-            if all(getattr(v, field) == value for field, value in match)
+            v.price for match in entry.matches for v in variants if matches_variant(v, match)
         }
         assert matched == {price}, line
 
@@ -131,7 +131,12 @@ def test_t_post_120_cm_and_its_braces_are_on_request() -> None:
     assert prices[Item.BRACE_T_POST] is None
 
 
-def test_unconfirmed_100_cm_brace_stays_on_request_although_the_variant_is_mapped() -> None:
+def test_t_post_100_cm_is_unmapped_until_the_brace_is_wired() -> None:
+    # R1-8: no line can reach it yet (tools.py passes no synced_products).
+    assert PriceRef(Item.POST_T, "100 cm") in SHIPPED.unmapped
+
+
+def test_unconfirmed_100_cm_brace_stays_on_request() -> None:
     bom = roll_fence_bom(sides_m=[30], roll_height_cm=80, post_model="foot_plate")
     brace = next(line for line in bom.lines if line.item == Item.BRACE_T_POST)
     assert brace.unit_price_on_request
@@ -178,12 +183,65 @@ def test_missing_variant_is_on_request() -> None:
     assert (result.price, result.problem) == (None, PriceProblem.VARIANT_MISSING)
 
 
-def test_a_field_written_differently_after_re_extraction_is_on_request() -> None:
-    # The golden fixture wrote the T-post height "H-125 cm"; the map says "H-125". Exact
-    # match only: the line goes "na upit" and Toni's report flags it.
-    rewritten = [dataclasses.replace(v, height=f"{v.height} cm") for v in VARIANTS[T_POST_LISTING]]
+@pytest.mark.parametrize("height", ["H-125", "H-125 cm", "h - 125CM", "125 cm", "1250 mm"])
+def test_a_height_written_another_way_still_matches(height: str) -> None:
+    # Two extraction runs wrote the T-post height "H-125" and "H-125 cm" (R1-1): heights
+    # and lengths compare as centimetres, so both price.
+    rewritten = [
+        dataclasses.replace(v, height=height) if "125" in (v.height or "") else v
+        for v in VARIANTS[T_POST_LISTING]
+    ]
+    entry = SHIPPED.entries[PriceRef(Item.POST_T, "125 cm")]
+    assert resolve_price(entry, rewritten, MANUAL).price == Decimal("10.00")
+
+
+def test_a_height_that_is_not_one_number_never_matches() -> None:
+    # "125 x 250 cm" is two sizes, not a height of 125 cm: no guess.
+    rewritten = [
+        dataclasses.replace(v, height="125 x 250 cm") if "125" in (v.height or "") else v
+        for v in VARIANTS[T_POST_LISTING]
+    ]
     entry = SHIPPED.entries[PriceRef(Item.POST_T, "125 cm")]
     assert resolve_price(entry, rewritten, MANUAL).problem == PriceProblem.VARIANT_MISSING
+
+
+def test_text_fields_ignore_case_accents_and_spaces() -> None:
+    entry = SHIPPED.entries[PriceRef(Item.TENSION_WIRE, "2,70 mm")]
+    rewritten = [
+        dataclasses.replace(v, size="2,70 mm", unit="100 m") if v.size == "2,70MM" else v
+        for v in VARIANTS[WIRE_LISTING]
+    ]
+    assert resolve_price(entry, rewritten, MANUAL).price == Decimal("18.00")
+    tensioner = SHIPPED.entries[PriceRef(Item.TENSIONER, None)]
+    upper = [
+        dataclasses.replace(v, colour=v.colour.upper().replace("Č", "C")) if v.colour else v
+        for v in VARIANTS[TENSIONER_LISTING]
+    ]
+    assert resolve_price(tensioner, upper, MANUAL).price == Decimal("1.65")
+
+
+def test_a_price_inside_the_label_does_not_break_the_clip_match() -> None:
+    # The golden run wrote "PVC kopča sa samorezivim vijkom: 1,00 KM / kom" (R1-1).
+    entry = SHIPPED.entries[PriceRef(Item.PVC_CLIP, None)]
+    rewritten = [
+        dataclasses.replace(v, label=f"{v.label}: 1,20 KM / kom", price=Decimal("1.20"))
+        if v.label.startswith("PVC kopča")
+        else v
+        for v in VARIANTS[PANEL_LISTING]
+    ]
+    assert resolve_price(entry, rewritten, MANUAL).price == Decimal("1.20")
+
+
+def test_shipped_map_prices_every_entry_against_the_golden_extraction_too() -> None:
+    # Another extraction run of the same listings (tests/fixtures/extraction): the drift
+    # between runs must not turn mapped lines "na upit".
+    assert set(GOLDEN_VARIANTS) == {PANEL_LISTING, T_POST_LISTING}
+    for ref, entry in SHIPPED.entries.items():
+        if entry.listing_id in GOLDEN_VARIANTS:
+            result = resolve_price(entry, GOLDEN_VARIANTS[entry.listing_id], MANUAL)
+            assert result.problem is None, ref
+            fixture = resolve_price(entry, VARIANTS[entry.listing_id], MANUAL)
+            assert result.price == fixture.price, ref
 
 
 def test_ambiguous_variant_is_on_request() -> None:
@@ -213,18 +271,35 @@ def test_colours_with_different_prices_are_on_request() -> None:
     ]
     result = resolve_price(entry, variants, MANUAL)
     assert (result.price, result.problem) == (None, PriceProblem.PRICES_DIFFER)
+    assert result.failed_matches == entry.matches  # all colours: their prices disagree
 
 
 def test_one_colour_missing_is_on_request() -> None:
     entry = SHIPPED.entries[PriceRef(Item.TENSIONER, None)]
     variants = [v for v in VARIANTS[TENSIONER_LISTING] if v.colour != "Cinčani"]
-    assert resolve_price(entry, variants, MANUAL).problem == PriceProblem.VARIANT_MISSING
+    result = resolve_price(entry, variants, MANUAL)
+    assert result.problem == PriceProblem.VARIANT_MISSING
+    # Only the missing colour is reported (R1-9).
+    assert result.failed_matches == (entry.matches[2],)
+    assert dict(entry.matches[2])["colour"] == "Cinčani"
 
 
 def test_tensioner_colours_with_one_price_are_priced() -> None:
     entry = SHIPPED.entries[PriceRef(Item.TENSIONER, None)]
     result = resolve_price(entry, VARIANTS[TENSIONER_LISTING], MANUAL)
     assert (result.price, result.problem) == (Decimal("1.65"), None)
+
+
+@pytest.mark.parametrize("price", ["0", "0.00"])
+def test_manual_price_of_zero_is_on_request(price: str) -> None:
+    # R1-3: 0 KM never counts as a price, for manual products as for OLX variants.
+    entry = SHIPPED.entries[PriceRef(Item.ANCHOR_M8X70, "M8×70")]
+    zero = {
+        key: ManualProduct(p.key, p.name, Decimal(price), p.source, p.last_confirmed)
+        for key, p in MANUAL.items()
+    }
+    result = resolve_price(entry, None, zero)
+    assert (result.price, result.problem) == (None, PriceProblem.UNPRICED)
 
 
 def test_manual_entry_missing_from_manual_products_is_on_request() -> None:
@@ -262,7 +337,7 @@ GOOD_ENTRY = """
 item = "panel"
 size = "153 × 250 cm"
 listing_id = 63996799
-variants = [{ height = "153", length = "250 cm" }]
+variants = [{ height_cm = 153, length_cm = 250, unit = "panel" }]
 """
 
 
@@ -271,7 +346,7 @@ def test_loads_a_minimal_map(tmp_path: Path) -> None:
     assert price_map.status == "reviewed"
     entry = price_map.entries[PriceRef(Item.PANEL, "153 × 250 cm")]
     assert entry.listing_id == PANEL_LISTING
-    assert entry.matches == ((("height", "153"), ("length", "250 cm")),)
+    assert entry.matches == ((("height_cm", 153), ("length_cm", 250), ("unit", "panel")),)
 
 
 @pytest.mark.parametrize(
@@ -282,11 +357,20 @@ def test_loads_a_minimal_map(tmp_path: Path) -> None:
         (GOOD_ENTRY + 'manual = "anchor_m8x70"\n', "exactly one of listing_id"),
         (GOOD_ENTRY.replace("63996799", '"63996799"'), "listing_id"),
         (GOOD_ENTRY.replace("63996799", "true"), "listing_id"),
-        (GOOD_ENTRY.replace('{ height = "153", length = "250 cm" }', ""), "variants"),
-        (GOOD_ENTRY.replace('height = "153", length = "250 cm"', ""), "at least one field"),
-        (GOOD_ENTRY.replace('height = "153"', 'price = "53"'), "field 'price'"),
-        (GOOD_ENTRY.replace('height = "153"', "height = 153"), "non-empty string"),
-        (GOOD_ENTRY.replace('height = "153"', 'height = ""'), "non-empty string"),
+        (
+            GOOD_ENTRY.replace('{ height_cm = 153, length_cm = 250, unit = "panel" }', ""),
+            "variants",
+        ),
+        (GOOD_ENTRY.replace('height_cm = 153, length_cm = 250, unit = "panel"', ""), "unit"),
+        (GOOD_ENTRY.replace(', unit = "panel"', ""), "unit"),
+        (GOOD_ENTRY.replace("height_cm = 153", 'price = "53"'), "field 'price'"),
+        (GOOD_ENTRY.replace("height_cm = 153", 'label = "Panel"'), "field 'label'"),
+        (GOOD_ENTRY.replace("height_cm = 153", 'height = "153"'), "field 'height'"),
+        (GOOD_ENTRY.replace("height_cm = 153", 'height_cm = "153"'), "positive whole number"),
+        (GOOD_ENTRY.replace("height_cm = 153", "height_cm = 0"), "positive whole number"),
+        (GOOD_ENTRY.replace("height_cm = 153", "height_cm = true"), "positive whole number"),
+        (GOOD_ENTRY.replace('unit = "panel"', "unit = 1"), "non-empty string"),
+        (GOOD_ENTRY.replace('unit = "panel"', 'unit = " "'), "non-empty string"),
         (GOOD_ENTRY + GOOD_ENTRY, "twice"),
         (GOOD_ENTRY + 'colour = "zelena"\n', "unknown key"),
         (
