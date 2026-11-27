@@ -1,16 +1,18 @@
-# EventBridge Scheduler starts the job task (ecs.tf) twice:
+# EventBridge Scheduler starts the job task (ecs.tf) once a night, at 01:00 Europe/Sarajevo:
 #
-#   nightly:  `martom sync --scheduled`        every day at 01:00 Europe/Sarajevo
-#   weekly:   `martom sync --full --scheduled` Monday 05:00, i.e. the night from Sunday
-#             to Monday, 4 h after that night's nightly run
+#   Tuesday-Sunday (nightly-sync):  sync --scheduled -> extract -> embed
+#   Monday (sunday-night-sync):     the same, then sync --full --scheduled -> extract -> embed
 #
-# Both then run `martom extract` and `martom embed`. --scheduled marks the runs that count
-# toward the 10%-guard auto-apply streak (CLAUDE.md, `martom sync`).
+# Monday 01:00 is the night from Sunday to Monday, so the weekly full re-fetch runs on
+# Sunday night right after that night's nightly chain, inside the same task. `martom sync`
+# has no lock of its own; running both in one task, one step after the other, is what
+# keeps the full run from overlapping the nightly one. Each task is killed after 20 h
+# (job_timeout_seconds in ecs.tf), so it can't run into the next night's task either.
+# --scheduled marks the runs that count toward the 10%-guard auto-apply streak (CLAUDE.md,
+# `martom sync`).
 #
-# Non-overlap: `martom sync` has no lock of its own, so the gap between the two schedules
-# is what keeps them apart. A sync stops itself at its 3 h deadline (as `partial`), and
-# the extract + embed after a nightly only process what changed, so 4 h is enough. Keep
-# that gap if you change either cron (variables.tf).
+# Schedules start DISABLED (var.schedules_enabled): turn them on after the first image push
+# and `martom migrate` (README step 6).
 
 data "aws_iam_policy_document" "scheduler_assume" {
   statement {
@@ -35,10 +37,15 @@ resource "aws_iam_role" "scheduler" {
 }
 
 data "aws_iam_policy_document" "scheduler_run_job" {
-  # Start the job task definition (any revision), only in our cluster.
+  # Start the job task definition, only in our cluster. The schedule names the family
+  # without a revision (always the latest), so allow the bare family ARN as well as every
+  # revision (`:*`); both stay limited to this one family.
   statement {
-    actions   = ["ecs:RunTask"]
-    resources = ["arn:aws:ecs:${var.region}:${local.account_id}:task-definition/${aws_ecs_task_definition.job.family}:*"]
+    actions = ["ecs:RunTask"]
+    resources = [
+      "arn:aws:ecs:${var.region}:${local.account_id}:task-definition/${aws_ecs_task_definition.job.family}",
+      "arn:aws:ecs:${var.region}:${local.account_id}:task-definition/${aws_ecs_task_definition.job.family}:*",
+    ]
 
     condition {
       test     = "ArnEquals"
@@ -58,6 +65,22 @@ data "aws_iam_policy_document" "scheduler_run_job" {
       values   = ["ecs-tasks.amazonaws.com"]
     }
   }
+
+  # Invocations that still fail after the retries (e.g. RunTask denied, no Fargate
+  # capacity) land in the dead-letter queue.
+  statement {
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.scheduler_dlq.arn]
+  }
+}
+
+# Dead-letter queue for schedule invocations that couldn't start a task. A message here
+# means a night's sync never ran; M6-3 can alarm on the queue depth. Free at this volume
+# (SQS free tier).
+resource "aws_sqs_queue" "scheduler_dlq" {
+  name                      = "${local.prefix}-scheduler-dlq"
+  message_retention_seconds = 1209600 # 14 days, the maximum
+  sqs_managed_sse_enabled   = true
 }
 
 resource "aws_iam_role_policy" "scheduler_run_job" {
@@ -69,14 +92,14 @@ resource "aws_iam_role_policy" "scheduler_run_job" {
 locals {
   schedules = {
     nightly-sync = {
-      description = "Nightly OLX sync, then extract and embed"
+      description = "Nightly OLX sync, then extract and embed (Tuesday to Sunday)"
       expression  = var.nightly_sync_cron
-      sync_args   = "--scheduled"
+      weekly_full = "false"
     }
-    weekly-full-sync = {
-      description = "Weekly full OLX re-fetch (Sunday night), then extract and embed"
-      expression  = var.weekly_full_sync_cron
-      sync_args   = "--full --scheduled"
+    sunday-night-sync = {
+      description = "Sunday night: nightly sync, extract, embed, then the weekly full re-fetch, extract, embed"
+      expression  = var.sunday_night_sync_cron
+      weekly_full = "true"
     }
   }
 }
@@ -88,7 +111,7 @@ resource "aws_scheduler_schedule" "sync" {
   description                  = each.value.description
   schedule_expression          = each.value.expression
   schedule_expression_timezone = var.schedule_timezone
-  # DISABLED while the stack is paused (README: stop RDS between test phases).
+  # DISABLED until the first deploy is done, and while the stack is paused (README).
   state = var.schedules_enabled ? "ENABLED" : "DISABLED"
 
   flexible_time_window {
@@ -111,13 +134,17 @@ resource "aws_scheduler_schedule" "sync" {
       }
     }
 
-    # Passed to RunTask as overrides: only SYNC_ARGS differs between the two schedules.
+    # Passed to RunTask as overrides: only WEEKLY_FULL differs between the two schedules.
     input = jsonencode({
       containerOverrides = [{
         name        = "job"
-        environment = [{ name = "SYNC_ARGS", value = each.value.sync_args }]
+        environment = [{ name = "WEEKLY_FULL", value = each.value.weekly_full }]
       }]
     })
+
+    dead_letter_config {
+      arn = aws_sqs_queue.scheduler_dlq.arn
+    }
 
     # Retries cover a task that couldn't be *started* (e.g. no Fargate capacity), not a
     # sync that ran and failed; a re-run of a whole sync is never automatic.

@@ -38,8 +38,9 @@ skip-check:
   # --- Design choices (infra/README.md explains each) ---
   - CKV_AWS_333      # public IP on Fargate tasks: no NAT gateway (~$35/month); the SGs allow no inbound from the internet
   - CKV_AWS_150      # ALB deletion protection: the stack is torn down between test phases (README)
-  - CKV_AWS_161      # RDS IAM authentication: the app connects with DATABASE_URL from Secrets Manager
-  - CKV2_AWS_57      # secret rotation: API keys are rotated by hand at the vendors; DATABASE_URL is rebuilt by Terraform
+  - CKV_AWS_161      # RDS IAM authentication: the app connects with the RDS-managed password (PGPASSWORD from Secrets Manager)
+  - CKV2_AWS_57      # rotation on the app secret: API keys are rotated by hand at the vendors (the RDS password secret rotates, see below)
+  - CKV_AWS_304      # RDS password rotation every 365 days, not 90: a rotation breaks the running API until it restarts, so rotate by hand + redeploy (README, "Database password")
   - CKV_AWS_51       # immutable ECR tags: `latest` moves until CD (M6-2) picks per-commit tags
   - CKV_AWS_305      # CloudFront default root object: it fronts an API, not a website
   - CKV_AWS_310      # CloudFront origin failover: one region, one origin

@@ -89,24 +89,38 @@ variable "schedule_timezone" {
 }
 
 variable "nightly_sync_cron" {
-  description = "When the nightly sync runs (EventBridge Scheduler cron: minutes hours day-of-month month day-of-week year). Default: every day at 01:00."
+  description = "Nightly sync, every night except the one from Sunday to Monday (EventBridge Scheduler cron: minutes hours day-of-month month day-of-week year). Default: 01:00, Tuesday to Sunday."
   type        = string
-  default     = "cron(0 1 * * ? *)"
+  default     = "cron(0 1 ? * TUE-SUN *)"
+}
+
+# The night from Sunday to Monday runs the nightly chain and then the weekly full chain in
+# one task (ecs.tf), so the full run can't start while the nightly one is still running.
+# Keep the two crons on different days at the same time of night.
+variable "sunday_night_sync_cron" {
+  description = "Sunday-night run: the nightly sync, then the weekly full re-fetch, in one task. Default: Monday 01:00, the night from Sunday to Monday."
+  type        = string
+  default     = "cron(0 1 ? * MON *)"
+}
+
+# OLX allows roughly 1,400 requests before a ~1,600 s 429 penalty (#105). The weekly full
+# run fetches every listing (~2,570-2,620 requests), so it goes slower than the nightly
+# run's 2.0 s to stay under that quota: ~2,600 x 2.8 s is about 2 h, inside the 3 h deadline.
+variable "full_sync_request_interval" {
+  description = "OLX_REQUEST_INTERVAL (seconds between OLX requests) for the weekly full sync only. The nightly sync keeps 2.0."
+  type        = number
+  default     = 2.8
+
+  validation {
+    condition     = var.full_sync_request_interval >= 1.3
+    error_message = "The OLX politeness rule never allows an interval below 1.3 seconds."
+  }
 }
 
 variable "schedules_enabled" {
-  description = "Run the nightly and weekly jobs. Set to false while RDS is stopped, or every run fails."
+  description = "Run the scheduled jobs. Off by default so nothing runs before an image is pushed and the database is migrated (README); also set to false while RDS is stopped."
   type        = bool
-  default     = true
-}
-
-# The weekly full run must not overlap the nightly one. `martom sync` stops itself at its
-# 3 h deadline, and extract + embed after a nightly only touch the listings that changed,
-# so a 4 h gap after the nightly start is enough. The next nightly starts 20 h later.
-variable "weekly_full_sync_cron" {
-  description = "When the weekly full re-fetch runs: the night from Sunday to Monday, 4 h after that night's nightly sync. Keep it at least 4 h after nightly_sync_cron."
-  type        = string
-  default     = "cron(0 5 ? * MON *)"
+  default     = false
 }
 
 # --- Database ---

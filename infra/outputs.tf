@@ -38,3 +38,13 @@ output "db_endpoint" {
   description = "RDS endpoint (host:port); reachable only from inside the VPC."
   value       = aws_db_instance.main.endpoint
 }
+
+output "scheduler_dlq_url" {
+  description = "SQS dead-letter queue for schedule invocations that couldn't start a task."
+  value       = aws_sqs_queue.scheduler_dlq.url
+}
+
+output "db_password_secret_arn" {
+  description = "ARN of the RDS-managed secret holding the master password (only the ARN is in Terraform)."
+  value       = aws_db_instance.main.master_user_secret[0].secret_arn
+}

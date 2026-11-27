@@ -7,10 +7,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 
   # Partial configuration: the bucket name (made by infra/bootstrap) is passed at init

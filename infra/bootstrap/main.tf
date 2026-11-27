@@ -65,7 +65,8 @@ resource "aws_s3_bucket_versioning" "state" {
   }
 }
 
-# State holds a generated secret (the database password), so it is encrypted at rest.
+# State holds no passwords (RDS keeps its own in Secrets Manager), but it maps the whole
+# account, so it is encrypted at rest.
 # SSE-S3 (AES256) is free; a customer KMS key would cost $1/month.
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
   bucket = aws_s3_bucket.state.id

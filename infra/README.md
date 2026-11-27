@@ -18,7 +18,7 @@ ECS Fargate service: API task = `martom api` + Redis sidecar (localhost:6379)
 RDS Postgres 16 + pgvector (private subnets)     │
         ▲                                        │
         └── job task: `martom sync` → `martom extract` → `martom embed`
-              started by EventBridge Scheduler: nightly 01:00, weekly full Mon 05:00 (Europe/Sarajevo)
+              started by EventBridge Scheduler at 01:00 Europe/Sarajevo; on Sunday night the weekly full run follows in the same task
 ```
 
 | File | What it holds |
@@ -29,9 +29,9 @@ RDS Postgres 16 + pgvector (private subnets)     │
 | `security_groups.tf` | CloudFront → ALB → API → RDS, job → RDS, outbound HTTPS |
 | `alb.tf`, `cloudfront.tf` | Internal load balancer, and the CloudFront distribution that reaches it through a VPC origin |
 | `rds.tf` | Postgres 16, db.t4g.micro, single AZ, 7 days of backups |
-| `secrets.tf` | Secrets Manager: `database-url` (written by Terraform), `app` (JSON, set by hand) |
+| `secrets.tf` | Secrets Manager: the RDS-managed master password (Terraform knows only its ARN), `app` (JSON, set by hand) |
 | `ecr.tf`, `ecs.tf` | Image repository, cluster, API service, job task definition, env var mapping |
-| `scheduler.tf` | The nightly and weekly sync schedules |
+| `scheduler.tf` | The nightly and Sunday-night schedules, their dead-letter queue |
 
 Agents only write and validate this code (`terraform fmt -check`, `terraform init -backend=false`, `terraform validate`). Tomislav runs `init`, `plan` and `apply` with his own SSO profile; `terraform apply` is blocked for agents in `.claude/settings.json`.
 
@@ -60,11 +60,14 @@ The bootstrap's own state stays in `infra/bootstrap/terraform.tfstate` (git-igno
 cd infra
 cp backend.hcl.example backend.hcl        # git-ignored; put the bucket name from step 1 in it
 terraform init -backend-config=backend.hcl
-terraform plan -var api_desired_count=0 -out tfplan
-terraform apply tfplan
+terraform plan -var api_desired_count=0 -out "$HOME/martom.tfplan"
+terraform apply "$HOME/martom.tfplan"
+rm "$HOME/martom.tfplan"
 ```
 
-`api_desired_count=0` for the first apply, because ECR is still empty: the API service starts no task until an image exists (step 4).
+`api_desired_count=0` for the first apply, because ECR is still empty: the API service starts no task until an image exists (step 4). The schedules are created **disabled** (`schedules_enabled` defaults to `false`), so no job runs against an empty database; step 6 turns them on.
+
+**Treat plan files and state as private.** No password is in them: RDS generates the database password and keeps it in its own Secrets Manager secret, the app secrets are set by hand outside Terraform, and Terraform stores only the two secrets' ARNs. But a saved plan holds the full state of the account in plain text (names, ARNs, endpoints, the network layout). So write it outside the repo, as above, and delete it after the apply. `tfplan`, `*.tfplan`, `*.tfstate*`, `*.tfvars` and `.terraform/` are git-ignored, and CI fails if a plan or state file is ever tracked.
 
 ### 3. Set the app secrets
 
@@ -90,7 +93,7 @@ Every key above must be present, or ECS refuses to start the task. `ADMIN_TOKEN`
 
 ### 4. Push the app image
 
-The repo has no `Dockerfile` yet; it arrives with CD (M6-2), which also pushes on every merge. The image must have `martom` on `PATH`, `sh`, and `migrations/` and `knowledge/` in its working directory (both commands read them relative to the current folder). Build for x86 (the task definitions use `X86_64`):
+The repo has no `Dockerfile` yet; it arrives with CD (M6-2), which also pushes on every merge. The image must have `martom` on `PATH`, `sh`, `timeout`, and `migrations/` and `knowledge/` in its working directory (both commands read them relative to the current folder). Build for x86 (the task definitions use `X86_64`):
 
 ```sh
 REPO=$(terraform -chdir=infra output -raw ecr_repository_url)
@@ -119,14 +122,17 @@ run_once martom load-knowledge
 
 Then start the pipeline once by hand instead of waiting for the night: `run_once sh -c 'martom sync --full && martom extract && martom embed'`. The first extract sends every listing to Haiku (a few dollars, once). Each task's output is in CloudWatch Logs, `/ecs/martom-production/job`. Runs started this way don't count toward the 10%-guard auto-apply streak, which is what you want.
 
-### 6. Start the API
+### 6. Start the API and turn on the schedules
 
 ```sh
-terraform -chdir=infra apply              # api_desired_count back to its default, 1
+cp infra/terraform.tfvars.example infra/terraform.tfvars   # git-ignored; sets schedules_enabled = true
+terraform -chdir=infra apply              # api_desired_count back to its default, 1; schedules ENABLED
 curl -s "$(terraform -chdir=infra output -raw api_url)/health"
 ```
 
-`/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}`. Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2).
+`/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}`. Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on.
+
+The morning after the first night, check that it ran: a `sync_run` row started around 01:00 local time, and no messages in the dead-letter queue (`aws sqs get-queue-attributes --queue-url "$(terraform -chdir=infra output -raw scheduler_dlq_url)" --attribute-names ApproximateNumberOfMessages`). A message there means EventBridge Scheduler couldn't start the task (for example permissions or Fargate capacity); the message says why.
 
 ## Settings: where each env var comes from
 
@@ -137,11 +143,13 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `APP_ENV` | `production` | `production` | plain |
 | `LOG_LEVEL` | `INFO` | `INFO` | plain |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,https://martom-savjetnik.pages.dev` | not set | plain |
-| `DATABASE_URL` | `martom/production/database-url` | same | secret (Terraform) |
+| `DATABASE_URL` | `postgresql://martom@<rds endpoint>/martom?sslmode=require`, no password | same | plain |
+| `PGPASSWORD` | RDS-managed secret → `password` (libpq reads it for every connection) | same | secret (RDS) |
 | `REDIS_URL` | `redis://localhost:6379/0` (sidecar) | not set | plain |
 | `OLX_API_BASE_URL` | not set | `https://api.olx.ba` | plain |
 | `OLX_SHOP_USERNAME` | not set | `martom` | plain |
-| `OLX_REQUEST_INTERVAL` | not set | `2.0` | plain |
+| `OLX_REQUEST_INTERVAL` | not set | `2.0`; the weekly full sync uses `FULL_SYNC_REQUEST_INTERVAL` instead | plain |
+| `FULL_SYNC_REQUEST_INTERVAL` | not set | `2.8` (`var.full_sync_request_interval`, at least 1.3) | plain, job script only |
 | `ANTHROPIC_API_KEY` | `martom/production/app` → `ANTHROPIC_API_KEY` | same | secret (by hand) |
 | `FAST_MODEL` | `claude-haiku-5-5` | `claude-haiku-5-5` | plain |
 | `AGENT_MODEL` | `claude-sonnet-5-5` (read from M4) | not set | plain |
@@ -153,13 +161,13 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `LANGSMITH_TRACING` | `true` | `true` | plain |
 | `LANGSMITH_PROJECT` | `martom-ai-production` | same | plain |
 | `LANGSMITH_API_KEY` | `app` → `LANGSMITH_API_KEY` | same | secret (by hand) |
-| `SYNC_ARGS` | not set | `--scheduled` (nightly), `--full --scheduled` (weekly) | plain, job script only |
+| `WEEKLY_FULL` | not set | `false`; `true` from the Sunday-night schedule | plain, job script only |
 
 Not set in AWS: `TEST_DATABASE_URL`, `TEST_REDIS_URL`, `POSTGRES_PORT`, `REDIS_PORT` (local and CI only), and `ORDER_PHONE`, `TURNSTILE_SECRET_KEY`, `RATE_LIMIT_PER_MINUTE`, `MAX_TOKENS_PER_CONVERSATION` until M5-6/M5-7 read them. If your LangSmith account is in the EU region, add `LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com` to `common_environment` in `ecs.tf`.
 
 ## Monthly cost estimate
 
-On-demand eu-central-1 list prices, checked 27 Nov 2026 from memory of the AWS price pages: confirm them in the AWS Pricing Calculator before you apply. Launch traffic: a few hundred conversations a month, the nightly job running about 1.5 h a day.
+On-demand eu-central-1 list prices, checked 27 Nov 2026 from memory of the AWS price pages: confirm them in the AWS Pricing Calculator before you apply. Launch traffic: a few hundred conversations a month, the job running at most ~1.5 h a day on average (on the high side: most nights take minutes, the Sunday-night task ~2.5 h).
 
 | Item | Size | Per month |
 | --- | --- | --- |
@@ -185,7 +193,7 @@ Two options, with what each keeps and loses.
 ```sh
 terraform -chdir=infra apply -var api_desired_count=0 -var schedules_enabled=false
 aws rds stop-db-instance --db-instance-identifier martom-production
-# resume:
+# resume (terraform.tfvars turns the schedules back on, api_desired_count goes back to 1):
 aws rds start-db-instance --db-instance-identifier martom-production
 terraform -chdir=infra apply
 ```
@@ -204,13 +212,12 @@ terraform -chdir=infra destroy -var db_deletion_protection=false
 
 - **Kept:**
   - the final RDS snapshot `martom-production-final` (~$0.10/GB-month) and the automated backups, until their 7 days end;
-  - the S3 state bucket (bootstrap, protected by `prevent_destroy`);
-  - the RDS log group `/aws/rds/instance/martom-production/postgresql`, which RDS created, not Terraform.
+  - the S3 state bucket (bootstrap, protected by `prevent_destroy`).
 - **Lost:**
   - the running database. A new apply creates an **empty** database with a new password. The catalogue tables come back from OLX with migrate → sync → extract → embed (a few dollars of Haiku). Order requests, Toni's ignored review issues and the conversation checkpoints come back only if you restore the final snapshot by hand.
-  - container logs (the `/ecs/...` log groups are deleted) and the ECR images (rebuilt from git).
+  - all logs (the `/ecs/...` log groups and the RDS log group are deleted), the dead-letter queue and the ECR images (rebuilt from git).
   - the CloudFront address: a new distribution gets a new `*.cloudfront.net` name, so update the frontend's API URL.
-- **Secrets:** both secrets are scheduled for deletion with a 7-day recovery window. Within that window a new apply fails because the names are taken: run `aws secretsmanager restore-secret --secret-id martom/production/app` (and the same for `.../database-url`), then `terraform import` them, or wait out the 7 days and set the app secret again (step 3).
+- **Secrets:** RDS deletes its password secret with the database. The `app` secret is scheduled for deletion with a 7-day recovery window. Within that window a new apply fails because the name is taken: run `aws secretsmanager restore-secret --secret-id martom/production/app`, then `terraform import aws_secretsmanager_secret.app <its ARN>`, or wait out the 7 days and set the app secret again (step 3).
 - **Before the next destroy**, delete or rename the old `martom-production-final` snapshot, or the destroy fails because that snapshot name already exists.
 
 ## Checking the code
@@ -220,10 +227,11 @@ validate the code. They run pinned tool versions in throwaway containers (`--rm`
 only `infra/`, with no `~/.aws` and no environment passed in. Run them from the repo root.
 
 ```sh
-TF="docker run --rm -v $PWD/infra:/w -w /w hashicorp/terraform:1.10.5"
-$TF fmt -check -recursive
-$TF init -backend=false -input=false          # downloads the providers into infra/.terraform (git-ignored)
-$TF validate
+# a function, not a variable: zsh doesn't split "$TF" into words
+tf() { docker run --rm -v "$PWD/infra:/w" -w /w hashicorp/terraform:1.10.5 "$@"; }
+tf fmt -check -recursive
+tf init -backend=false -input=false           # downloads the providers into infra/.terraform (git-ignored)
+tf validate
 docker run --rm -v "$PWD/infra/bootstrap:/w" -w /w hashicorp/terraform:1.10.5 init -backend=false -input=false
 docker run --rm -v "$PWD/infra/bootstrap:/w" -w /w hashicorp/terraform:1.10.5 validate
 
@@ -240,12 +248,55 @@ docker run --rm -v "$PWD/infra:/tf" -w /tf bridgecrew/checkov:3.2.334 \
 
 The `.terraform.lock.hcl` files pin the provider versions and hold their checksums for
 macOS (arm64 and x86) and Linux x86. After a provider upgrade, refresh them with
-`$TF providers lock -platform=darwin_arm64 -platform=darwin_amd64 -platform=linux_amd64`
+`tf providers lock -platform=darwin_arm64 -platform=darwin_amd64 -platform=linux_amd64`
 (and the same in `infra/bootstrap`).
+
+## Schedules
+
+One scheduled task a night, at 01:00 Europe/Sarajevo (00:00 UTC in winter, 23:00 UTC in summer):
+
+| Night | Schedule | Task runs |
+| --- | --- | --- |
+| Mon→Tue … Sat→Sun (cron `TUE-SUN`) | `nightly-sync` | `sync --scheduled` → `extract` → `embed` |
+| Sun→Mon (cron `MON`) | `sunday-night-sync` | the same, then `sync --full --scheduled` → `extract` → `embed` |
+
+`martom sync` has no lock of its own. The weekly full run can't overlap the nightly one because both run in the same task, one step after the other. Two tasks can't overlap either: each is killed after 16 h (`timeout`, `job_timeout_seconds` in `ecs.tf`) and the next one starts 24 h after it.
+
+Worst-case timeline for the Sunday-night task (the longest one):
+
+| Step | Normal | Worst case | What bounds it |
+| --- | --- | --- | --- |
+| nightly `sync --scheduled` | minutes | 3 h | the sync's own 3 h deadline |
+| `extract` | minutes (changed listings only) | ~2 h | every listing changed: ~2,600 Haiku calls, 4 at a time, with retries |
+| `embed` | minutes | ~3 h | ~28 Cohere batches × 6 attempts × 60 s |
+| `sync --full --scheduled` | ~2 h: ~2,570–2,620 requests at 2.8 s ≈ 2 h, plus list pages | 3 h | the 3 h deadline |
+| `extract` + `embed` again | minutes | ~5 h | as above |
+| **Total** | **~2.5 h** | **16 h**: the hard stop | `timeout` kills the task |
+
+The weekly full sync runs at `full_sync_request_interval` (2.8 s by default, never below 1.3) instead of the nightly 2.0 s: OLX allows about 1,400 requests before a ~1,600 s 429 penalty (#105), and the full run makes about 2,600. The nightly run fetches only changed listings (tens of detail calls), so 2.0 s is fine there.
+
+So the latest a task can still be running is 17:00 UTC (a 01:00 UTC start after an hour of start retries, plus 16 h). The RDS backup window (18:00–18:30 UTC daily) and maintenance window (Wed 19:00–20:00 UTC) come after that, in summer and winter time alike.
+
+The full run right after the nightly one also means: if both trip the 10% deactivation guard, the second trip doesn't auto-apply, because auto-apply needs the previous trip to have started at least 12 h earlier. The next night's run can still complete the streak.
 
 ## Notes
 
-- **Non-overlapping syncs:** `martom sync` has no lock, so the schedules keep it apart. The weekly full run starts 4 h after that night's nightly run, which stops itself at its 3 h deadline. Keep that gap if you change a cron.
+- **Image requirements:** `martom` on `PATH`, `sh`, `timeout` (coreutils or busybox), and `migrations/` and `knowledge/` in the working directory.
 - **SSE through CloudFront:** CloudFront drops an origin connection after 60 s without bytes. The `/api/chat` stream must send something (a token or a `: keep-alive` comment) at least every 60 s.
 - **pgvector:** RDS for PostgreSQL 16.5 and later ship pgvector 0.8.0; the engine version is `16`, so RDS picks its current default minor. Migration 007 checks the version itself.
-- **Secrets in state:** the generated database password is in the Terraform state, which is why the state bucket is private, encrypted and versioned.
+- **No passwords in Terraform:** the database password lives only in the RDS-managed secret, the API keys only in the `app` secret you set by hand. Plan, state and tfvars hold just the two ARNs. To check after an apply: `terraform -chdir=infra state pull | grep -i -E 'password|secret_string'` shows only `manage_master_user_password` and ARNs. The state bucket is still private, encrypted and versioned, because state maps the whole account.
+
+## Database password
+
+RDS generates the master password and keeps it in a Secrets Manager secret it owns (`terraform -chdir=infra output -raw db_password_secret_arn`). ECS reads it into `PGPASSWORD` when a task starts; `DATABASE_URL` carries no password.
+
+RDS-managed secrets always have rotation on (it can't be turned off), and the default is every 7 days. A rotation changes the password at once, but a running task keeps the `PGPASSWORD` it started with, and the API opens a new connection per request, so the API fails until its task restarts. Scheduled jobs are fine: each one starts fresh. So `secrets.tf` sets the schedule to every 365 days, and the recommended way is to rotate by hand at a quiet time and redeploy straight away:
+
+```sh
+aws rds modify-db-instance --db-instance-identifier martom-production \
+  --rotate-master-user-password --apply-immediately
+# wait until the secret has a new version (a minute or two), then restart the API tasks:
+aws ecs update-service --cluster martom-production --service martom-production-api --force-new-deployment
+```
+
+Check when the next scheduled rotation is due with `aws secretsmanager describe-secret --secret-id "$(terraform -chdir=infra output -raw db_password_secret_arn)" --query NextRotationDate`, and rotate by hand before that date. Don't run this while a scheduled job is running (01:00 local until its end, see "Schedules").

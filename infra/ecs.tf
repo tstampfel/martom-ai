@@ -9,11 +9,13 @@
 # | APP_ENV                  | production                        | production                  |
 # | LOG_LEVEL                | INFO                              | INFO                        |
 # | CORS_ALLOWED_ORIGINS     | var.cors_allowed_origins          | not set (API only)          |
-# | DATABASE_URL             | secret database-url               | secret database-url         |
+# | DATABASE_URL             | postgresql://martom@<rds endpoint>/martom?sslmode=require (no password) | same |
+# | PGPASSWORD               | secret: RDS-managed, key password | same                        |
 # | REDIS_URL                | redis://localhost:6379/0 (sidecar)| not set (no Redis)          |
 # | OLX_API_BASE_URL         | not set (Settings default)        | https://api.olx.ba          |
 # | OLX_SHOP_USERNAME        | not set                           | martom                      |
-# | OLX_REQUEST_INTERVAL     | not set                           | 2.0                         |
+# | OLX_REQUEST_INTERVAL     | not set                           | 2.0; weekly full sync: 2.8  |
+# | FULL_SYNC_REQUEST_INTERVAL | not set                         | var.full_sync_request_interval (2.8) |
 # | ANTHROPIC_API_KEY        | secret app:ANTHROPIC_API_KEY      | secret app:ANTHROPIC_API_KEY|
 # | FAST_MODEL               | claude-haiku-5-5                  | claude-haiku-5-5            |
 # | AGENT_MODEL              | claude-sonnet-5-5                 | not set                     |
@@ -25,6 +27,7 @@
 # | LANGSMITH_TRACING        | true                              | true                        |
 # | LANGSMITH_PROJECT        | var.langsmith_project             | var.langsmith_project       |
 # | LANGSMITH_API_KEY        | secret app:LANGSMITH_API_KEY      | secret app:LANGSMITH_API_KEY|
+# | WEEKLY_FULL              | not set                           | false; true on Sunday night |
 #
 # AGENT_MODEL is listed in .env.example for M4; Settings ignores it until then.
 
@@ -34,7 +37,17 @@ locals {
   account_id = data.aws_caller_identity.current.account_id
   image      = "${aws_ecr_repository.app.repository_url}:${var.image_tag}"
 
+  # No password in the URL: libpq (psycopg) takes it from PGPASSWORD, which ECS injects
+  # from the RDS-managed secret. The endpoint is host:port.
+  database_url = format(
+    "postgresql://%s@%s/%s?sslmode=require",
+    aws_db_instance.main.username,
+    aws_db_instance.main.endpoint,
+    aws_db_instance.main.db_name,
+  )
+
   common_environment = {
+    DATABASE_URL       = local.database_url
     APP_ENV            = "production"
     LOG_LEVEL          = "INFO"
     FAST_MODEL         = "claude-haiku-5-5"
@@ -56,33 +69,52 @@ locals {
     OLX_SHOP_USERNAME      = "martom"
     OLX_REQUEST_INTERVAL   = "2.0"
     EXTRACTION_CONCURRENCY = "4"
+    # Only the weekly full sync uses it, as its OLX_REQUEST_INTERVAL (job script below).
+    FULL_SYNC_REQUEST_INTERVAL = tostring(var.full_sync_request_interval)
   })
 
   # ECS wants lists of {name, value} / {name, valueFrom}; build them from the maps above.
-  database_url_secret = {
-    name      = "DATABASE_URL"
-    valueFrom = aws_secretsmanager_secret.database_url.arn
+  db_password_secret = {
+    name      = "PGPASSWORD"
+    valueFrom = "${local.db_password_secret_arn}:password::"
   }
-  api_secrets = concat([local.database_url_secret], [
+  api_secrets = concat([local.db_password_secret], [
     for key in local.api_secret_keys : { name = key, valueFrom = "${aws_secretsmanager_secret.app.arn}:${key}::" }
   ])
-  job_secrets = concat([local.database_url_secret], [
+  job_secrets = concat([local.db_password_secret], [
     for key in local.job_secret_keys : { name = key, valueFrom = "${aws_secretsmanager_secret.app.arn}:${key}::" }
   ])
 
-  # The nightly and weekly jobs run the whole pipeline: sync, then extract the listings
-  # whose details changed, then embed the products whose text changed. Each step runs even
-  # if the one before it failed or was partial (extract and embed only pick up what
-  # changed, so they are safe to run). The task exits with the first non-zero exit code,
-  # so a failed or partial sync still shows as a failed task; sync_run rows hold the
-  # details. SYNC_ARGS is set per schedule (scheduler.tf).
+  # The scheduled job runs the whole pipeline: sync, then extract the listings whose
+  # details changed, then embed the products whose text changed. On Sunday night
+  # (WEEKLY_FULL=true, scheduler.tf) the same task then runs the weekly full re-fetch and
+  # extract + embed again, so the full run starts only after the nightly chain has
+  # finished and the two can never overlap.
+  #
+  # Each step runs even if the one before it failed or was partial (extract and embed only
+  # pick up what changed, so they are safe to run). The task exits with the first non-zero
+  # exit code, so a failed or partial sync still shows as a failed task; sync_run rows hold
+  # the details.
   job_script = <<-EOT
     rc=0
-    martom sync $SYNC_ARGS || rc=$?
-    martom extract || { s=$?; [ "$rc" -ne 0 ] || rc=$s; }
-    martom embed || { s=$?; [ "$rc" -ne 0 ] || rc=$s; }
+    step() { "$@" || { s=$?; [ "$rc" -ne 0 ] || rc=$s; }; }
+    step martom sync --scheduled
+    step martom extract
+    step martom embed
+    if [ "$WEEKLY_FULL" = "true" ]; then
+      step env OLX_REQUEST_INTERVAL="$FULL_SYNC_REQUEST_INTERVAL" martom sync --full --scheduled
+      step martom extract
+      step martom embed
+    fi
     exit "$rc"
   EOT
+
+  # Hard stop for a scheduled task: 16 h. A task starts at 23:00-01:00 UTC at the latest
+  # (01:00 Sarajevo, plus up to 1 h of start retries), so it is gone by 17:00 UTC: before
+  # the 18:00 UTC RDS backup window and long before the next night's task. 16 h is the
+  # worst case of the Sunday-night task (two chains of 3 h sync + 2 h extract + 3 h embed,
+  # infra/README.md "Schedules"). Needs `timeout` in the image (coreutils or busybox).
+  job_timeout_seconds = 57600
 }
 
 resource "aws_ecs_cluster" "main" {
@@ -139,8 +171,10 @@ resource "aws_iam_role_policy_attachment" "task_execution" {
 data "aws_iam_policy_document" "read_secrets" {
   statement {
     actions = ["secretsmanager:GetSecretValue"]
+    # The RDS-managed secret uses the AWS-managed Secrets Manager key, so no KMS
+    # permission is needed.
     resources = [
-      aws_secretsmanager_secret.database_url.arn,
+      local.db_password_secret_arn,
       aws_secretsmanager_secret.app.arn,
     ]
   }
@@ -285,11 +319,12 @@ resource "aws_ecs_task_definition" "job" {
       name      = "job"
       image     = local.image
       essential = true
-      # Default command: the nightly pipeline. Schedules set SYNC_ARGS; one-off tasks
-      # override the command (README: `martom migrate`).
-      command = ["sh", "-c", local.job_script]
+      # Default command: the scheduled pipeline, killed after job_timeout_seconds. The
+      # Sunday-night schedule sets WEEKLY_FULL=true; one-off tasks override the command
+      # (README: `martom migrate`).
+      command = ["timeout", tostring(local.job_timeout_seconds), "sh", "-c", local.job_script]
 
-      environment = [for name, value in merge(local.job_environment, { SYNC_ARGS = "--scheduled" }) : { name = name, value = value }]
+      environment = [for name, value in merge(local.job_environment, { WEEKLY_FULL = "false" }) : { name = name, value = value }]
       secrets     = local.job_secrets
 
       logConfiguration = {

@@ -4,9 +4,10 @@
 #
 # Two secrets ($0.40/month each):
 #
-# 1. martom/<env>/database-url: Terraform writes it, built from the generated RDS
-#    password. The password is therefore in the Terraform state, which is why the state
-#    bucket is encrypted, versioned and private.
+# 1. The RDS master password: RDS creates and owns this secret (rds.tf,
+#    manage_master_user_password). Terraform never sees the password, only the ARN. ECS
+#    reads its "password" key into PGPASSWORD; DATABASE_URL itself has no password, and
+#    psycopg (libpq) reads PGPASSWORD by itself.
 #
 # 2. martom/<env>/app: one JSON object with the API keys and tokens. Terraform creates
 #    the empty secret only; Tomislav sets its value once, by hand (README). Terraform never
@@ -21,25 +22,27 @@ locals {
   job_secret_keys = ["ANTHROPIC_API_KEY", "COHERE_API_KEY", "LANGSMITH_API_KEY"]
 }
 
-resource "aws_secretsmanager_secret" "database_url" {
-  name                    = "${var.name}/${var.environment}/database-url"
-  description             = "DATABASE_URL for the API and the jobs (written by Terraform)"
-  recovery_window_in_days = 7
-}
-
-resource "aws_secretsmanager_secret_version" "database_url" {
-  secret_id = aws_secretsmanager_secret.database_url.id
-  secret_string = format(
-    "postgresql://%s:%s@%s/%s?sslmode=require",
-    aws_db_instance.main.username,
-    random_password.db.result,
-    aws_db_instance.main.endpoint, # host:port
-    aws_db_instance.main.db_name,
-  )
-}
-
 resource "aws_secretsmanager_secret" "app" {
   name                    = "${var.name}/${var.environment}/app"
   description             = "API keys and tokens as one JSON object; the value is set by hand, never by Terraform"
   recovery_window_in_days = 7
+}
+
+locals {
+  db_password_secret_arn = aws_db_instance.main.master_user_secret[0].secret_arn
+}
+
+# RDS rotates its managed secret every 7 days unless told otherwise, and turning rotation
+# off is not supported for it. A rotation changes the database password at once, while a
+# running task keeps the old PGPASSWORD it got at start-up; the API opens a new connection
+# per request, so it would fail until its task restarts. So the schedule is once a year,
+# and the README ("Database password") says how to rotate by hand at a quiet time with a
+# forced redeploy right after, before the scheduled date comes round.
+resource "aws_secretsmanager_secret_rotation" "db_password" {
+  secret_id          = local.db_password_secret_arn
+  rotate_immediately = false
+
+  rotation_rules {
+    automatically_after_days = 365
+  }
 }
