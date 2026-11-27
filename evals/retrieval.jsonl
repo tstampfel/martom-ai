@@ -1,0 +1,11 @@
+{"id": "seed-01-panel-153-dvoriste", "question": "Treba mi panelna ograda visine 153 cm za dvorište", "expected_listing_ids": [63996799, 1199211], "source": "seed", "note": "Panel fence; 63996799 is the BOM panel listing, 1199211 the Nylofor panels."}
+{"id": "seed-02-eurofence-80", "question": "Imate li Eurofence ogradu 80 cm?", "expected_listing_ids": [48752061], "source": "seed", "note": "Plasticised mesh 60/80 cm, sold as Eurofence."}
+{"id": "seed-03-stup-stopa-40x40", "question": "Stupovi sa stopom 40x40 za betonski zid", "expected_listing_ids": [81645615], "source": "seed", "note": "Foot-plate post (b) from fence-rules.md."}
+{"id": "seed-04-t-stup", "question": "T stup za ogradu 150 cm", "expected_listing_ids": [59473597], "source": "seed", "note": "T-post (a) from fence-rules.md."}
+{"id": "seed-05-zatezac", "question": "Zatezač za žicu ograde", "expected_listing_ids": [18129143], "source": "seed", "note": "The BOM tensioner. Other wire tensioners (32499795, 21630459, 66972119) may also be fine answers: Tomislav to decide."}
+{"id": "seed-06-anker-m8x80", "question": "Ankeri M8x80 za stupove panelne ograde", "expected_listing_ids": [63996799, 40021189], "source": "seed", "note": "Toni's 'Tiplo anker FI 10 / M8 x 80' is written as a variant inside the panel listing 63996799; 40021189 (TIPLO SIDRO ANKER, sve mjere) is the separate anchor listing. Check 40021190 and 76152153 too."}
+{"id": "seed-07-brusilica-125", "question": "Brusilica 125 mm za metal", "expected_listing_ids": [52889522, 53823649], "source": "seed", "note": "Tool question: both 125 mm TOTAL angle grinders."}
+{"id": "seed-08-typo-panel", "question": "panelan ogarda antracit", "expected_listing_ids": [63996799, 1199211], "source": "seed", "note": "Typos in both words (trigram); anthracite colour."}
+{"id": "seed-09-no-height-kokosi", "question": "mreža za kokoši", "expected_listing_ids": [68378185], "source": "seed", "note": "No height given."}
+{"id": "seed-10-off-topic", "question": "Koje je radno vrijeme apoteke u Mostaru?", "expected_listing_ids": [], "source": "seed", "note": "Off-topic: no listing should be expected."}
+{"id": "seed-11-pletivo-njiva", "question": "pletivo za njivu i farmu", "expected_listing_ids": [24449780], "source": "seed", "note": "Farmer mesh, no height; inflected forms."}
