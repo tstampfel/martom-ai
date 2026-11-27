@@ -211,3 +211,8 @@ def test_structured_model_needs_an_api_key(monkeypatch: pytest.MonkeyPatch) -> N
 
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
         make_structured_model(Settings(anthropic_api_key=None))
+
+
+def test_a_blank_api_key_counts_as_missing() -> None:
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        make_structured_model(Settings(anthropic_api_key=SecretStr("  ")))

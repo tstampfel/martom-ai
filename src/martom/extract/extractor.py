@@ -69,10 +69,35 @@ class ExtractionAbortedError(Exception):
 type StructuredModel = Runnable[Sequence[BaseMessage], ExtractedProduct]
 
 
+class MissingApiKeyError(ValueError):
+    """ANTHROPIC_API_KEY is unset or blank. The message names the variable, never a value."""
+
+    def __init__(self) -> None:
+        super().__init__("ANTHROPIC_API_KEY is not set")
+
+
+def missing_key_hint(command: str) -> str:
+    """The one line a person sees when `command` needs ANTHROPIC_API_KEY and it is missing.
+
+    Settings ignores .env on purpose, so the hint shows how to pass it from there with uv.
+    It holds only the variable name and the command, never a value.
+    """
+    return (
+        f"ANTHROPIC_API_KEY is not set; run it with your local key file: "
+        f"uv run --env-file .env {command}"
+    )
+
+
+def has_api_key(settings: Settings) -> bool:
+    """True when ANTHROPIC_API_KEY holds something other than blanks."""
+    key = settings.anthropic_api_key
+    return key is not None and key.get_secret_value().strip() != ""
+
+
 def make_structured_model(settings: Settings) -> StructuredModel:
     """The real Claude Haiku model with structured output (needs ANTHROPIC_API_KEY)."""
-    if settings.anthropic_api_key is None:
-        raise ValueError("ANTHROPIC_API_KEY is not set; `martom extract` needs it")
+    if not has_api_key(settings):
+        raise MissingApiKeyError()
     chat = ChatAnthropic(
         model=settings.fast_model,
         api_key=settings.anthropic_api_key,

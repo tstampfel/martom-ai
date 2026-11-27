@@ -14,7 +14,12 @@ import uvicorn
 from pydantic import ValidationError
 
 from martom.api.admin import AdminTokenMissingError, check_admin_token
-from martom.extract.extractor import Extractor, make_structured_model
+from martom.extract.extractor import (
+    Extractor,
+    MissingApiKeyError,
+    make_structured_model,
+    missing_key_hint,
+)
 from martom.extract.job import ExtractionStats, run_extraction
 from martom.knowledge import KnowledgeError, run_load_knowledge
 from martom.log import configure_logging, logging_config
@@ -248,6 +253,9 @@ def run_extract_command(*, force_all: bool = False, limit: int | None = None) ->
     try:
         settings = Settings()
         extractor = make_extractor(settings)
+    except MissingApiKeyError:
+        print(missing_key_hint("martom extract"), file=sys.stderr)
+        return 1
     except (ValidationError, ValueError) as exc:
         print(f"invalid settings: {exc}", file=sys.stderr)
         return 1
