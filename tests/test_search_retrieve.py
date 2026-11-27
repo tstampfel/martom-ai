@@ -9,6 +9,7 @@ import logging
 import unicodedata
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import replace
+from decimal import Decimal
 
 import psycopg
 import pytest
@@ -137,7 +138,7 @@ def ids(hits: list) -> list[int]:
     return [hit.listing_id for hit in hits]
 
 
-async def test_parsed_filters_put_matching_listings_first(
+async def test_without_a_rerank_every_filtered_hit_comes_before_every_top_up_hit(
     conn: psycopg.AsyncConnection, embedder: Embedder
 ) -> None:
     parser = parser_replying(
@@ -149,20 +150,27 @@ async def test_parsed_filters_put_matching_listings_first(
     assert result.parsed
     assert result.filters == SearchFilters(height_cm=150.0)
     assert not result.filters_dropped
-    found = ids(result.hits)
-    assert T_POST in found
-    # No height to read on a grinder: it fails the filter, so it can only come after the
-    # listings that pass it, from the unfiltered top-up.
-    if BRUSILICA in found:
-        assert found.index(T_POST) < found.index(BRUSILICA)
+    assert result.top_up_added > 0
+    matched = {hit.listing_id: hit.matched_filters for hit in result.hits}
+    assert matched[T_POST] is True  # a 150 cm variant
+    assert False in matched.values()  # e.g. the grinder: no height to read, top-up only
+    flags = [hit.matched_filters for hit in result.hits]
+    assert flags == sorted(flags, reverse=True)  # all True first, then all False
 
 
 SINGLE_T_POST = 900301  # sells one thing: no variants, the height only in its title
+CHEAP_T_POST = 900302  # the same, 15 KM on the listing
+DEAR_T_POST = 900303  # the same, 50 KM on the listing
 
 
-async def _add_single_t_post(conn: psycopg.AsyncConnection, embedder: Embedder) -> None:
-    await add_listing(conn, SINGLE_T_POST, "T STUP 150 CM", "t-stup-150-cm-900301")
-    record = replace(synthetic(SINGLE_T_POST, "t stup", "T STUP 150 CM | t stup"), variants=[])
+async def _add_single_t_post(
+    conn: psycopg.AsyncConnection,
+    embedder: Embedder,
+    listing_id: int = SINGLE_T_POST,
+    price: float | None = None,
+) -> None:
+    await add_listing(conn, listing_id, "T STUP 150 CM", f"t-stup-150-cm-{listing_id}", price=price)
+    record = replace(synthetic(listing_id, "t stup", "T STUP 150 CM | t stup"), variants=[])
     await save_products(conn, [record])
     await run_embedding(conn, embedder)
 
@@ -172,9 +180,9 @@ async def test_a_parsed_height_never_hides_a_listing_without_variants(
     conn: psycopg.AsyncConnection, embedder: Embedder, candidates: int
 ) -> None:
     # R1-1: the height filter can't match a listing with no variants ("no height to
-    # read"), so the filtered search never returns "T STUP 150 CM". The unfiltered top-up
-    # must still bring it to the reranker, also when the filtered list is already full
-    # (candidates=1: T_POST alone fills it).
+    # read"), so the filtered search never returns "T STUP 150 CM". The top-up must still
+    # bring it to the reranker, also when the filtered list is already full
+    # (candidates=1: T_POST alone fills it). It is marked as not matching the filters.
     await _add_single_t_post(conn, embedder)
     parser = parser_replying(
         ParsedQuery(height="150 cm", colour=None, min_price=None, max_price=None)
@@ -189,27 +197,66 @@ async def test_a_parsed_height_never_hides_a_listing_without_variants(
         candidates=candidates,
     )
     assert result.filters == SearchFilters(height_cm=150.0)
-    assert result.unfiltered_added > 0
+    assert result.top_up_added > 0
     assert result.hits[0].listing_id == SINGLE_T_POST
+    matched = {hit.listing_id: hit.matched_filters for hit in result.hits}
+    assert matched[SINGLE_T_POST] is False
+    assert matched[T_POST] is True
 
 
-async def test_without_filters_there_is_no_top_up(
+async def test_the_top_up_never_breaks_a_stated_price_limit(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    # R2-1: the reranker reads no price, so an over-budget listing it likes would take a
+    # top-10 place. The top-up keeps the price limits and relaxes only height and colour.
+    await _add_single_t_post(conn, embedder, CHEAP_T_POST, price=15)
+    await _add_single_t_post(conn, embedder, DEAR_T_POST, price=50)
+    parser = parser_replying(
+        ParsedQuery(height="150 cm", colour=None, min_price=None, max_price="20 KM")
+    )
+    reranker = FakeReranker(favourite="T STUP 150 CM")
+    result = await retrieve(
+        conn, "T stup 150 cm do 20 KM", embedder=embedder, parser=parser, reranker=reranker
+    )
+    assert result.filters == SearchFilters(height_cm=150.0, max_price=Decimal(20))
+    found = ids(result.hits)
+    assert DEAR_T_POST not in found
+    assert CHEAP_T_POST in found  # within budget; only its height couldn't be read
+    matched = {hit.listing_id: hit.matched_filters for hit in result.hits}
+    assert matched[CHEAP_T_POST] is False
+    assert matched[T_POST] is True  # H-150 at 12,25 KM
+
+
+async def test_a_price_limit_nothing_meets_returns_nothing(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    # Over-budget products are never offered as a fallback; "nothing fits" is M4's call.
+    parser = parser_replying(
+        ParsedQuery(height="153 cm", colour=None, min_price="5000 KM", max_price=None)
+    )
+    result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None)
+    assert result.hits == []
+
+
+async def test_without_filters_every_hit_matches_and_there_is_no_top_up(
     conn: psycopg.AsyncConnection, embedder: Embedder
 ) -> None:
     result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=None, reranker=None)
-    assert result.unfiltered_added == 0
+    assert result.top_up_added == 0
+    assert result.hits and all(hit.matched_filters for hit in result.hits)
 
 
-async def test_filters_that_match_nothing_are_dropped(
+async def test_a_colour_nothing_has_is_relaxed_and_marked(
     conn: psycopg.AsyncConnection, embedder: Embedder
 ) -> None:
     parser = parser_replying(
         ParsedQuery(height=None, colour="ljubičasta", min_price=None, max_price=None)
     )
     result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None)
-    assert result.filters_dropped
-    assert result.filters == SearchFilters()
+    assert result.filters_dropped  # no hit passed every parsed filter
+    assert result.filters == SearchFilters(colour="ljubičasta")  # still what was asked
     assert set(ids(result.hits)[:2]) == PANELS
+    assert not any(hit.matched_filters for hit in result.hits)
 
 
 async def test_without_a_parser_the_search_is_unfiltered(

@@ -145,9 +145,10 @@ async def main(eval_set: Path, repeat: int, pause: float) -> None:
         for question in questions:
             d = details[question.id]
             top = d.hits[0].relevance if d.hits else None
-            dropped = " (dropped: matched nothing)" if d.filters_dropped else ""
-            if d.unfiltered_added:
-                dropped += f" (+{d.unfiltered_added} unfiltered)"
+            dropped = " (no hit passed every filter)" if d.filters_dropped else ""
+            if d.top_up_added:
+                matched = sum(h.matched_filters for h in d.hits)
+                dropped += f" (+{d.top_up_added} top-up; {matched}/{len(d.hits)} hits matched)"
             print(f"  {question.id:<32} {d.filters}{dropped}  best relevance {top}")
 
         kolica, panelan = await issue_102_hits(conn, embedder)
