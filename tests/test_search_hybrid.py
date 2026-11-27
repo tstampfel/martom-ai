@@ -20,7 +20,7 @@ from langchain_core.embeddings import Embeddings
 
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder, vector_literal
-from martom.evals.retrieval import EvalQuestion, issue_102_hits, run_search_eval
+from martom.evals.retrieval import EvalQuestion, issue_102_hits, run_search_eval, score_run
 from martom.extract.store import VariantRow, save_products
 from martom.search import hybrid
 from martom.search.hybrid import search_hybrid
@@ -265,6 +265,30 @@ async def test_the_eval_runs_each_search_mode(
         await run_search_eval(conn, questions, "hybrid")
     with pytest.raises(ValueError, match="mode"):
         await run_search_eval(conn, questions, "magic", embedder=embedder)
+
+
+async def test_the_forbidden_hit_rate_scores_every_search_mode(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    # #102: "kolica" must not return the grinder. In every mode the rate follows the ranked
+    # ids that mode returned. Keyword search does return the grinder (the trigram false
+    # positive on the fixture text "brusilica kutna"); whether vector and hybrid search do
+    # depends on this small catalogue (every listing fits in the vector candidates), so
+    # only the rate's agreement with their results is pinned here.
+    questions = [
+        EvalQuestion(
+            "kolica", "kolica", tuple(KOLICA), "seed", must_not_include_listing_ids=(BRUSILICA,)
+        )
+    ]
+    for mode in ("keyword", "vector", "hybrid"):
+        results = await run_search_eval(conn, questions, mode, embedder=embedder)
+        scores = score_run(questions, results)
+        returned = BRUSILICA in results["kolica"][:10]
+        assert scores.forbidden_checked == 1, mode
+        assert scores.forbidden_hit_ids == (("kolica",) if returned else ()), mode
+        assert scores.forbidden_hit_rate == (1.0 if returned else 0.0), mode
+        if mode == "keyword":
+            assert returned
 
 
 # --- when vector search can't help (R1-1, R1-2) ------------------------------------------

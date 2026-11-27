@@ -5,6 +5,10 @@
 - reciprocal rank: 1 / position of the first expected listing (0 if none is returned).
   MRR is its mean over questions. "How high is the first right answer?"
 
+- forbidden hit rate: the share of questions with `must_not_include_listing_ids` that get one
+  of those ids in their top 10. "Did search return something it must not?" (#102: "kolica"
+  must not return the angle grinder.) Optional per question; checked on off-topic questions too.
+
 Questions with no expected ids (off-topic ones such as "Koliko je sati?") have no recall or
 reciprocal rank, so they are left out of the averages and listed in `no_answer_ids`; a
 later issue (the guardrail, M4) decides what search should return for them.
@@ -32,17 +36,32 @@ class EvalQuestion:
     expected_listing_ids: tuple[int, ...]
     source: str  # "seed" (drafted from real listings) or "toni" (#13)
     note: str | None = None
+    # Ids that must not appear in the top 10 (optional; empty = nothing forbidden).
+    must_not_include_listing_ids: tuple[int, ...] = ()
 
 
-def _listing_ids(value: object) -> tuple[int, ...]:
+def _listing_ids(value: object, field: str = "expected_listing_ids") -> tuple[int, ...]:
     """A JSON list of integer ids. Strings, floats and booleans are rejected, not converted
     (a string "63996799" would otherwise become the digits 6, 3, 9, ...)."""
     # bool is a subclass of int in Python (True == 1), so it has to be ruled out by name.
     if not isinstance(value, list) or not all(
         isinstance(i, int) and not isinstance(i, bool) for i in value
     ):
-        raise ValueError(f"expected_listing_ids must be a list of integers, got {value!r}")
+        raise ValueError(f"{field} must be a list of integers, got {value!r}")
     return tuple(value)
+
+
+def _forbidden_ids(row: dict, expected: tuple[int, ...]) -> tuple[int, ...]:
+    """The optional `must_not_include_listing_ids`: absent = (), present = a non-empty list of
+    integer ids, none of them also expected."""
+    if "must_not_include_listing_ids" not in row:
+        return ()
+    forbidden = _listing_ids(row["must_not_include_listing_ids"], "must_not_include_listing_ids")
+    if not forbidden:
+        raise ValueError("must_not_include_listing_ids is empty: leave the field out instead")
+    if both := set(forbidden) & set(expected):
+        raise ValueError(f"ids both expected and forbidden: {sorted(both)}")
+    return forbidden
 
 
 def load_questions(path: Path) -> list[EvalQuestion]:
@@ -54,12 +73,14 @@ def load_questions(path: Path) -> list[EvalQuestion]:
             continue
         try:
             row = json.loads(line)
+            expected = _listing_ids(row["expected_listing_ids"])
             question = EvalQuestion(
                 id=str(row["id"]),
                 question=str(row["question"]),
-                expected_listing_ids=_listing_ids(row["expected_listing_ids"]),
+                expected_listing_ids=expected,
                 source=str(row["source"]),
                 note=row.get("note"),
+                must_not_include_listing_ids=_forbidden_ids(row, expected),
             )
         except (ValueError, KeyError, TypeError) as exc:
             raise ValueError(f"{path}: line {number} is not a valid question: {exc}") from exc
@@ -94,6 +115,15 @@ def reciprocal_rank(expected: Sequence[int], ranked: Sequence[int]) -> float:
     return 0.0
 
 
+def forbidden_in_top_k(forbidden: Sequence[int], ranked: Sequence[int], *, k: int) -> bool:
+    """True when any `forbidden` id is in the first `k` of `ranked`."""
+    if not forbidden:
+        raise ValueError("no forbidden ids: nothing to check")
+    if k < 1:
+        raise ValueError("k must be at least 1")
+    return bool(set(forbidden) & set(ranked[:k]))
+
+
 @dataclass(frozen=True)
 class QuestionScore:
     recall_at_5: float
@@ -111,14 +141,31 @@ class RunScores:
     mrr: float
     per_question: dict[str, QuestionScore]
     no_answer_ids: tuple[str, ...]
+    # Questions with must_not_include_listing_ids, and those whose top 10 had one.
+    forbidden_checked: int = 0
+    forbidden_hit_ids: tuple[str, ...] = ()
+
+    @property
+    def forbidden_hit_rate(self) -> float | None:
+        """Share of the checked questions with a forbidden id in the top 10 (lower is better);
+        None when no question forbids anything."""
+        if not self.forbidden_checked:
+            return None
+        return len(self.forbidden_hit_ids) / self.forbidden_checked
 
 
 def score_run(questions: Sequence[EvalQuestion], results: Mapping[str, Sequence[int]]) -> RunScores:
     """Score one search run. `results` maps question id -> ranked listing ids."""
     per_question: dict[str, QuestionScore] = {}
     no_answer: list[str] = []
+    forbidden_checked = 0
+    forbidden_hits: list[str] = []
     for question in questions:
         ranked = results[question.id]  # KeyError: the run skipped a question
+        if question.must_not_include_listing_ids:
+            forbidden_checked += 1
+            if forbidden_in_top_k(question.must_not_include_listing_ids, ranked, k=10):
+                forbidden_hits.append(question.id)
         if not question.expected_listing_ids:
             no_answer.append(question.id)
             continue
@@ -139,6 +186,8 @@ def score_run(questions: Sequence[EvalQuestion], results: Mapping[str, Sequence[
         mrr=sum(s.reciprocal_rank for s in scores) / count,
         per_question=per_question,
         no_answer_ids=tuple(no_answer),
+        forbidden_checked=forbidden_checked,
+        forbidden_hit_ids=tuple(forbidden_hits),
     )
 
 

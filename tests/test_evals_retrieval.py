@@ -7,6 +7,7 @@ import pytest
 
 from martom.evals.retrieval import (
     EvalQuestion,
+    forbidden_in_top_k,
     load_questions,
     recall_at_k,
     reciprocal_rank,
@@ -60,6 +61,25 @@ def test_reciprocal_rank_is_undefined_without_expected_ids() -> None:
         reciprocal_rank([], [1])
 
 
+# --- must not include ------------------------------------------------------------------
+
+
+def test_forbidden_in_top_k_finds_a_forbidden_id_in_the_top_k() -> None:
+    assert forbidden_in_top_k([52889522], [1, 52889522, 3], k=10) is True
+
+
+def test_forbidden_in_top_k_ignores_a_forbidden_id_below_k() -> None:
+    assert forbidden_in_top_k([5], [1, 2, 3, 4, 5], k=4) is False
+    assert forbidden_in_top_k([5], [1, 2, 3, 4, 5], k=5) is True
+
+
+def test_forbidden_in_top_k_needs_forbidden_ids_and_a_positive_k() -> None:
+    with pytest.raises(ValueError, match="no forbidden ids"):
+        forbidden_in_top_k([], [1], k=10)
+    with pytest.raises(ValueError, match="k must be"):
+        forbidden_in_top_k([1], [1], k=0)
+
+
 # --- whole run -------------------------------------------------------------------------
 
 
@@ -82,6 +102,33 @@ def test_score_run_averages_over_questions_with_expected_ids() -> None:
     assert scores.mrr == pytest.approx((1 + 1 / 6) / 2)
     assert scores.no_answer_ids == ("off",)
     assert scores.per_question["b"].recall_at_10 == 0.5
+
+
+def test_score_run_reports_questions_whose_top_10_has_a_forbidden_id() -> None:
+    questions = [
+        EvalQuestion("kolica", "kolica", (1,), "seed", must_not_include_listing_ids=(99,)),
+        EvalQuestion("clean", "x", (2,), "seed", must_not_include_listing_ids=(98,)),
+        EvalQuestion("off", "y", (), "seed", must_not_include_listing_ids=(97,)),
+        _q("plain", [3]),
+    ]
+    results = {"kolica": [1, 99], "clean": [2], "off": [97], "plain": [3]}
+
+    scores = score_run(questions, results)
+
+    # Off-topic questions are checked too: "must not appear" needs no expected ids.
+    assert scores.forbidden_checked == 3
+    assert scores.forbidden_hit_ids == ("kolica", "off")
+    assert scores.forbidden_hit_rate == pytest.approx(2 / 3)
+    # The forbidden check does not change recall or MRR.
+    assert scores.per_question["kolica"].recall_at_5 == 1.0
+    assert scores.mrr == 1.0
+
+
+def test_score_run_without_forbidden_ids_has_no_forbidden_rate() -> None:
+    scores = score_run([_q("a", [1])], {"a": [1]})
+    assert scores.forbidden_checked == 0
+    assert scores.forbidden_hit_rate is None
+    assert scores.forbidden_hit_ids == ()
 
 
 def test_score_run_needs_a_result_for_every_question() -> None:
@@ -117,6 +164,52 @@ def test_load_questions_reads_jsonl(tmp_path: Path) -> None:
         EvalQuestion("q1", "Panel 153", (63996799,), "seed", "panel"),
         EvalQuestion("q2", "Koliko je sati?", (), "seed", None),
     ]
+    # Lines without the optional field forbid nothing.
+    assert all(q.must_not_include_listing_ids == () for q in questions)
+
+
+def test_load_questions_reads_must_not_include_listing_ids(tmp_path: Path) -> None:
+    path = tmp_path / "set.jsonl"
+    row = {
+        "id": "q1",
+        "question": "kolica",
+        "expected_listing_ids": [1],
+        "must_not_include_listing_ids": [52889522],
+        "source": "seed",
+    }
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    [question] = load_questions(path)
+
+    assert question.must_not_include_listing_ids == (52889522,)
+
+
+def test_load_questions_rejects_an_id_both_expected_and_forbidden(tmp_path: Path) -> None:
+    path = tmp_path / "set.jsonl"
+    row = {
+        "id": "q1",
+        "question": "x",
+        "expected_listing_ids": [1, 2],
+        "must_not_include_listing_ids": [2],
+        "source": "seed",
+    }
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="line 1"):
+        load_questions(path)
+
+
+@pytest.mark.parametrize("bad", ['"52889522"', "[1.5]", "[true]", "[]"])
+def test_load_questions_needs_a_non_empty_list_of_integer_forbidden_ids(
+    tmp_path: Path, bad: str
+) -> None:
+    path = tmp_path / "set.jsonl"
+    line = (
+        '{"id": "q1", "question": "x", "expected_listing_ids": [1],'
+        f' "must_not_include_listing_ids": {bad}, "source": "seed"}}'
+    )
+    path.write_text(line + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="line 1"):
+        load_questions(path)
 
 
 def test_load_questions_rejects_duplicate_ids(tmp_path: Path) -> None:
@@ -168,3 +261,11 @@ def test_run_eval_asks_every_question_and_keeps_the_ranked_ids() -> None:
 
     assert asyncio.run(run_eval(questions, search)) == {"a": [5, 9], "b": [4, 9]}
     assert asked == ["panel", "stup"]
+
+
+def test_the_repo_eval_set_pins_the_kolica_and_panelan_cases() -> None:
+    # #102: "kolica" must not return the angle grinder (a trigram false positive), and the
+    # bare typo "panelan" must still find both panel listings.
+    questions = {q.question: q for q in load_questions(REPO_EVAL_SET)}
+    assert 52889522 in questions["kolica"].must_not_include_listing_ids
+    assert set(questions["panelan"].expected_listing_ids) == {63996799, 1199211}
