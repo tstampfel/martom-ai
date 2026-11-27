@@ -8,15 +8,20 @@ leaves no trace. An advisory lock stops two runners (e.g. two containers) racing
 
 import hashlib
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import psycopg
+from psycopg.rows import tuple_row
 
 MIGRATION_NAME = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 
 # Any fixed number works; every runner must use the same one.
 ADVISORY_LOCK_KEY = 7_202_611
+
+# How often a runner that is waiting for another one retries the lock.
+LOCK_POLL_SECONDS = 0.5
 
 CREATE_SCHEMA_MIGRATIONS = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -25,6 +30,22 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at timestamptz NOT NULL DEFAULT now()
 )
 """
+
+
+def acquire_advisory_lock(conn: psycopg.Connection) -> None:
+    """Wait until this session holds the migration lock. `conn` must be in autocommit mode.
+
+    Polls `pg_try_advisory_lock` instead of blocking in `pg_advisory_lock`: a session
+    blocked in the latter holds a snapshot, and the checkpointer's
+    CREATE INDEX CONCURRENTLY (run under this lock) waits for every older snapshot, so
+    the two would deadlock. Between polls this session is idle and holds none.
+    """
+    with conn.cursor(row_factory=tuple_row) as cur:
+        while True:
+            row = cur.execute("SELECT pg_try_advisory_lock(%s)", (ADVISORY_LOCK_KEY,)).fetchone()
+            if row is not None and row[0]:
+                return
+            time.sleep(LOCK_POLL_SECONDS)
 
 
 class MigrationError(Exception):
@@ -73,7 +94,7 @@ def apply_migrations(conn: psycopg.Connection, migrations: list[Migration]) -> l
 
     `conn` must be in autocommit mode: each migration opens its own transaction.
     """
-    conn.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK_KEY,))
+    acquire_advisory_lock(conn)
     try:
         conn.execute(CREATE_SCHEMA_MIGRATIONS)
         applied = dict(conn.execute("SELECT filename, checksum FROM schema_migrations"))
