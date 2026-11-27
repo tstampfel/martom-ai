@@ -2,7 +2,7 @@
 
 This is the "Retrieve" node of the agent graph (docs/PLAN.md, Agent graph):
 
-1. Understand, two jobs at the same time (asyncio.gather, like Promise.all): Haiku reads
+1. Understand, two jobs at the same time (asyncio.TaskGroup, like Promise.all): Haiku reads
    the question for filters (search/query_parser.py), while the embedding provider embeds
    it and hybrid search runs without filters (the result of a parse fallback, and the
    top-up's source). Neither needs the other, so the slower one sets the time, not their
@@ -50,6 +50,7 @@ import logging
 import time
 from dataclasses import dataclass, field, replace
 
+import httpx
 import psycopg
 from langchain_core.embeddings import Embeddings
 
@@ -208,9 +209,17 @@ async def retrieve(
         return known, embed_error is not None, unfiltered
 
     timings["parse"] = 0.0
-    parse_result, (known, embedding_fallback, unfiltered) = await asyncio.gather(
-        parse(), embed_and_search_unfiltered()
-    )
+    # A TaskGroup, not gather: if one side raises, the other is cancelled, so no Haiku call
+    # (or, in evals, no SQL on `conn`) outlives a failed retrieve().
+    try:
+        async with asyncio.TaskGroup() as group:
+            parsing = group.create_task(parse())
+            prefetching = group.create_task(embed_and_search_unfiltered())
+    except BaseExceptionGroup as failed:
+        # Callers see the original error, as they did with gather, not an ExceptionGroup.
+        raise failed.exceptions[0] from None
+    parse_result = parsing.result()
+    known, embedding_fallback, unfiltered = prefetching.result()
     mark = lap("understand", started)
 
     parsed_filters = parse_result.filters if parse_result else None
@@ -378,7 +387,10 @@ async def _rerank(
                 "rerank failed; results stay in RRF order",
                 extra={"rerank_model": reranker.model, "error": type(exc).__name__},
             )
-            return None, "timeout" if isinstance(exc, TimeoutError) else "error"
+            # The client's own timeout (httpx, under the Cohere SDK) counts as a timeout
+            # too, like the parser's APITimeoutError.
+            timed_out = isinstance(exc, (TimeoutError, httpx.TimeoutException))
+            return None, "timeout" if timed_out else "error"
     return [(s.index, s.relevance) for s in scores], "ok"
 
 

@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import replace
 from decimal import Decimal
 
+import httpx
 import psycopg
 import pytest
 from langchain_core.embeddings import Embeddings
@@ -280,6 +281,7 @@ async def test_rerank_reorders_the_candidates(
         conn, "ograda brusilica", embedder=embedder, parser=None, reranker=reranker
     )
     assert result.reranked
+    assert result.rerank_outcome == "ok"
     assert result.hits[0].listing_id == BRUSILICA
     assert result.hits[0].relevance == 0.9
     query, documents = reranker.calls[0]
@@ -299,12 +301,20 @@ async def test_rerank_sees_up_to_the_candidates_and_returns_the_limit(
     assert len(result.hits) == 2
 
 
-@pytest.mark.parametrize("error", [RuntimeError("cohere down"), None])
+@pytest.mark.parametrize(
+    ("error", "outcome"),
+    [
+        (RuntimeError("cohere down"), "error"),
+        (None, "timeout"),  # slower than rerank_timeout
+        (httpx.ReadTimeout("read timed out"), "timeout"),  # the client's own timeout
+    ],
+)
 async def test_a_failed_or_slow_rerank_keeps_the_rrf_order(
     conn: psycopg.AsyncConnection,
     embedder: Embedder,
     caplog: pytest.LogCaptureFixture,
     error: Exception | None,
+    outcome: str,
 ) -> None:
     reranker = FakeReranker(favourite="brusilica", error=error)
     if error is None:
@@ -319,6 +329,7 @@ async def test_a_failed_or_slow_rerank_keeps_the_rrf_order(
             rerank_timeout=0.05,
         )
     assert not result.reranked
+    assert result.rerank_outcome == outcome
     hybrid = await search_hybrid(conn, "panelna ograda", embedder=embedder)
     assert ids(result.hits) == ids(hybrid)
     assert "rerank failed" in caplog.text
@@ -527,3 +538,28 @@ async def test_without_a_parser_the_outcome_is_skipped(
     result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=None, reranker=None)
     assert result.parse_outcome == "skipped"
     assert result.rerank_outcome == "skipped"
+
+
+async def test_a_failed_search_cancels_the_parse_and_raises_its_own_error(
+    conn: psycopg.AsyncConnection, embedder: Embedder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R-PE-2: no orphan Haiku call (or orphan SQL in evals) after retrieve() has raised,
+    # and the caller still sees the original exception, not an ExceptionGroup.
+    parse_cancelled = asyncio.Event()
+
+    async def broken_search(*args: object, **kwargs: object) -> list:
+        raise psycopg.OperationalError("database gone")
+
+    async def waits_forever(messages: Sequence[BaseMessage]) -> ParsedQuery:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            parse_cancelled.set()
+            raise
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(retrieve_module, "search_hybrid", broken_search)
+    parser = QueryParser(RunnableLambda(waits_forever), model_name="fake", timeout=5.0)
+    with pytest.raises(psycopg.OperationalError):
+        await retrieve(conn, "panelna ograda", embedder=embedder, parser=parser, reranker=None)
+    assert parse_cancelled.is_set()

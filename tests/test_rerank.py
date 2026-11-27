@@ -47,7 +47,7 @@ def fake_cohere(monkeypatch: pytest.MonkeyPatch) -> type[FakeAsyncClientV2]:
     return FakeAsyncClientV2
 
 
-def test_default_model_is_rerank_4_fast() -> None:
+def test_default_model_is_rerank_5_fast() -> None:
     assert DEFAULT_RERANK_MODEL == "rerank-v5.0-fast"
     assert Settings().rerank_model == DEFAULT_RERANK_MODEL
 
