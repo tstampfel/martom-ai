@@ -40,7 +40,7 @@ export default function App({ chatClient = defaultChatClient, bomRecalculator = 
   }
 
   return (
-    <AppShell onStartChat={startChat}>
+    <AppShell onStartChat={startChat} showPrivacyNotice={chat === null}>
       {chat === null ? (
         <StartScreen onStartChat={startChat} focusQuestion={hasChatted} />
       ) : (

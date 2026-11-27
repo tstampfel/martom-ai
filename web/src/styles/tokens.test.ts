@@ -18,6 +18,7 @@ const expected: Record<string, string> = {
   '--color-border': '#E2E2DE',
   '--color-border-strong': '#D5D6D1',
   '--color-on-dark': '#C9CDD4',
+  '--color-on-dark-muted': '#A9AEB6',
   '--color-on-brand': '#FFFFFF',
   '--color-success': '#157A3A',
   '--color-success-tint': '#DDF2E3',

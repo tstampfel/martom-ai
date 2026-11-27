@@ -162,6 +162,25 @@
   width: auto;
 }
 
+/* 90-day chat notice under the footer row, start screen only
+   (docs/mockups/web/1-start.html). */
+.privacy-notice {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--gutter) 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-on-dark-muted);
+}
+
+.privacy-notice__link {
+  text-decoration: underline;
+}
+
+.privacy-notice--narrow {
+  display: none;
+}
+
 /* ---- Phones: layout from docs/mockups/mobile/ ---- */
 
 @media (max-width: 767px) {
@@ -213,6 +232,23 @@
   .site-footer__inner--narrow {
     display: flex;
     padding: 14px var(--gutter) 18px;
+  }
+
+  /* docs/mockups/mobile/1-start.html: the notice sits 8 px under the hours row. */
+  .site-footer--notice .site-footer__inner--narrow {
+    padding-bottom: 8px;
+  }
+
+  .privacy-notice--wide {
+    display: none;
+  }
+
+  .privacy-notice--narrow {
+    display: block;
+    padding: 0 var(--gutter) 18px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--color-muted);
   }
 
   .site-footer__phone {
