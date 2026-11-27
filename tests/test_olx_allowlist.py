@@ -20,7 +20,7 @@ from martom.olx.allowlist import (
 
 POST = AllowlistedListing(id=81645615, category_id=876, name="Stup sa stopom 40x40 mm")
 TENSIONER = AllowlistedListing(id=18129143, category_id=1126, name="Španer")
-ALLOWLIST = Allowlist(listings=(POST, TENSIONER), covered_categories={881: "Ograde"})
+ALLOWLIST = Allowlist(listings=(POST, TENSIONER), fence_categories={881: "Ograde"})
 
 
 def row(listing_id: int, category_id: int) -> dict[str, object]:
@@ -38,7 +38,7 @@ def test_committed_allowlist_holds_the_three_fence_listings() -> None:
         18129143: 1126,  # tensioner (španer)
         48475613: 1188,  # wire holder
     }
-    assert allowlist.covered_categories == {881: "Ograde"}
+    assert allowlist.fence_categories == {881: "Ograde"}
     assert all(entry.name for entry in allowlist.listings)
 
 
@@ -56,7 +56,7 @@ def write(tmp_path: Path, text: str) -> Path:
 def test_duplicate_id_is_rejected(tmp_path: Path) -> None:
     path = write(
         tmp_path,
-        '[covered_categories]\n881 = "Ograde"\n'
+        '[fence_categories]\n881 = "Ograde"\n'
         '[[listing]]\nid = 1\ncategory_id = 2\nname = "a"\n'
         '[[listing]]\nid = 1\ncategory_id = 3\nname = "b"\n',
     )
@@ -74,24 +74,24 @@ def test_duplicate_id_is_rejected(tmp_path: Path) -> None:
     ],
 )
 def test_malformed_entry_is_rejected(tmp_path: Path, entry: str) -> None:
-    path = write(tmp_path, f'[covered_categories]\n881 = "Ograde"\n[[listing]]\n{entry}\n')
+    path = write(tmp_path, f'[fence_categories]\n881 = "Ograde"\n[[listing]]\n{entry}\n')
     with pytest.raises(ValueError):
         load_allowlist(path)
 
 
-def test_file_without_covered_categories_is_rejected(tmp_path: Path) -> None:
+def test_file_without_fence_categories_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[[listing]]\nid = 1\ncategory_id = 2\nname = "a"\n')
-    with pytest.raises(ValueError, match="covered_categories"):
+    with pytest.raises(ValueError, match="fence_categories"):
         load_allowlist(path)
 
 
 @pytest.mark.parametrize("table", ['abc = "Ograde"', '881 = ""', "881 = 5"])
-def test_malformed_covered_category_is_rejected(tmp_path: Path, table: str) -> None:
+def test_malformed_fence_category_is_rejected(tmp_path: Path, table: str) -> None:
     path = write(
         tmp_path,
-        f'[covered_categories]\n{table}\n[[listing]]\nid = 1\ncategory_id = 2\nname = "a"\n',
+        f'[fence_categories]\n{table}\n[[listing]]\nid = 1\ncategory_id = 2\nname = "a"\n',
     )
-    with pytest.raises(ValueError, match="covered_categories"):
+    with pytest.raises(ValueError, match="fence_categories"):
         load_allowlist(path)
 
 
@@ -107,24 +107,58 @@ def test_listings_in_their_recorded_category_raise_nothing() -> None:
     assert missing == []
 
 
-def test_listing_in_another_uncovered_category_warns_with_old_and_new_category() -> None:
+@pytest.mark.parametrize("category_id", [1188, 2091])
+def test_listing_seen_in_another_category_is_still_synced_and_only_logged(
+    caplog: pytest.LogCaptureFixture, category_id: int
+) -> None:
+    # The sync pages every category of the shop, so a listing it saw anywhere is synced
+    # (Tomislav: only a move OUT of all synced categories warns).
+    caplog.set_level(logging.INFO, logger="martom.olx.allowlist")
+
     warnings, missing = check_seen(
-        ALLOWLIST, {81645615: row(81645615, 876), 18129143: row(18129143, 2091)}
+        ALLOWLIST, {81645615: row(81645615, 876), 18129143: row(18129143, category_id)}
+    )
+
+    assert warnings == []
+    assert missing == []
+    [record] = [r for r in caplog.records if "18129143" in r.getMessage()]
+    assert record.levelno == logging.INFO
+    assert record.getMessage() == (
+        f"18129143 now found via category {category_id} (allowlisted in 1126); still synced"
+    )
+    assert record.event == "allowlist_listing_in_other_category"  # type: ignore[attr-defined]
+
+
+def test_seen_listing_without_a_category_is_a_sync_side_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # R1-2: a row with no (or a malformed) category_id is a data glitch, not a move: it is
+    # recorded as "recheck_failed" (never sent to Toni), not as "moved to None".
+    warnings, missing = check_seen(
+        ALLOWLIST,
+        {81645615: {"id": 81645615}, 18129143: {"id": 18129143, "category_id": "x"}},
     )
 
     assert warnings == [
         AllowlistWarning(
+            listing_id=81645615,
+            name="Stup sa stopom 40x40 mm",
+            reason="recheck_failed",
+            expected_category_id=876,
+            error="no_category_id",
+        ),
+        AllowlistWarning(
             listing_id=18129143,
             name="Španer",
-            reason="moved",
+            reason="recheck_failed",
             expected_category_id=1126,
-            category_id=2091,
-        )
+            error="no_category_id",
+        ),
     ]
     assert missing == []
 
 
-def test_listing_moved_into_a_covered_category_is_logged_not_warned(
+def test_listing_moved_into_a_fence_category_is_logged_as_redundant(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.INFO, logger="martom.olx.allowlist")
@@ -141,7 +175,7 @@ def test_listing_moved_into_a_covered_category_is_logged_not_warned(
     assert (
         record.getMessage() == "81645615 now found via category Ograde; allowlist entry redundant"
     )
-    assert record.event == "allowlist_listing_in_covered_category"  # type: ignore[attr-defined]
+    assert record.event == "allowlist_listing_in_fence_category"  # type: ignore[attr-defined]
 
 
 def test_listing_not_seen_is_returned_as_missing() -> None:

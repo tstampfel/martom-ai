@@ -1,23 +1,25 @@
 # Allowlisted OLX listings (#45): listings the fence BOM needs that sit outside "Ograde".
 #
-# The category sync already reaches them (it pages every category of the shop), so this
-# file adds no fetch path. It is a guard: after each nightly/full sync, `martom sync` checks
-# that every listing here was seen in the category recorded below. When one is missing
-# (404, inactive, another owner, or not on the listing pages) or shows up in a different
-# category that the sync doesn't cover for the fence, the run logs a warning and records it
-# in `sync_run.allowlist_warnings`; the next review run raises a `review_issue` for Toni.
-# A warning never fails the run and never deactivates anything.
+# The category sync already reaches them (it pages every category of the shop, plus a
+# whole-shop sweep), so this file adds no fetch path. It is a guard: after each
+# nightly/full sync, `martom sync` checks that the sync returned every listing here.
+# "Synced" means returned by the category sync this run, in any category. A listing
+# that wasn't returned gets one GET /listings/{id}: 404, inactive, another owner, or
+# still active (it moved out of every category the sync pages) is a warning, recorded in
+# `sync_run.allowlist_warnings`; the next review run raises a `review_issue` for Toni.
+# A listing returned in another category is only an INFO line. A warning never fails the
+# run and never deactivates anything.
 #
-# Toni (26 Nov 2026) will try to have OLX move these to "Ograde". A listing found in a
-# covered category (below) is only logged at info level. Keep the entry anyway: the list
-# is permanent, and the sync dedupes by id, so a listing is never stored twice.
+# Toni (26 Nov 2026) will try to have OLX move these to "Ograde". Keep the entries anyway:
+# the list is permanent, and the sync dedupes by id, so a listing is never stored twice.
 #
 # Every entry: id (the OLX listing id), category_id (the OLX category it was allowlisted
 # in), name (for the warning and Toni's review message; our words, not listing text).
 
-# Categories the category sync covers for the fence (id = name): an allowlisted listing
-# found in one of these is fine, and its entry is redundant (logged at info level).
-[covered_categories]
+# The fence categories (id = name). An allowlisted listing found in one of these logs
+# "<id> now found via category <name>; allowlist entry redundant" (INFO). They name the
+# category in that line; they don't decide any warning.
+[fence_categories]
 881 = "Ograde"
 
 [[listing]]

@@ -602,9 +602,11 @@ def check_allowlist_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[Revi
     """Issues from the latest sync's allowlist warnings (`sync_run.allowlist_warnings`).
 
     A fence listing outside "Ograde" that OLX no longer shows is high: the BOM needs it.
-    One that moved to a category the sync doesn't cover for the fence is medium. The
-    sync-side warnings ("not_seen", "recheck_failed") are for Tomislav, not Toni: they stay
-    in the sync log and raise nothing here. `name` comes from our own allowlist file.
+    One that is still active but that the sync found in none of the categories it pages
+    ("not_seen": it moved out of all of them) is medium. "recheck_failed" (a failed GET,
+    or a row without a category_id) is a sync-side glitch for Tomislav and raises nothing
+    here, and so does "moved", which runs before R1-3 could record. `name` comes from our
+    own allowlist file.
     """
     issues: list[ReviewIssue] = []
     for warning in warnings:
@@ -637,17 +639,17 @@ def check_allowlist_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[Revi
                     key=f"{listing_id}:gone",
                 )
             )
-        elif reason == "moved":
+        elif reason == "not_seen":
             issues.append(
                 ReviewIssue(
-                    "allowlist_listing_moved",
-                    listing_id,
+                    "allowlist_listing_not_synced",
+                    None,  # as above: the listing may not be stored
                     "medium",
-                    f"Oglas {listing_id} ({name}) premješten je iz kategorije {expected} u "
-                    f"kategoriju {category}, koja nije „Ograde“. Ako je to namjerno, javite "
-                    "Tomislavu da ažurira listu oglasa koje sinkronizacija posebno prati.",
+                    f"Oglas {listing_id} ({name}) treba za ogradu i aktivan je na OLX-u, ali ga "
+                    "sinkronizacija nije našla ni u jednoj kategoriji. Provjerite u kojoj je "
+                    "kategoriji oglas i javite Tomislavu.",
                     details,
-                    key=f"moved:{category}",
+                    key=f"{listing_id}:not_synced",
                 )
             )
     return issues

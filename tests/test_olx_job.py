@@ -41,7 +41,7 @@ DETAIL_FIXTURE = Path(__file__).parent / "fixtures" / "olx" / "listing_details.j
 ALLOWLISTED_FIXTURE = Path(__file__).parent / "fixtures" / "olx" / "allowlisted_listings.json"
 SHOP_ID = 17193
 LEAF, TOP = 881, 701
-NO_ALLOWLIST = Allowlist(listings=(), covered_categories={LEAF: "Ograde"})
+NO_ALLOWLIST = Allowlist(listings=(), fence_categories={LEAF: "Ograde"})
 # Fake start times for scheduled runs: one "night" per call, a day apart (R1-8 needs the
 # two guard trips of an auto-apply at least 12 h apart).
 FIRST_NIGHT = datetime(2026, 12, 1, 2, 0, tzinfo=UTC)
@@ -1348,7 +1348,7 @@ async def test_listing_with_a_new_owner_is_deactivated_as_not_martom(
 
 # One allowlisted listing in leaf 1126, for the tests that build their own case.
 TENSIONER = AllowlistedListing(id=18129143, category_id=1126, name="Španer")
-ONE_ALLOWLISTED = Allowlist(listings=(TENSIONER,), covered_categories={LEAF: "Ograde"})
+ONE_ALLOWLISTED = Allowlist(listings=(TENSIONER,), fence_categories={LEAF: "Ograde"})
 
 
 def shop_with_allowlisted_listings() -> FakeShop:
@@ -1388,13 +1388,13 @@ async def test_every_allowlisted_listing_is_synced_and_stored(
         assert stored[entry.id]["detail_hash"] is not None
     run = await last_run(conn)
     assert run["status"] == "succeeded"
-    # 81645615 is recorded in 881 (Ograde), not in 876: a move into a covered category is
+    # 81645615 is recorded in 881 (Ograde), not in 876: a move into a fence category is
     # an info line, not a warning.
     assert run["allowlist_warnings"] == []
     assert stats.allowlist_warnings == []
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert any(
-        getattr(r, "event", None) == "allowlist_listing_in_covered_category"
+        getattr(r, "event", None) == "allowlist_listing_in_fence_category"
         and r.listing_id == 81645615  # type: ignore[attr-defined]
         for r in caplog.records
     )
@@ -1403,16 +1403,21 @@ async def test_every_allowlisted_listing_is_synced_and_stored(
 async def test_allowlisted_listings_are_stored_once_though_several_targets_return_them(
     conn: psycopg.AsyncConnection,
 ) -> None:
+    # R1-1: the dedupe is in `sync_shop` (by listing id), before anything is stored, so
+    # check what a broken dedupe would change: the seen/new counts and one detail GET per id.
     server = shop_with_allowlisted_listings()
+    allowlisted = [entry.id for entry in load_allowlist().listings]
 
-    await sync(conn, server, allowlist=load_allowlist())
+    stats = await sync(conn, server, allowlist=load_allowlist())
 
-    count = await fetch_all(
-        conn,
-        "SELECT count(*) FROM olx_listing WHERE id = ANY(%s)",
-        [81645615, 18129143, 48475613],
-    )
-    assert count == [(3,)]
+    # The fake answers every listing-page query with every row, so leaf 881 and the
+    # whole-shop sweep both return each allowlisted listing: two copies per id.
+    page_requests = [r for r in server.requests if r.url.path == "/users/martom/listings"]
+    targets_paged = sum(1 for r in page_requests if r.url.params.get("per_page") != "1")
+    assert targets_paged >= 2
+    assert (stats.seen, stats.new) == (13, 13)  # 10 ordinary + 3 allowlisted, once each
+    details = server.detail_requests()
+    assert all(details.count(listing_id) == 1 for listing_id in allowlisted)
 
 
 async def test_seen_allowlisted_listing_is_not_fetched_again_by_the_guard(
@@ -1456,29 +1461,37 @@ async def test_allowlisted_listing_that_answers_404_is_warned_and_recorded(
     assert warning.event == "allowlist_warning"  # type: ignore[attr-defined]
 
 
-async def test_allowlisted_listing_in_another_category_warns_with_old_and_new(
+async def test_allowlisted_listing_seen_in_another_category_is_only_logged(
     conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
 ) -> None:
-    server = shop_with_tensioner_in(2091)
+    # R1-3: 1126 -> 1188 is still a category the sync pages, so the listing is synced.
+    server = shop_with_tensioner_in(1188)
 
-    with caplog.at_level(logging.WARNING, logger="martom.olx.job"):
+    with caplog.at_level(logging.INFO):
         await sync(conn, server, allowlist=ONE_ALLOWLISTED)
 
     run = await last_run(conn)
     assert run["status"] == "succeeded"
-    assert run["allowlist_warnings"] == [
-        {
-            "listing_id": 18129143,
-            "name": "Španer",
-            "reason": "moved",
-            "expected_category_id": 1126,
-            "category_id": 2091,
-            "error": None,
-        }
-    ]
+    assert run["allowlist_warnings"] == []
     assert (await listings(conn))[18129143]["active"] is True  # stored as usual
-    message = next(r.getMessage() for r in caplog.records if "18129143" in r.getMessage())
-    assert "1126" in message and "2091" in message
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(
+        r.getMessage() == "18129143 now found via category 1188 (allowlisted in 1126); still synced"
+        and r.levelno == logging.INFO
+        for r in caplog.records
+    )
+
+
+async def test_allowlisted_row_without_a_category_is_recorded_but_not_a_move(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = shop_with_tensioner_in(1126)
+    del server.recorded[TENSIONER.id]["category_id"]
+
+    await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    [warning] = (await last_run(conn))["allowlist_warnings"]
+    assert (warning["reason"], warning["error"]) == ("recheck_failed", "no_category_id")
 
 
 async def test_allowlisted_listing_moved_into_ograde_raises_no_warning(

@@ -752,31 +752,41 @@ def test_allowlisted_listing_of_another_owner_is_gone_too() -> None:
     assert issue.kind == "allowlist_listing_gone"
 
 
-def test_allowlisted_listing_moved_is_a_medium_issue_on_the_listing() -> None:
-    [issue] = check_allowlist_warnings([allowlist_warning("moved", category_id=2091)])
+def test_allowlisted_listing_the_sync_no_longer_finds_is_a_medium_issue() -> None:
+    # Active on OLX, but in no category the sync pages: the move OUT of all synced
+    # categories Tomislav wants warned about (R1-3).
+    [issue] = check_allowlist_warnings([allowlist_warning("not_seen")])
 
-    assert issue.kind == "allowlist_listing_moved"
+    assert issue.kind == "allowlist_listing_not_synced"
     assert issue.priority == "medium"
-    assert issue.listing_id == 18129143  # seen this run, so stored and linkable
-    assert "1126" in issue.message and "2091" in issue.message
+    assert issue.listing_id is None
     assert issue.details == {
         "allowlisted_listing_id": 18129143,
-        "reason": "moved",
+        "reason": "not_seen",
         "expected_category_id": 1126,
-        "category_id": 2091,
+        "category_id": None,
     }
+    assert "18129143" in issue.message
 
 
-def test_a_move_to_yet_another_category_is_a_new_issue() -> None:
-    [first] = check_allowlist_warnings([allowlist_warning("moved", category_id=2091)])
-    [second] = check_allowlist_warnings([allowlist_warning("moved", category_id=2092)])
+def test_not_synced_and_gone_are_different_issues() -> None:
+    [not_synced] = check_allowlist_warnings([allowlist_warning("not_seen")])
+    [gone] = check_allowlist_warnings([allowlist_warning("404")])
 
-    assert first.fingerprint != second.fingerprint
+    assert not_synced.fingerprint != gone.fingerprint
 
 
-def test_sync_side_warnings_raise_no_issue_for_toni() -> None:
-    # Toni can't fix a category sync that missed a listing, or a failed GET.
-    warnings = [allowlist_warning("not_seen"), allowlist_warning("recheck_failed", error="5xx")]
+def test_old_moved_warnings_raise_nothing() -> None:
+    # Runs recorded before R1-3 could hold "moved"; a seen listing is synced, so no issue.
+    assert check_allowlist_warnings([allowlist_warning("moved", category_id=2091)]) == []
+
+
+def test_failed_checks_raise_no_issue_for_toni() -> None:
+    # A failed GET or a row without a category is a sync-side glitch Toni can't fix.
+    warnings = [
+        allowlist_warning("recheck_failed", error="5xx"),
+        allowlist_warning("recheck_failed", error="no_category_id"),
+    ]
 
     assert check_allowlist_warnings(warnings) == []
 

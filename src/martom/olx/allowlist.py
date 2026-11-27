@@ -4,6 +4,13 @@
 allowlisted in. This module holds the plain parts: loading the file and comparing it to
 the rows the category sync saw (`check_seen`). The sync job (`martom.olx.job`) asks OLX
 about the ids the sync didn't see and records every warning on the `sync_run` row.
+
+"Synced" means the category sync returned the listing this run: it is among the rows of
+`SyncResult.listings` (Martom's own, deduped by id), whatever category OLX put it in. The
+sync pages every category the shop has plus a whole-shop sweep, so a listing that moved
+from one category to another is still synced; only a listing the sync didn't return at
+all (and that OLX says is gone, or still active) is a problem (Tomislav, 27 Nov 2026:
+"Only a move OUT of all synced categories should warn").
 """
 
 import logging
@@ -17,14 +24,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path(__file__).with_name("allowlist.toml")
 
-# moved:          seen, but outside its recorded category and outside the covered ones
-# 404 / inactive / not_martom: not seen, and GET /listings/{id} says it is gone
-# not_seen:       not seen, though GET /listings/{id} says it is active and Martom's
-#                 (the category sync missed it: the guard's main reason to exist)
-# recheck_failed: not seen, and GET /listings/{id} failed (network, timeout, 5xx, ...)
-type AllowlistReason = Literal[
-    "moved", "404", "inactive", "not_martom", "not_seen", "recheck_failed"
-]
+# 404 / inactive / not_martom: not synced, and GET /listings/{id} says it is gone
+# not_seen:       not synced, though GET /listings/{id} says it is active and Martom's:
+#                 it moved out of every category the sync pages (or the sync missed it)
+# recheck_failed: not checked: GET /listings/{id} failed (network, timeout, 5xx, ...), or
+#                 the synced row had no category_id (error "no_category_id")
+# (Runs before R1-3 could also record "moved"; the review check ignores it.)
+type AllowlistReason = Literal["404", "inactive", "not_martom", "not_seen", "recheck_failed"]
 
 
 @dataclass(frozen=True)
@@ -37,8 +43,9 @@ class AllowlistedListing:
 @dataclass(frozen=True)
 class Allowlist:
     listings: tuple[AllowlistedListing, ...]
-    # Category id -> name ("Ograde"): the categories the sync covers for the fence.
-    covered_categories: Mapping[int, str]
+    # Category id -> name ("Ograde"): the fence categories. Finding an allowlisted listing
+    # in one makes its entry redundant (an INFO line); they don't decide any warning.
+    fence_categories: Mapping[int, str]
 
 
 @dataclass(frozen=True)
@@ -49,7 +56,7 @@ class AllowlistWarning:
     name: str
     reason: AllowlistReason
     expected_category_id: int
-    category_id: int | None = None  # where the sync saw it; None when it wasn't seen
+    category_id: int | None = None  # always None now: a listing the sync saw never warns
     error: str | None = None  # recheck_failed: "timeout", "5xx", ...
 
     def as_json(self) -> dict[str, Any]:
@@ -68,15 +75,15 @@ def load_allowlist(path: Path = DEFAULT_PATH) -> Allowlist:
     with path.open("rb") as file:  # tomllib wants bytes
         data = tomllib.load(file)
 
-    covered = data.get("covered_categories")
-    if not isinstance(covered, dict) or not covered:
-        raise ValueError("allowlist: [covered_categories] must list at least one category")
-    covered_categories: dict[int, str] = {}
-    for key, name in covered.items():
+    fence = data.get("fence_categories")
+    if not isinstance(fence, dict) or not fence:
+        raise ValueError("allowlist: [fence_categories] must list at least one category")
+    fence_categories: dict[int, str] = {}
+    for key, name in fence.items():
         # TOML keys are always strings ("881"), so turn them back into ids.
         if not key.isdigit() or not isinstance(name, str) or not name.strip():
-            raise ValueError('allowlist: [covered_categories] entries are <id> = "<name>"')
-        covered_categories[int(key)] = name
+            raise ValueError('allowlist: [fence_categories] entries are <id> = "<name>"')
+        fence_categories[int(key)] = name
 
     listings: list[AllowlistedListing] = []
     for entry in data.get("listing", []):
@@ -89,7 +96,7 @@ def load_allowlist(path: Path = DEFAULT_PATH) -> Allowlist:
             raise ValueError(f"allowlist: duplicate listing id {listing_id}")
         listings.append(AllowlistedListing(listing_id, category_id, name))
 
-    return Allowlist(listings=tuple(listings), covered_categories=covered_categories)
+    return Allowlist(listings=tuple(listings), fence_categories=fence_categories)
 
 
 def _category(row: Mapping[str, Any]) -> int | None:
@@ -105,10 +112,12 @@ def check_seen(
 ) -> tuple[list[AllowlistWarning], list[int]]:
     """Compare the allowlist with the rows the category sync saw (listing id -> row).
 
-    Returns the "moved" warnings and the ids that weren't seen at all (the caller asks
-    OLX about those). A listing seen in a covered category ("Ograde") is the good case: it
-    is logged at info level, so Tomislav knows the entry is redundant, and raises nothing.
-    Only a listing outside its recorded category and every covered one warns.
+    Returns the warnings and the ids the sync didn't return (the caller asks OLX about
+    those). A listing the sync returned is synced, whatever its category: in its recorded
+    category it is silent; anywhere else it gets an INFO line (in a fence category,
+    "allowlist entry redundant", in Tomislav's words). The one warning here is a synced
+    row with no usable category_id: recorded as "recheck_failed" (never sent to Toni),
+    never as a move.
     """
     warnings: list[AllowlistWarning] = []
     missing: list[int] = []
@@ -120,29 +129,42 @@ def check_seen(
         category = _category(row)
         if category == entry.category_id:
             continue
-        if category is not None and category in allowlist.covered_categories:
+        if category is None:
+            warnings.append(
+                AllowlistWarning(
+                    listing_id=entry.id,
+                    name=entry.name,
+                    reason="recheck_failed",
+                    expected_category_id=entry.category_id,
+                    error="no_category_id",
+                )
+            )
+        elif category in allowlist.fence_categories:
             # Wording agreed with Tomislav (27 Nov 2026).
             logger.info(
                 "%d now found via category %s; allowlist entry redundant",
                 entry.id,
-                allowlist.covered_categories[category],
+                allowlist.fence_categories[category],
                 extra={
-                    "event": "allowlist_listing_in_covered_category",
+                    "event": "allowlist_listing_in_fence_category",
                     "listing_id": entry.id,
                     "category_id": category,
                     "expected_category_id": entry.category_id,
                 },
             )
-            continue
-        warnings.append(
-            AllowlistWarning(
-                listing_id=entry.id,
-                name=entry.name,
-                reason="moved",
-                expected_category_id=entry.category_id,
-                category_id=category,
+        else:
+            logger.info(
+                "%d now found via category %d (allowlisted in %d); still synced",
+                entry.id,
+                category,
+                entry.category_id,
+                extra={
+                    "event": "allowlist_listing_in_other_category",
+                    "listing_id": entry.id,
+                    "category_id": category,
+                    "expected_category_id": entry.category_id,
+                },
             )
-        )
     return warnings, missing
 
 

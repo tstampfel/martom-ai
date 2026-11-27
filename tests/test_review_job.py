@@ -365,12 +365,11 @@ async def test_a_sync_run_that_never_checked_the_allowlist_keeps_the_issue_open(
     assert await issues(conn) == [("allowlist_listing_gone", None, "high", "open")]
 
 
-async def test_allowlist_moved_issue_points_at_the_stored_listing(
+async def test_allowlisted_listing_the_sync_missed_raises_an_issue_for_toni(
     conn: psycopg.AsyncConnection, manual_toml: Path
 ) -> None:
-    await add_listing(conn, 18129143, title="ŠPANER")
-    await add_sync_run(conn, [GONE | {"reason": "moved", "category_id": 2091}])
+    await add_sync_run(conn, [GONE | {"reason": "not_seen"}])
 
     await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
 
-    assert ("allowlist_listing_moved", 18129143, "medium", "open") in await issues(conn)
+    assert await issues(conn) == [("allowlist_listing_not_synced", None, "medium", "open")]

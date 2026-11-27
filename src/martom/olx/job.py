@@ -19,9 +19,10 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
      Above that the run deactivates none, logs an ERROR and records the skip, with the
      ids, in `sync_run` (`deactivation_skipped`, `skipped_listing_ids`).
 6. Allowlist guard (#45, `guard_allowlist`): every listing in `olx/allowlist.toml` must
-   have been seen in its recorded category or a covered one ("Ograde"). A missing one
-   gets one GET /listings/{id}. Each problem is logged as a warning and recorded in
-   `sync_run.allowlist_warnings`; it never changes the status and deactivates nothing.
+   have been returned by the category sync this run, in any category ("synced"). One
+   that wasn't gets one GET /listings/{id}. Each problem is logged as a warning and
+   recorded in `sync_run.allowlist_warnings`; it never changes the status and
+   deactivates nothing.
 7. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
    'partial' below 100% coverage or when a GET still failed after its retries (those ids
    go in `failed_listing_ids`, and the next run fetches and re-checks them first),
@@ -569,11 +570,12 @@ async def guard_allowlist(
 ) -> list[AllowlistWarning]:
     """Check the allowlisted listings against what the category sync saw (#45).
 
-    A listing seen outside its recorded category and outside the covered ones is "moved".
-    A listing not seen at all gets one GET /listings/{id} through the rate-limited client
-    (the same re-check as deactivation candidates): 404, "inactive" or "not_martom" when
-    OLX says it is gone, "not_seen" when it is still active (the category sync missed it),
-    "recheck_failed" when the GET failed. Every warning is logged; none raises, so the run
+    A listing the sync returned is synced in whatever category (`check_seen` only logs a
+    move at INFO; a row without a category_id is "recheck_failed"). A listing it didn't
+    return gets one GET /listings/{id} through the rate-limited client (the same
+    re-check as deactivation candidates): 404, "inactive" or "not_martom" when OLX says
+    it is gone, "not_seen" when it is still active (it left every category the sync
+    pages), "recheck_failed" when the GET failed. Every warning is logged; none raises, so the run
     goes on. Only `OlxRateLimitAbortError` propagates: OLX stopped the whole run.
     """
     warnings, missing = check_seen(allowlist, seen)
@@ -626,13 +628,10 @@ async def guard_allowlist(
 
 def _describe(warning: AllowlistWarning) -> str:
     match warning.reason:
-        case "moved":
-            return (
-                f"moved from category {warning.expected_category_id} to "
-                f"{warning.category_id}, which the sync doesn't cover"
-            )
         case "not_seen":
             return "not on the listing pages, though OLX says it is still active"
+        case "recheck_failed" if warning.error == "no_category_id":
+            return "on the listing pages, but the row has no category_id (not checked)"
         case "recheck_failed":
             return f"not on the listing pages, and GET /listings failed ({warning.error})"
         case _:  # 404, inactive, not_martom
