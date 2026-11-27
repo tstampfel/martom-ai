@@ -6,7 +6,7 @@
 # Monday 01:00 is the night from Sunday to Monday, so the weekly full re-fetch runs on
 # Sunday night right after that night's nightly chain, inside the same task. `martom sync`
 # has no lock of its own; running both in one task, one step after the other, is what
-# keeps the full run from overlapping the nightly one. Each task is killed after 20 h
+# keeps the full run from overlapping the nightly one. Each task is killed after 16 h
 # (job_timeout_seconds in ecs.tf), so it can't run into the next night's task either.
 # --scheduled marks the runs that count toward the 10%-guard auto-apply streak (CLAUDE.md,
 # `martom sync`).
