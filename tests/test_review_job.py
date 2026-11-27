@@ -313,12 +313,18 @@ async def test_duplicate_resolved_because_a_higher_copy_went_inactive(
 # --- allowlist warnings from the sync (#45) --------------------------------------------------
 
 
-async def add_sync_run(conn: psycopg.AsyncConnection, warnings: list[dict] | None) -> None:
-    """A finished nightly run with `allowlist_warnings` (None: the guard didn't run)."""
+async def add_sync_run(
+    conn: psycopg.AsyncConnection, warnings: list[dict] | None, *, coverage: float = 1.0
+) -> None:
+    """A finished nightly run with `allowlist_warnings` (None: the guard didn't run).
+
+    `coverage` below 1 makes it a partial run (the sync didn't page every listing).
+    """
+    status = "succeeded" if coverage >= 1 else "partial"
     await conn.execute(
-        "INSERT INTO sync_run (kind, status, finished_at, allowlist_warnings)"
-        " VALUES ('nightly', 'succeeded', now(), %s)",
-        (None if warnings is None else json.dumps(warnings),),
+        "INSERT INTO sync_run (kind, status, finished_at, coverage, allowlist_warnings)"
+        " VALUES ('nightly', %s, now(), %s, %s)",
+        (status, coverage, None if warnings is None else json.dumps(warnings)),
     )
 
 
@@ -373,3 +379,68 @@ async def test_allowlisted_listing_the_sync_missed_raises_an_issue_for_toni(
     await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
 
     assert await issues(conn) == [("allowlist_listing_not_synced", None, "medium", "open")]
+
+
+NOT_SEEN = GONE | {"reason": "not_seen"}
+
+
+async def test_not_seen_from_a_partial_run_raises_no_issue_for_toni(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    # R1A-1: below 100% coverage the sync may simply not have reached the listing's page,
+    # so "in no category" isn't proven (the same rule as deactivation).
+    await add_sync_run(conn, [NOT_SEEN], coverage=0.98)
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == []
+
+
+async def test_gone_from_a_partial_run_still_raises_an_issue(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    # A 404 rests on a GET that answered, not on the paging, so coverage doesn't matter.
+    await add_sync_run(conn, [GONE], coverage=0.98)
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_gone", None, "high", "open")]
+
+
+async def test_open_not_synced_issue_stays_open_after_a_partial_run(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_sync_run(conn, [NOT_SEEN])  # 100% coverage: the issue is raised
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    # A partial run that didn't find the listing either way says nothing about it.
+    await add_sync_run(conn, [], coverage=0.98)
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_not_synced", None, "medium", "open")]
+
+
+async def test_not_synced_issue_is_resolved_by_the_next_full_coverage_run(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_sync_run(conn, [NOT_SEEN])
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    await add_sync_run(conn, [], coverage=0.98)
+    await add_sync_run(conn, [])  # 100% coverage, the listing is back
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_not_synced", None, "medium", "resolved")]
+
+
+async def test_gone_issue_follows_the_latest_run_even_when_partial(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_sync_run(conn, [GONE])
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    # A partial run that saw the listing (or got a 200 for it) has the evidence.
+    await add_sync_run(conn, [], coverage=0.98)
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_gone", None, "high", "resolved")]

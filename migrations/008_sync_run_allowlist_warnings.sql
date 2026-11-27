@@ -9,6 +9,7 @@
 --         "category_id", "error"}; reason is '404', 'inactive', 'not_martom', 'not_seen'
 --         or 'recheck_failed' (src/martom/olx/allowlist.py)
 --
--- A warning never changes the run's status. The review checks (src/martom/review/) read
--- the latest non-NULL value and raise a review_issue for Toni.
+-- A warning never changes the run's status. The review checks (src/martom/review/) raise
+-- review_issues for Toni from the latest non-NULL value; 'not_seen' only from a run with
+-- coverage >= 1 (load_allowlist_warnings in src/martom/review/store.py).
 ALTER TABLE sync_run ADD COLUMN IF NOT EXISTS allowlist_warnings jsonb;

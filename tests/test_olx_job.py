@@ -11,7 +11,7 @@ import itertools
 import json
 import logging
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ from martom.olx.job import (
     run_outcome,
     run_sync,
 )
+from martom.review.job import run_review_checks
 
 pytestmark = pytest.mark.anyio
 
@@ -1523,6 +1524,44 @@ async def test_allowlisted_listing_missing_from_the_pages_but_active_is_not_seen
 
     [warning] = (await last_run(conn))["allowlist_warnings"]
     assert warning["reason"] == "not_seen"
+
+
+async def allowlist_issue_kinds(conn: psycopg.AsyncConnection) -> list[str]:
+    """Run the review checks (as `martom extract` does) and return the allowlist issues."""
+    await run_review_checks(conn, today=date(2026, 11, 27))
+    rows = await fetch_all(
+        conn, "SELECT kind FROM review_issue WHERE kind LIKE 'allowlist%%' AND status = 'open'"
+    )
+    return [row[0] for row in rows]
+
+
+async def test_not_seen_on_a_partial_coverage_run_is_recorded_but_not_raised_to_toni(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # R1A-1: the sync stopped short of 100% (a listing it never reached), so a listing
+    # that OLX says is active may just have been on a page it didn't get to.
+    server = FakeShop(ten_listings())
+    server.hidden = 1
+    server.off_list = {TENSIONER.id: "active"}
+
+    stats = await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    assert stats.status == "partial"
+    [warning] = (await last_run(conn))["allowlist_warnings"]
+    assert warning["reason"] == "not_seen"  # still recorded and logged for Tomislav
+    assert await allowlist_issue_kinds(conn) == []
+
+
+async def test_not_seen_on_a_full_coverage_run_is_raised_to_toni(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    server.off_list = {TENSIONER.id: "active"}
+
+    stats = await sync(conn, server, allowlist=ONE_ALLOWLISTED)
+
+    assert stats.coverage == 1
+    assert await allowlist_issue_kinds(conn) == ["allowlist_listing_not_synced"]
 
 
 @pytest.mark.parametrize(("status", "reason"), [("inactive", "inactive"), ("sold", "inactive")])

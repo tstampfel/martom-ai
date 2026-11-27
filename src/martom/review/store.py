@@ -85,19 +85,46 @@ async def load_check_listings(conn: psycopg.AsyncConnection) -> list[CheckListin
 
 # The allowlist warnings of the latest nightly/full sync that ran the guard (#45). NULL
 # means the guard didn't run (migration 008), so such a run is skipped: it says nothing.
-_ALLOWLIST_WARNINGS = """
+_LATEST_ALLOWLIST_WARNINGS = """
 SELECT allowlist_warnings FROM sync_run
 WHERE kind IN ('nightly', 'full') AND allowlist_warnings IS NOT NULL
 ORDER BY id DESC
 LIMIT 1
 """
+# The same, from the latest run that paged every listing (coverage 100%).
+_LATEST_COMPLETE_ALLOWLIST_WARNINGS = """
+SELECT allowlist_warnings FROM sync_run
+WHERE kind IN ('nightly', 'full') AND allowlist_warnings IS NOT NULL AND coverage >= 1
+ORDER BY id DESC
+LIMIT 1
+"""
+
+
+async def _latest_allowlist_warnings(conn: psycopg.AsyncConnection, query: str) -> list[Any]:
+    cursor = await conn.execute(query)  # type: ignore[arg-type]
+    row = await cursor.fetchone()
+    return list(row[0]) if row is not None and isinstance(row[0], list) else []
+
+
+def _is_not_seen(warning: object) -> bool:
+    return isinstance(warning, dict) and warning.get("reason") == "not_seen"
 
 
 async def load_allowlist_warnings(conn: psycopg.AsyncConnection) -> list[Any]:
-    """The latest sync's allowlist warnings; empty when no sync has checked yet."""
-    cursor = await conn.execute(_ALLOWLIST_WARNINGS)
-    row = await cursor.fetchone()
-    return list(row[0]) if row is not None and isinstance(row[0], list) else []
+    """The allowlist warnings the review raises issues from; empty before any check.
+
+    Two sources, because the two kinds of evidence differ (R1A-1):
+
+    - "not_seen" (the sync found the listing in no category) is only proven by a run that
+      paged every listing, so it comes from the latest run with 100% coverage, the same
+      rule as deactivation. A partial run neither raises it nor resolves an open one.
+    - Everything else (404, inactive, not_martom from a GET that answered; recheck_failed,
+      which raises nothing) comes from the latest run that ran the guard, whatever its
+      coverage: a GET doesn't depend on the paging.
+    """
+    latest = await _latest_allowlist_warnings(conn, _LATEST_ALLOWLIST_WARNINGS)
+    complete = await _latest_allowlist_warnings(conn, _LATEST_COMPLETE_ALLOWLIST_WARNINGS)
+    return [w for w in latest if not _is_not_seen(w)] + [w for w in complete if _is_not_seen(w)]
 
 
 # A problem found again: refresh the text and last_seen_at. A resolved issue that is back

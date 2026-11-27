@@ -603,9 +603,11 @@ def check_allowlist_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[Revi
 
     A fence listing outside "Ograde" that OLX no longer shows is high: the BOM needs it.
     One that is still active but that the sync found in none of the categories it pages
-    ("not_seen": it moved out of all of them) is medium. "recheck_failed" (a failed GET,
-    or a row without a category_id) is a sync-side glitch for Tomislav and raises nothing
-    here, and so does "moved", which runs before R1-3 could record. `name` comes from our
+    ("not_seen": it moved out of all of them) is medium; the caller passes "not_seen" only
+    from a run with 100% coverage (`review.store.load_allowlist_warnings`).
+    "recheck_failed" (a failed GET, or a row without a category_id) is a sync-side glitch
+    for Tomislav and raises nothing here, and so does "moved", which runs before R1-3
+    could record. `name` comes from our
     own allowlist file.
     """
     issues: list[ReviewIssue] = []
