@@ -185,7 +185,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if library_migrations:
             print(f"checkpointer: applied {library_migrations} library migrations")
+        # The search index of manual_products.toml (#112). The migrate task runs on every
+        # deploy, so a changed price reaches the search price filter at once instead of at
+        # the next nightly `martom embed` (R1-1). Prints only when it changed something.
+        try:
+            manual = asyncio.run(_sync_manual_if_indexed(database_url))
+        except (OSError, ValueError, psycopg.Error) as exc:
+            print(f"manual products sync failed: {exc}", file=sys.stderr)
+            return 1
+        if manual is not None and (manual.inserted or manual.updated or manual.deleted):
+            print(_manual_sync_line(manual))
     return 0
+
+
+async def _sync_manual_if_indexed(database_url: str) -> ManualSyncStats | None:
+    """Sync manual_products.toml into `manual_product`; None when the table doesn't exist
+    (a migrations folder without 009)."""
+    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
+        cursor = await conn.execute("SELECT to_regclass('manual_product') IS NOT NULL")
+        row = await cursor.fetchone()
+        if not (row and row[0]):
+            return None
+        return await sync_manual_products(conn, load_manual_products(MANUAL_PRODUCTS_PATH))
 
 
 def run_load_knowledge_command(directory: Path) -> int:
@@ -243,8 +264,9 @@ def run_embed_command() -> int:
 
     Syncs manual_products.toml into `manual_product` first (#112), so the nightly chain
     (sync -> extract -> embed) keeps the manual products searchable after a deploy changed
-    the file. Rows embedded before a failure stay saved, so running it again continues from
-    there.
+    the file. An invalid TOML (or a failed sync) is logged and the products and knowledge
+    chunks are still embedded, then the command exits 1 (R1-2). Rows embedded before a
+    failure stay saved, so running it again continues from there.
     """
     try:
         settings = Settings()
@@ -254,11 +276,18 @@ def run_embed_command() -> int:
         return 1
     configure_logging(settings.log_level)
 
-    async def embed() -> tuple[ManualSyncStats, EmbedStats]:
+    async def embed() -> tuple[ManualSyncStats | None, EmbedStats]:
         async with await psycopg.AsyncConnection.connect(
             settings.database_url, autocommit=True
         ) as conn:
-            manual = await sync_manual_products(conn, load_manual_products())
+            manual: ManualSyncStats | None = None
+            try:
+                products = load_manual_products(MANUAL_PRODUCTS_PATH)
+                manual = await sync_manual_products(conn, products)
+            except (OSError, ValueError, psycopg.Error):
+                # Never let the manual index stop the catalogue's embedding; the rows
+                # already in manual_product are still embedded below.
+                logger.exception("manual products sync failed; embedding the rest")
             return manual, await run_embedding(conn, embedder)
 
     try:
@@ -267,7 +296,7 @@ def run_embed_command() -> int:
         logger.exception("embedding run crashed")
         return 1
     print(
-        f"{_manual_sync_line(manual)}\n"
+        f"{_manual_sync_line(manual) if manual else 'manual products: sync failed'}\n"
         f"model {embedder.model}\n"
         f"products: embedded {stats.products_embedded}, unchanged {stats.products_unchanged}\n"
         f"knowledge chunks: embedded {stats.chunks_embedded}, "
@@ -275,7 +304,7 @@ def run_embed_command() -> int:
         f"manual products: embedded {stats.manual_embedded}, "
         f"unchanged {stats.manual_unchanged}"
     )
-    return 0
+    return 0 if manual else 1
 
 
 def run_report_command() -> int:
