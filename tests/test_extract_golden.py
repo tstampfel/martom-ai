@@ -24,7 +24,7 @@ from langchain_core.runnables import RunnableLambda
 
 from martom.extract.extractor import Extractor
 from martom.extract.job import build_record
-from martom.extract.prompt import ListingInput
+from martom.extract.prompt import ListingInput, listing_message
 from martom.extract.schema import ExtractedProduct
 from martom.extract.store import ProductRecord
 from martom.olx.detail import ListingDetail
@@ -76,8 +76,9 @@ async def records() -> dict[int, ProductRecord]:
 
 def test_the_golden_set_has_10_real_listings_fences_and_other_products() -> None:
     assert len(LISTINGS) == 10
+    # The product_type values exactly as the recorded Haiku replies write them.
     types = {RESPONSES[str(i)]["product_type"] for i in LISTINGS}
-    assert {"panelna ograda", "stup za ogradu", "farmer pletivo"} <= types  # fences
+    assert {"panelna ograda", "t stup za ogradu", "farmer pletivo"} <= types  # fences
     assert {"kutna brusilica", "tiplo", "katanac"} <= types  # other products
 
 
@@ -90,9 +91,10 @@ async def test_records_match_golden(records: dict[int, ProductRecord]) -> None:
 async def test_variant_values_are_copied_verbatim_from_the_listing(
     records: dict[int, ProductRecord],
 ) -> None:
-    # Extraction copies, never fixes: every value must appear in the listing as written.
+    # Extraction copies, never fixes: every value must appear, as written, in what the
+    # model was shown (title, OLX fields such as "cijena na OLX-u: 57,50 KM", description).
     for listing_id, record in records.items():
-        source = f"{LISTINGS[listing_id].title}\n{LISTINGS[listing_id].description_text}"
+        source = listing_message(LISTINGS[listing_id])
         for variant in record.variants:
             for value in (variant.label, variant.height, variant.length, variant.colour,
                           variant.size, variant.price_text):  # fmt: skip
@@ -113,10 +115,13 @@ async def test_key_facts(records: dict[int, ProductRecord]) -> None:
 
     # Nylofor lists sizes without any price ("Na upit"): every price stays empty.
     assert all(v.price is None for v in records[1199211].variants)
-    # One grinder, no variants.
-    assert records[52889522].variants == []
+    # One grinder: one variant, size and price copied from the description
+    # ("Prečnik diska: 125 mm", "CIJENA: ➡️ 89,00 KM").
+    [grinder] = records[52889522].variants
+    assert (grinder.size, grinder.price_text, str(grinder.price)) == ("125 mm", "89,00 KM", "89.00")
     # Typos are kept: "FISHER" stays in the label.
-    assert records[31905913].variants[3].label == "TIPLO FISHER FIŠER SX12 - 0,75KM"
+    assert records[31905913].variants[3].label == "TIPLO FISHER FIŠER SX12"
+    assert records[31905913].variants[3].price_text == "0,75KM"
     assert str(records[31905913].variants[0].price) == "0.15"
     # search_text: facts plus the stup/stub synonym, no marketing text.
     assert "stub" in records[59473597].search_text

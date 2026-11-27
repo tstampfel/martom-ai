@@ -1,5 +1,5 @@
 {
-  "_about": "MODIFIED, not a real listing state. Listing 63996799's extracted product from tests/fixtures/extraction/responses.json (a hand-written model reply, not yet recorded from claude-haiku-5-5) with two variants added after the panels to reproduce the 26 Nov 2026 audit findings (docs/PLAN.md, 'What we learned'): an impossible size 'PANEL 153 X 2500CM' and a height (173 cm) listed without a price. The real listing as recorded on 26 Nov 2026 no longer has these errors. Used by tests/test_review_fixtures.py for the M2-2 done-when test.",
+  "_about": "MODIFIED, not a real listing state. Listing 63996799's extracted product from tests/fixtures/extraction/responses.json (built from the hand-written model reply that came before the 27 Nov 2026 Haiku recording) with two variants added after the panels to reproduce the 26 Nov 2026 audit findings (docs/PLAN.md, 'What we learned'): an impossible size 'PANEL 153 X 2500CM' and a height (173 cm) listed without a price. The real listing as recorded on 26 Nov 2026 no longer has these errors. Used by tests/test_review_fixtures.py for the M2-2 done-when test.",
   "listing_id": 63996799,
   "product": {
     "product_type": "panelna ograda",
