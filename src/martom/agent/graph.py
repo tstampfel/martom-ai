@@ -34,7 +34,8 @@ Every node and model call is a LangSmith run when LANGSMITH_TRACING is on: LangG
 traces each node under its name, and each model call carries a run name and tags.
 
 The checkpointer is injected (`build_graph(..., checkpointer=...)`): tests use
-InMemorySaver, the API gets the Postgres one from #124. With a checkpointer, each
+InMemorySaver, the API opens the graph with the Postgres one through
+`agent.factory.open_agent_graph` (#124). With a checkpointer, each
 conversation is a `thread_id` and the fence spec and messages survive between requests.
 Output for the SSE endpoint (#21): `answer`, `chips`, `bom` (send it when `bom_changed`),
 `cart` (this turn's additions), `hits`, `contact_martom` (offer the WhatsApp button with

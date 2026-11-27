@@ -10,15 +10,23 @@ non-default sampling values).
 
 Without ANTHROPIC_API_KEY there is no advisor: `make_agent_models` returns None and the
 caller (#21) answers with an error instead of guessing.
+
+`open_agent_graph` compiles the graph with the Postgres checkpointer (#124), so a
+conversation survives an API restart. Tests compile with `InMemorySaver` instead.
 """
+
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import psycopg
 from langchain_anthropic import ChatAnthropic
+from langgraph.graph.state import CompiledStateGraph
 
-from martom.agent.graph import AgentModels
+from martom.agent.graph import AgentDeps, AgentModels, build_graph
 from martom.agent.prompts import Grade, Rewrite
 from martom.agent.tools import Retriever
 from martom.agent.understand import Understanding
+from martom.checkpointer import open_checkpointer
 from martom.embeddings import Embedder
 from martom.search.query_parser import QueryParser
 from martom.search.rerank import Reranker
@@ -75,3 +83,19 @@ def make_retriever(
         return await retrieve(conn, query, embedder=embedder, parser=parser, reranker=reranker)
 
     return run
+
+
+@asynccontextmanager
+async def open_agent_graph(
+    deps: AgentDeps, database_url: str
+) -> AsyncGenerator[CompiledStateGraph]:
+    """Yield the advisor graph with the Postgres checkpointer; closes its pool on exit.
+
+    Open it once per process (FastAPI's lifespan, #21) and call the graph with
+    `{"configurable": {"thread_id": ...}}`: each thread's messages and fence spec are
+    loaded from Postgres, so a new process continues the same conversation. It never
+    creates the checkpointer tables; `martom migrate` does (CLAUDE.md, "The one
+    exception"), and a database without them fails on the first turn.
+    """
+    async with open_checkpointer(database_url) as checkpointer:
+        yield build_graph(deps, checkpointer=checkpointer)
