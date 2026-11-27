@@ -80,8 +80,9 @@ _SUGGESTION_NOUN = re.compile(
 )
 MAX_SUGGESTIONS = 10
 
-# Bosnian number words (R2-2), with and without diacritics. "sto" alone is left out: without
-# diacritics it is also "što" ("sto se tice ..."); "stotinu" and "dvjesto" ... are kept.
+# Bosnian number words (R2-2), with and without diacritics. "sto" is not in the table: without
+# diacritics it is also "što" ("sto se tice ..."), so it counts as 100 only when a currency
+# or another number word follows it ("sto KM", "sto pedeset KM"; `_sto_is_number`, R3-2).
 _WORD_VALUES: dict[str, int] = {
     **dict.fromkeys(["jedan", "jedna", "jedno", "jednu", "jednog", "jednom", "jednoj"], 1),
     **dict.fromkeys(["dva", "dvije", "dvoje", "dvaju"], 2),
@@ -124,6 +125,10 @@ _THOUSAND_WORDS = frozenset(
     ["hiljadu", "hiljade", "hiljada", "tisuću", "tisucu", "tisuće", "tisuce", "tisuća", "tisuca"]
 )
 _WORD = re.compile(r"\w+")
+# A currency after a vague amount ("pedesetak KM", "stotinjak maraka", "pola KM", "par
+# maraka", "nekoliko KM"): a price no tool gave (R3-2). A currency after any other word,
+# as in "Sve cijene su u KM.", is not a price.
+_VAGUE_PRICE = re.compile(rf"\b(?:\w+ak|pola|par|nekoliko|koliko)\s+{_CURRENCY}", re.IGNORECASE)
 
 
 class Facts(BaseModel):
@@ -271,6 +276,8 @@ def check_grounding(
                 f"number '{match.group(0)}' is not in any tool result or customer message"
             )
     problems.extend(_check_number_words(text, known_prices, allowed))
+    for match in _VAGUE_PRICE.finditer(text):
+        problems.append(f"price '{match.group(0)}' is not an amount from any tool result")
     problems.extend(_priced_never_priced(text, facts.unpriced_names))
     return GroundingResult(problems)
 
@@ -283,14 +290,32 @@ class _WordNumber:
     words: int
 
 
+def _sto_is_number(
+    text: str, tokens: list[re.Match[str]], index: int, token: re.Match[str]
+) -> bool:
+    """ "sto" is 100 before a currency or another number word, never in "sto se tiče"."""
+    if token.group(0).lower() != "sto":
+        return False
+    rest = text[token.end() :]
+    if re.match(rf"\s+{_CURRENCY}", rest, re.IGNORECASE):
+        return True
+    following = tokens[index + 1] if index + 1 < len(tokens) else None
+    return (
+        following is not None
+        and not text[token.end() : following.start()].strip()
+        and following.group(0).lower() in (_WORD_VALUES.keys() | _THOUSAND_WORDS)
+    )
+
+
 def word_numbers(text: str) -> list[_WordNumber]:
     """Runs of Bosnian number words with their value: "četrdeset i devet" -> 49."""
     tokens = list(_WORD.finditer(text))
+    values = {i: 100 for i, token in enumerate(tokens) if _sto_is_number(text, tokens, i, token)}
     found: list[_WordNumber] = []
     index = 0
     while index < len(tokens):
         word = tokens[index].group(0).lower()
-        if word not in _WORD_VALUES and word not in _THOUSAND_WORDS:
+        if word not in _WORD_VALUES and word not in _THOUSAND_WORDS and index not in values:
             index += 1
             continue
         start, total, current, count = tokens[index].start(), 0, 0, 0
@@ -306,8 +331,8 @@ def word_numbers(text: str) -> list[_WordNumber]:
                 if total:
                     break
                 total, current, last = (current or 1) * 1000, 0, 1000
-            elif word in _WORD_VALUES:
-                value = _WORD_VALUES[word]
+            elif word in _WORD_VALUES or index in values:
+                value = values.get(index) or _WORD_VALUES[word]
                 if last is not None and value >= last:
                     break
                 current, last = current + value, value
@@ -400,9 +425,11 @@ def _unique[T](items: list[T]) -> list[T]:
 
 
 # Numbers in the advisor's own fixed texts (phone groups, "10–15 dana", RAL 7016 ...).
+# Only the public text constants: never __file__, __cached__ or __doc__, whose numbers
+# depend on where the app is installed (R3-1).
 _COPY_NUMBERS: frozenset[Decimal] = frozenset(
     number
-    for value in vars(copy).values()
-    if isinstance(value, str)
+    for name, value in vars(copy).items()
+    if name.isupper() and isinstance(value, str)
     for number in numbers_in(value)
 )

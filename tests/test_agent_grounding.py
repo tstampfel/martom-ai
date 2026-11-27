@@ -4,6 +4,7 @@ import pytest
 
 # ruff: noqa: RUF001
 from martom.agent.grounding import (
+    _COPY_NUMBERS,
     Facts,
     check_grounding,
     facts_from_output,
@@ -206,7 +207,7 @@ def test_grounded_number_words_pass(text: str) -> None:
 
 def test_word_numbers_values() -> None:
     text = "četrdeset i devet, dvije hiljade, dva tri, sto dvadeset, sto se tice"
-    assert [n.value for n in word_numbers(text)] == [49, 2000, 2, 3, 20]
+    assert [n.value for n in word_numbers(text)] == [49, 2000, 2, 3, 120]
 
 
 def test_customer_number_words_are_known() -> None:
@@ -215,8 +216,53 @@ def test_customer_number_words_are_known() -> None:
 
 # R2-3: a numbered recommendation list is not a set of quantities.
 def test_numbered_list_passes() -> None:
+    # The "3" of "3D" is a Retrieve-hit title number, as in the graph test.
+    found = facts().merge(Facts(numbers=["3"]))
     text = "Imam dva prijedloga:\n1. PANEL 3D OGRADA\n2. Stup s pločom\n3. PVC kopče"
+    assert check_grounding(text, found).ok, check_grounding(text, found).problems
+
+
+def test_copy_numbers_come_from_the_copy_texts_only() -> None:
+    # R3-1: the module path (worktree digits, cpython-312) and docstring ("#20") add nothing.
+    assert {int(n) for n in _COPY_NUMBERS} == {0, 10, 15, 36, 427, 651, 6005, 7016}
+
+
+@pytest.mark.parametrize(
+    "text", ["Trebate 20 panela.", "Trebate dvadeset panela.", "Trebate 312 stubova."]
+)
+def test_path_and_docstring_numbers_are_not_allowed(text: str) -> None:
+    assert not check_grounding(text, Facts()).ok
+
+
+# R3-2: invented prices in words the parser used to skip.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Panel košta sto KM.",
+        "Panel košta sto pedeset KM.",
+        "Panel košta pedesetak KM.",
+        "Cijena je oko stotinjak maraka.",
+        "Košta pola KM po komadu.",
+        "To je par maraka.",
+        "Košta nekoliko KM.",
+    ],
+)
+def test_vague_or_sto_prices_fail(text: str) -> None:
+    found = facts().merge(Facts(prices=["50"]))
+    assert not check_grounding(text, found).ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Sve cijene su u KM.", "Sto se tiče boje, imamo antracit.", "Panel je sto posto pocinčan."],
+)
+def test_currency_or_sto_without_a_price_passes(text: str) -> None:
     assert check_grounding(text, facts()).ok, check_grounding(text, facts()).problems
+
+
+def test_sto_with_a_tool_price_passes() -> None:
+    found = facts().merge(Facts(prices=["150"]))
+    assert check_grounding("Ukupno sto pedeset KM.", found).ok
 
 
 def test_numbered_list_still_checks_the_numbers_inside() -> None:
