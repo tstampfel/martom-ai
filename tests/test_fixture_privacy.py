@@ -9,15 +9,20 @@ addresses, the fake 060 000 000 that stands in for private numbers, and Martom's
 OLX shop identity (user id 17193, username "martom", type "shop").
 
 It scans every file on disk under those folders, untracked and git-ignored ones included, so
-a problem shows up before the file is committed. JSON, JSONL, YAML and CSV files get the
-seller-field and listing checks; other text files get the phone and email scan. Binary files
-(images) and `.DS_Store` are skipped.
+a problem shows up before the file is committed. Every text file (UTF-8 or UTF-16) gets the
+phone and email scan over its raw, HTML-unescaped and URL-decoded text; JSON, JSONL, YAML and
+CSV files are also parsed for the seller-field and listing checks. Binary files (images,
+fonts) are skipped, but a test fails if any sits under the fixture roots; `.DS_Store` is
+ignored.
 """
 
+import codecs
 import csv
+import html
 import io
 import json
 import re
+import urllib.parse
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -66,8 +71,15 @@ SELLER_KEY_WORDS = {
 LISTING_TEXT_KEYS = {"title", "description", "short_description", "search_text"}
 LISTING_ID_KEY_RE = re.compile(r"\d{6,}")
 
-# Files the guard skips by name (Finder metadata, created by macOS in any folder).
+# Files the guard skips by name: Finder metadata, created by macOS in any folder and
+# git-ignored, so it is never committed.
 IGNORED_NAMES = {".DS_Store"}
+# Binary types the guard can't read. scan_file skips them, and a test insists none sit under
+# the fixture roots, so a skip is never silent.
+BINARY_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".pdf",
+    ".woff", ".woff2", ".ttf", ".otf", ".zip", ".gz",
+}  # fmt: skip
 
 # Unicode hyphens and dashes (U+2010-U+2015) and the minus sign (U+2212), all read as "-".
 _DASHES = dict.fromkeys([*range(0x2010, 0x2016), 0x2212], "-")
@@ -76,10 +88,11 @@ _DASHES = dict.fromkeys([*range(0x2010, 0x2016), 0x2212], "-")
 def normalise_text(text: str) -> str:
     """Make separators uniform before matching phone numbers.
 
-    `&nbsp;`, NBSP and every other Unicode space become one plain space, Unicode dashes
-    become "-", and "(0)" / brackets around an area code are dropped.
+    HTML entities are decoded (`&nbsp;`, `&#160;`, `&#xa0;`), NBSP and every other Unicode
+    space become one plain space, Unicode dashes become "-", and "(0)" / brackets around an
+    area code are dropped.
     """
-    text = re.sub(r"&nbsp;", " ", text, flags=re.IGNORECASE)
+    text = html.unescape(text)
     text = text.replace("(0)", " ").replace("(", " ").replace(")", " ").translate(_DASHES)
     return re.sub(r"\s+", " ", text)  # in a str pattern, \s matches every Unicode space
 
@@ -105,20 +118,25 @@ def normalise_phone(match: str) -> str:
     return "+" + number
 
 
-def text_problems(text: str, where: str) -> list[str]:
-    """Phone numbers and emails in a piece of text, except Martom's public ones."""
-    text = normalise_text(text)
-    problems = [
-        f"{where}: phone number {match.group()!r}"
-        for match in PHONE_RE.finditer(text)
-        if normalise_phone(match.group()) not in ALLOWED_PHONES
-    ]
-    problems += [
-        f"{where}: email {match.group()!r}"
-        for match in EMAIL_RE.finditer(text)
-        if match.group(1).lower() != ALLOWED_EMAIL_DOMAIN
-    ]
-    return problems
+def contact_findings(text: str) -> dict[str, str]:
+    """Phone numbers and emails in a piece of text, except Martom's public ones.
+
+    Returns {dedup key: message}: the key is the number in E.164 form or the lowercased email,
+    so the same contact found twice (in the raw text and in a parsed value, or in both copies
+    below) is reported once. The text is scanned as written and URL-decoded ("%20" and "+"
+    become spaces), so numbers inside a wa.me link's `?text=` are caught too.
+    """
+    findings: dict[str, str] = {}
+    for copy in (text, urllib.parse.unquote_plus(text)):
+        normalised = normalise_text(copy)
+        for match in PHONE_RE.finditer(normalised):
+            number = normalise_phone(match.group())
+            if number not in ALLOWED_PHONES:
+                findings.setdefault(number, f"phone number {match.group()!r}")
+        for match in EMAIL_RE.finditer(normalised):
+            if match.group(1).lower() != ALLOWED_EMAIL_DOMAIN:
+                findings.setdefault(match.group().lower(), f"email {match.group()!r}")
+    return findings
 
 
 def is_seller_key(key: str) -> bool:
@@ -127,13 +145,26 @@ def is_seller_key(key: str) -> bool:
 
 
 def leaves(value: object) -> Iterator[object]:
-    """Every scalar inside a JSON value (strings, numbers, booleans, null)."""
+    """Every scalar inside a parsed value (strings, numbers, booleans, null)."""
     if isinstance(value, dict):
         for item in value.values():
             yield from leaves(item)
     elif isinstance(value, list):
         for item in value:
             yield from leaves(item)
+    else:
+        yield value
+
+
+def keys_and_leaves(value: object) -> Iterator[object]:
+    """Every dict key and every scalar inside a parsed value."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from keys_and_leaves(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from keys_and_leaves(item)
     else:
         yield value
 
@@ -151,10 +182,8 @@ def is_martom_value(leaf: object) -> bool:
     return email is not None and email.group(1).lower() == ALLOWED_EMAIL_DOMAIN
 
 
-def json_problems(value: object, where: str) -> list[str]:
-    """Walk a JSON value: phones and emails in strings, and seller/user fields."""
-    if isinstance(value, str):
-        return text_problems(value, where)
+def seller_field_problems(value: object, where: str) -> list[str]:
+    """Seller/user fields anywhere in a parsed value, unless they hold only Martom values."""
     problems: list[str] = []
     if isinstance(value, dict):
         for key, item in value.items():
@@ -162,15 +191,15 @@ def json_problems(value: object, where: str) -> list[str]:
             if is_seller_key(str(key)) and not all(is_martom_value(leaf) for leaf in leaves(item)):
                 problems.append(f"{path}: seller/user field {item!r}")
             else:
-                problems += json_problems(item, path)
+                problems += seller_field_problems(item, path)
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            problems += json_problems(item, f"{where}[{index}]")
+            problems += seller_field_problems(item, f"{where}[{index}]")
     return problems
 
 
 def listing_ids(value: object) -> set[str]:
-    """The distinct OLX listings a JSON value holds (see LISTING_TEXT_KEYS)."""
+    """The distinct OLX listings a parsed value holds (see LISTING_TEXT_KEYS)."""
     ids: set[str] = set()
     if isinstance(value, dict):
         if "listing_id" in value:
@@ -179,7 +208,7 @@ def listing_ids(value: object) -> set[str]:
             ids.add(str(value["id"]))
         for key, item in value.items():
             if LISTING_ID_KEY_RE.fullmatch(str(key)) and isinstance(item, dict):
-                ids.add(key)
+                ids.add(str(key))
             ids |= listing_ids(item)
     elif isinstance(value, list):
         for item in value:
@@ -194,7 +223,7 @@ def parse_documents(path: Path, text: str) -> list[object] | None:
     and .csv one list of rows (dicts keyed by the header), so seller columns and listing rows
     are checked like JSON keys and objects.
     """
-    match path.suffix:
+    match path.suffix.lower():
         case ".json":
             return [json.loads(text)]
         case ".jsonl":
@@ -207,40 +236,72 @@ def parse_documents(path: Path, text: str) -> list[object] | None:
             return None
 
 
+def decode_text(raw: bytes) -> str | None:
+    """Decode a text file: UTF-8 (with or without a BOM) or UTF-16 LE/BE; None if neither.
+
+    UTF-16 is recognised by its BOM, or, without one, by its NUL bytes (real UTF-8 text never
+    holds NUL): NULs on odd positions mean little-endian ASCII, on even positions big-endian.
+    """
+    try:
+        if raw.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
+            return raw.decode("utf-32")
+        if raw.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+            return raw.decode("utf-16")
+        if b"\x00" in raw:
+            little_endian = raw[1::2].count(0) >= raw[0::2].count(0)
+            return raw.decode("utf-16-le" if little_endian else "utf-16-be")
+        return raw.decode("utf-8-sig")  # utf-8-sig also reads plain UTF-8, dropping a BOM
+    except UnicodeDecodeError:
+        return None
+
+
+def is_binary(path: Path) -> bool:
+    return path.suffix.lower() in BINARY_SUFFIXES
+
+
+def unscannable_files(paths: list[Path]) -> list[Path]:
+    """The files scan_file skips as binary, so a test can insist there are none."""
+    return [path for path in paths if is_binary(path)]
+
+
 def scan_file(path: Path) -> list[str]:
     """Everything in one fixture file that must not be committed (empty list = clean).
 
-    Binary files (a NUL byte in the first 8 KB, e.g. images) are skipped; text that isn't
-    UTF-8 is reported, because it can't be checked.
+    Every text file gets the phone and email scan over its raw text, whatever its type, so
+    parsing can never hide a number (unquoted YAML ints, CSV headers, JSON keys). JSON, JSONL,
+    YAML and CSV are also parsed for the seller-field and listing checks, and their parsed
+    keys and values are scanned too (that catches `\\u00a0`-escaped JSON text). Binary files
+    (BINARY_SUFFIXES) are skipped here and listed by unscannable_files; text that can't be
+    decoded is reported.
     """
     name = path.name
-    if name in IGNORED_NAMES:
+    if name in IGNORED_NAMES or is_binary(path):
         return []
     size = path.stat().st_size
     if size > MAX_FILE_BYTES:
         return [f"{name}: {size} bytes, over the {MAX_FILE_BYTES}-byte cap"]
-    raw = path.read_bytes()
-    if b"\x00" in raw[:8192]:
-        return []
+    text = decode_text(path.read_bytes())
+    if text is None:
+        return [f"{name}: not UTF-8 or UTF-16 text, so it can't be checked"]
+    findings = contact_findings(text)
     try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return [f"{name}: not UTF-8 text, so it can't be checked"]
-    try:
-        documents = parse_documents(path, text)
+        documents = parse_documents(path, text) or []
     except json.JSONDecodeError as error:
         return [f"{name}: invalid JSON ({error}), so it can't be checked"]
     except yaml.YAMLError as error:
         return [f"{name}: invalid YAML ({error}), so it can't be checked"]
     except csv.Error as error:
         return [f"{name}: invalid CSV ({error}), so it can't be checked"]
-    if documents is None:
-        return text_problems(text, name)
-    problems: list[str] = []
+    structure_problems: list[str] = []
     ids: set[str] = set()
     for document in documents:
-        problems += json_problems(document, name)
+        for item in keys_and_leaves(document):
+            if item is not None and not isinstance(item, bool):
+                for key, message in contact_findings(str(item)).items():
+                    findings.setdefault(key, message)
+        structure_problems += seller_field_problems(document, name)
         ids |= listing_ids(document)
+    problems = [f"{name}: {message}" for message in findings.values()] + structure_problems
     if len(ids) > MAX_LISTINGS_PER_FILE:
         problems.append(f"{name}: {len(ids)} listings, over the cap of {MAX_LISTINGS_PER_FILE}")
     return problems
@@ -580,11 +641,17 @@ def test_invalid_yaml_fails(tmp_path: Path) -> None:
     assert "YAML" in problems[0]
 
 
-def test_binary_file_is_skipped(tmp_path: Path) -> None:
-    path = tmp_path / "photo.png"
+def test_binary_file_is_skipped_but_listed(tmp_path: Path) -> None:
+    path = tmp_path / "photo.PNG"
     path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\xff\xfe")
 
     assert scan_file(path) == []
+    assert unscannable_files([path, write_json(tmp_path, {})]) == [path]
+
+
+def test_no_fixture_is_skipped_as_binary() -> None:
+    """A binary fixture can't be checked, so none may sit under the fixture roots."""
+    assert unscannable_files(fixture_files()) == []
 
 
 def test_ds_store_is_ignored(tmp_path: Path) -> None:
@@ -601,3 +668,115 @@ def test_non_utf8_text_fails(tmp_path: Path) -> None:
 
     assert len(problems) == 1
     assert "UTF-8" in problems[0]
+
+
+# --- R2: numbers outside string values, other encodings, encoded text ------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["broj: +38763123456\n", "napomena: 061234567\n"],  # PyYAML reads both as ints
+)
+def test_unquoted_yaml_number_fails(tmp_path: Path, text: str) -> None:
+    path = tmp_path / "seed.yaml"
+    path.write_text(text, encoding="utf-8")
+
+    problems = scan_file(path)
+
+    assert len(problems) == 1
+    assert "phone" in problems[0]
+
+
+def test_json_number_phone_fails(tmp_path: Path) -> None:
+    problems = scan_file(write_json(tmp_path, {"broj": 38763123456}))
+
+    assert len(problems) == 1
+    assert "phone" in problems[0]
+
+
+def test_email_as_a_json_key_fails(tmp_path: Path) -> None:
+    problems = scan_file(write_json(tmp_path, {"ivo@gmail.com": "x"}))
+
+    assert len(problems) == 1
+    assert "email" in problems[0]
+
+
+def test_headerless_csv_fails(tmp_path: Path) -> None:
+    path = tmp_path / "rows.csv"
+    path.write_text("063 123 456,ivo@gmail.com\n1,Panel\n", encoding="utf-8")
+
+    problems = scan_file(path)
+
+    assert len(problems) == 2
+    assert "phone" in problems[0]
+    assert "email" in problems[1]
+
+
+def test_csv_with_bom_over_the_listing_cap_fails(tmp_path: Path) -> None:
+    rows = "".join(f"{i},Panel\n" for i in numbered_listings(MAX_LISTINGS_PER_FILE + 1))
+    path = tmp_path / "rows.csv"
+    path.write_text("id,title\n" + rows, encoding="utf-8-sig")
+
+    problems = scan_file(path)
+
+    assert len(problems) == 1
+    assert "21 listings" in problems[0]
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be"])
+def test_utf16_text_is_scanned(tmp_path: Path, encoding: str) -> None:
+    path = tmp_path / "export.txt"
+    path.write_bytes("zovi 063 123 456".encode(encoding))
+
+    problems = scan_file(path)
+
+    assert len(problems) == 1
+    assert "phone" in problems[0]
+
+
+def test_utf16_json_is_parsed(tmp_path: Path) -> None:
+    path = tmp_path / "export.json"
+    path.write_bytes(json.dumps({"seller": "Ivo"}).encode("utf-16"))
+
+    problems = scan_file(path)
+
+    assert len(problems) == 1
+    assert "seller" in problems[0]
+
+
+def test_clean_utf8_bom_json_passes(tmp_path: Path) -> None:
+    path = tmp_path / "fixture.json"
+    path.write_text(json.dumps({"title": "Panel"}), encoding="utf-8-sig")
+
+    assert scan_file(path) == []
+
+
+def test_uppercase_suffix_is_parsed(tmp_path: Path) -> None:
+    problems = scan_file(write_json(tmp_path, {"seller": "Ivo"}, name="up.JSON"))
+
+    assert len(problems) == 1
+    assert "seller" in problems[0]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://wa.me/38760000000?text=Ivo%20063%20123%20456",
+        "https://wa.me/38760000000?text=Ivo+063+123+456",
+        "https://wa.me/385911234567?text=Narud%C5%BEba",
+        "https://wa.me/%2B385911234567",
+        "zovi 063&#160;123&#160;456",
+        "zovi 063&#xa0;123&#xa0;456",
+    ],
+)
+def test_url_encoded_and_entity_numbers_fail(tmp_path: Path, text: str) -> None:
+    problems = scan_file(write_json(tmp_path, {"link": text}))
+
+    assert len(problems) == 1
+    assert "phone" in problems[0]
+
+
+def test_allowlisted_wa_me_link_passes(tmp_path: Path) -> None:
+    link = "https://wa.me/38760000000?text=Narud%C5%BEba%3A%20panel%20153%20cm%2C%2010%20kom"
+
+    assert scan_file(write_json(tmp_path, {"link": link})) == []
