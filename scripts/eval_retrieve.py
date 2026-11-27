@@ -8,7 +8,10 @@ Three searches are scored side by side on evals/retrieval.jsonl:
 
 `rerank` and `full` run once per model in --rerank-models (default: RERANK_MODEL), on
 the same questions and candidates: Haiku parses each question once and every model sees
-those same filters, so only the reranker differs. Then `full` is timed as live search
+those same filters, so only the reranker differs. That parser has no time limit (60 s,
+retries), so `full` there assumes the parse never falls back; a second `full` row per
+model uses the live parser (1.5 s, unfiltered when slower) and shows its fallback count,
+which is what customers get. Then `full` is timed as live search
 runs it (live timeouts and fallbacks on, Haiku called each time), --repeat times per
 question, the models taking turns on each question so they share network conditions,
 and p50 / p95 are printed per stage and model. A summary table puts recall@5, recall@10,
@@ -113,6 +116,19 @@ class CachingParser:
         return self._seen[question]
 
 
+class LiveFallbackParser:
+    """The live parser with its fallback always on: retrieve(fallback=False) keeps the
+    embedding and rerank strict, while a parse over the live limit gives "no filters", as
+    in live search."""
+
+    def __init__(self, inner: QueryParser) -> None:
+        self.inner = inner
+        self.model_name = inner.model_name
+
+    async def filters(self, question: str, fallback: bool = True) -> SearchFilters | None:
+        return await self.inner.filters(question, fallback=True)
+
+
 def print_parse_latency(parse_ms: list[float]) -> None:
     """Haiku's own time per question, without the live limit (scoring runs)."""
     over = sum(ms > PARSE_TIMEOUT_SECONDS * 1000 for ms in parse_ms)
@@ -127,7 +143,9 @@ def print_parse_latency(parse_ms: list[float]) -> None:
 @dataclass
 class ModelResult:
     model: str
-    scores: RunScores | None = None
+    scores: RunScores | None = None  # `full`, parser without time limit
+    live_scores: RunScores | None = None  # `full`, live parser (1.5 s, fallback on)
+    live_not_parsed: int = 0
     samples: dict[str, list[float]] = field(default_factory=lambda: {stage: [] for stage in STAGES})
     not_parsed: int = 0
     not_reranked: int = 0
@@ -196,16 +214,29 @@ def model_settings(settings: Settings, model: str) -> Settings:
     return settings.model_copy(update={"rerank_model": model})
 
 
-def print_summary(results: list[ModelResult]) -> None:
-    print("\n== rerank models side by side (`full`; recall on the eval set, p95 of the timed run)")
-    print(f"{'model':<22} {'R@5':>6} {'R@10':>6} {'MRR':>6} {'p95 rerank':>11} {'p95 total':>10}")
+def print_summary(results: list[ModelResult], n: int) -> None:
+    print(
+        "\n== rerank models side by side (`full`): recall with the batch parser (no time"
+        " limit) and with the live parser (1.5 s, unfiltered when slower); p95 of the live"
+        " timed run"
+    )
+    print(
+        f"{'model':<22} {'parser':<16} {'R@5':>6} {'R@10':>6} {'MRR':>6} {'parse fb':>9}"
+        f" {'p95 rerank':>11} {'p95 total':>10}"
+    )
     for r in results:
-        assert r.scores is not None
-        print(
-            f"{r.model:<22} {r.scores.recall_at_5:>6.3f} {r.scores.recall_at_10:>6.3f}"
-            f" {r.scores.mrr:>6.3f} {percentile(r.samples['rerank'], 95):>8.1f} ms"
-            f" {percentile(r.samples['total'], 95):>7.1f} ms"
-        )
+        assert r.scores is not None and r.live_scores is not None
+        rows = [
+            ("batch, no limit", r.scores, "-"),
+            ("live 1.5 s", r.live_scores, f"{r.live_not_parsed}/{n}"),
+        ]
+        for label, scores, fallbacks in rows:
+            print(
+                f"{r.model:<22} {label:<16} {scores.recall_at_5:>6.3f} {scores.recall_at_10:>6.3f}"
+                f" {scores.mrr:>6.3f} {fallbacks:>9}"
+                f" {percentile(r.samples['rerank'], 95):>8.1f} ms"
+                f" {percentile(r.samples['total'], 95):>7.1f} ms"
+            )
     print("(one question = 10% of recall on 10 questions: a one-question gap is within noise)")
 
 
@@ -215,11 +246,15 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
     embedder = make_embedder(settings)
     # Scoring waits for Haiku (60 s, retries): a slow reply must not stop the eval or be
     # scored as "no filters". The timed run below uses the live parser and its 1.5 s limit.
-    live_parser = make_query_parser(settings, for_queries=False)
+    batch_parser = make_query_parser(settings, for_queries=False)
+    # The "live parser" rows: 1.5 s and no retries, a slow parse runs unfiltered, as in
+    # live search. Called afresh for every question, so each row has its own count.
+    live_parser = make_query_parser(settings)
     rerankers = {m: make_reranker(model_settings(settings, m)) for m in models}
-    if live_parser is None or None in rerankers.values():
+    if batch_parser is None or live_parser is None or None in rerankers.values():
         raise SystemExit("needs ANTHROPIC_API_KEY and COHERE_API_KEY (Tomislav runs this)")
-    parser = CachingParser(live_parser)
+    parser = CachingParser(batch_parser)
+    live = LiveFallbackParser(live_parser)
     print(f"embeddings {embedder.model}, parser {parser.model_name}, rerank {', '.join(models)}")
     results = [ModelResult(m) for m in models]
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
@@ -239,9 +274,23 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
                 conn, questions, embedder=embedder, parser=parser, reranker=pausing
             )
             r.scores = print_run(
-                f"full with {r.model} (Haiku filters -> hybrid -> Cohere)", questions, full
+                f"full with {r.model}, batch parser without time limit"
+                " (Haiku filters -> hybrid -> Cohere)",
+                questions,
+                full,
             )
             print_fallbacks(details, parsed=True)
+            live_full, live_details = await run_retrieve_eval(
+                conn, questions, embedder=embedder, parser=live, reranker=pausing
+            )
+            r.live_scores = print_run(
+                f"full with {r.model}, live parser ({PARSE_TIMEOUT_SECONDS} s, unfiltered"
+                " when slower)",
+                questions,
+                live_full,
+            )
+            print_fallbacks(live_details, parsed=True)
+            r.live_not_parsed = sum(not d.parsed for d in live_details.values())
             print(f"\nfilters per question ({r.model}):")
             for question in questions:
                 d = details[question.id]
@@ -271,7 +320,7 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
                 print(f"#102 full {r.model}: {text!r} top 5 (id, relevance) {top}")
 
         await timed_run(conn, questions, settings, results, repeat, pause)
-        print_summary(results)
+        print_summary(results, len(questions))
 
 
 if __name__ == "__main__":
