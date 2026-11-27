@@ -16,9 +16,29 @@ recall and MRR.
 | Date | Commit | Catalogue | Search mode | Eval set | Scored | recall@5 | recall@10 | MRR | Forbidden hit rate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-11-27 | b3b1dcf (Tomislav's run) | 2,570 active listings, extraction run 4 | keyword | 11 lines (seed-01 … seed-11) | 10 | 0.850 | 0.900 | 0.694 | n/a |
-| 2026-11-27 | branch m3-2b-eval-cases @ a55d184 (on top of b3b1dcf) | 2,570 active listings, extraction run 4 | keyword | 14 lines (+ seed-12 kolica, seed-13 panelan, seed-14 građevinska kolica) | 13 | 0.737 | 0.814 | 0.698 | 0.000 (0 of 2) |
+| 2026-11-27 | branch m3-2b-eval-cases @ bcb165e (on top of bfce370, after #15) | 2,570 active listings, extraction run 4 | keyword | 14 lines (+ seed-12 kolica, seed-13 panelan, seed-14 građevinska kolica) | 13 | 0.737 | 0.814 | 0.698 | 0.000 (0 of 2) |
+| 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (copy of the 2,570-listing catalogue, embedded with Cohere embed-multilingual-v3.0) | vector | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.950 | n/a |
+| 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (same) | hybrid | 11 lines (seed-01 … seed-11) | 10 | 0.900 | 0.950 | 0.933 | n/a |
+
+Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them. The
+14-line rows come from:
+
+```sh
+DATABASE_URL=postgresql://martom:martom@localhost:5433/martom_m33 EMBEDDING_PROVIDER=cohere EMBEDDING_MODEL=embed-multilingual-v3.0 uv run --env-file .env python scripts/eval_retrieval.py --search hybrid
+DATABASE_URL=postgresql://martom:martom@localhost:5433/martom_m33 EMBEDDING_PROVIDER=cohere EMBEDDING_MODEL=embed-multilingual-v3.0 uv run --env-file .env python scripts/eval_retrieval.py --search vector
+```
+
+(`--env-file` only fills variables that aren't set already, so the inline `DATABASE_URL` wins.)
 
 ## Weak cases
+
+### Vector and hybrid, 11-line set (2026-11-27, Tomislav's comparison)
+
+- n = 10 scored questions, so each difference between rows is one question.
+- `seed-06-anker-m8x80`: R@10 0.50 in every mode and for every embedding model compared; the
+  anchor listing 40021189 is still missing from the top 10.
+- The #102 checks (`issue_102_hits`, hybrid): "kolica" no longer returns the grinder, and
+  "panelan" still finds the panels.
 
 ### Keyword, 11-line set (2026-11-27)
 
