@@ -167,7 +167,7 @@ UPDATE review_issue AS r SET
                  WHERE involved.id IS NOT NULL
                    AND NOT EXISTS (SELECT 1 FROM active_olx_listing AS l WHERE l.id = involved.id))
              THEN 'listing_inactive' ELSE 'not_found' END)
-WHERE r.status = 'open' AND NOT (r.fingerprint = ANY(%s))
+WHERE r.status = 'open' AND NOT (r.fingerprint = ANY(%s)) AND NOT (r.kind = ANY(%s))
 """
 
 
@@ -190,12 +190,17 @@ def distinct_fingerprints(issues: Sequence[ReviewIssue]) -> dict[str, ReviewIssu
 
 
 async def save_issues(
-    conn: psycopg.AsyncConnection, issues: Sequence[ReviewIssue]
+    conn: psycopg.AsyncConnection,
+    issues: Sequence[ReviewIssue],
+    *,
+    unchecked_kinds: Sequence[str] = (),
 ) -> tuple[int, int, int]:
     """Upsert every issue and resolve the open ones not in `issues`, in one transaction.
 
     `issues` must be the result of a run over the whole catalogue: anything open that isn't
-    in it is marked resolved. Returns (rows written, new issues, resolved issues).
+    in it is marked resolved, except issues of `unchecked_kinds` (a check that couldn't
+    run this time, e.g. a broken price map), which stay as they are. Returns (rows
+    written, new issues, resolved issues).
     """
     unique = distinct_fingerprints(issues)
     new = 0
@@ -214,6 +219,6 @@ async def save_issues(
             )
             row = await cursor.fetchone()
             new += bool(row and row[0])
-        await cursor.execute(_RESOLVE, (list(unique),))
+        await cursor.execute(_RESOLVE, (list(unique), list(unchecked_kinds)))
         resolved = cursor.rowcount
     return len(unique), new, resolved

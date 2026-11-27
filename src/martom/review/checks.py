@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from martom.bom.manual_products import MAX_AGE_DAYS, ManualProduct, stale_manual_products
+from martom.bom.pricing import PriceMap, PriceProblem, resolve_price, written_number
 from martom.extract.store import VariantRow
 
 type Priority = Literal["high", "medium", "low"]
@@ -101,15 +102,11 @@ _UNIT = r"(mm|cm|metara|metra|metar|m)(?![^\W\d_])"
 _NOT_IN_A_NUMBER = r"(?<!\d)(?<!\d[.,])"
 _NUMBER_AND_UNIT = re.compile(rf"{_NOT_IN_A_NUMBER}({_NUMBER})(?:\s*{_UNIT})?")
 _CM_PER_UNIT = {"mm": Decimal("0.1"), "cm": Decimal(1), None: Decimal(1)}  # else metres
-_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+(?:,\d+)?")
 
 
 def _to_decimal(digits: str, unit: str | None) -> Decimal:
-    # "1.530 mm" is 1530 mm, but "2.500 m" is 2,5 m: nobody writes thousands of metres.
-    in_metres = unit not in _CM_PER_UNIT
-    if _THOUSANDS.fullmatch(digits) and not (in_metres and "," not in digits):
-        digits = digits.replace(".", "")
-    return Decimal(digits.replace(",", "."))
+    # "1.530 mm" is 1530 mm, but "2.500 m" is 2,5 m (the shared rule in bom.pricing).
+    return written_number(digits, in_metres=unit not in _CM_PER_UNIT)
 
 
 def _cm(number: Decimal, unit: str | None) -> Decimal:
@@ -741,6 +738,103 @@ def check_allowlist_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[Revi
     return issues
 
 
+# --- BOM price map (#125) -------------------------------------------------------------------------
+
+_PRICE_PROBLEM_TEXT = {
+    PriceProblem.LISTING_INACTIVE: "oglas {listing} nije aktivan ili još nije obrađen",
+    PriceProblem.VARIANT_MISSING: "u oglasu {listing} više nema varijante {fields}",
+    PriceProblem.VARIANT_AMBIGUOUS: "u oglasu {listing} ima više varijanti {fields}",
+    PriceProblem.UNPRICED: "varijanta {fields} u oglasu {listing} nema cijenu",
+    PriceProblem.PRICES_DIFFER: "varijante {fields} u oglasu {listing} više nemaju istu cijenu",
+    PriceProblem.MANUAL_MISSING: "proizvod „{manual}“ nije u manual_products.toml",
+}
+# A manual entry has no listing and no variants: its own text (R2-2).
+_MANUAL_UNPRICED_TEXT = "proizvod „{manual}“ u manual_products.toml nema cijenu (0 KM)"
+
+
+def check_bom_price_map(
+    price_map: PriceMap,
+    listings: Iterable[CheckListing],
+    manual_products: Mapping[str, ManualProduct],
+) -> list[ReviewIssue]:
+    """A BOM line the price map prices that has lost its price (high: the customer sees
+    "cijena na upit" in the materials list).
+
+    It also runs while the map is a draft, as a check of the map before Tomislav and Toni
+    review it; then every line is "cijena na upit" because of the draft, so the message
+    says that instead of blaming the variant.
+
+    Uses `resolve_price`, the same rule as the DB pricer, so Toni sees exactly the lines
+    the customer sees unpriced. `listings` are the active listings; one without an
+    extracted product counts as inactive. Lines the map leaves unmapped on purpose raise
+    nothing. The issue carries the listing only while it is active (the report hides
+    issues of inactive listings); its fingerprint is the BOM item and size alone, so a
+    variant going missing and then its listing going inactive stays one issue.
+    """
+    active = {listing.id: listing.variants for listing in listings if listing.product}
+    issues: list[ReviewIssue] = []
+    for entry in price_map.entries.values():
+        variants = active.get(entry.listing_id) if entry.listing_id is not None else None
+        lookup = resolve_price(entry, variants, manual_products)
+        problem = lookup.problem
+        if problem is None:
+            continue
+        line = f"{entry.item.value} {entry.size}" if entry.size else entry.item.value
+        # Only the variant that failed (one tensioner colour), or all for an inactive
+        # listing or colours whose prices differ.
+        match_dicts = [dict(match) for match in lookup.failed_matches or entry.matches]
+        fields = ", ".join(_match_text(m) for m in match_dicts)
+        template = (
+            _MANUAL_UNPRICED_TEXT
+            if entry.manual_key is not None and problem == PriceProblem.UNPRICED
+            else _PRICE_PROBLEM_TEXT[problem]
+        )
+        reason = template.format(listing=entry.listing_id, fields=fields, manual=entry.manual_key)
+        if price_map.status == "reviewed":
+            sees = "(kupac vidi „cijena na upit“)"
+        else:
+            sees = "(mapa cijena je još nacrt, pa kupac ionako vidi „cijena na upit“ za sve stavke)"
+        if problem == PriceProblem.MANUAL_MISSING:
+            action = (
+                "Javite Tomislavu da doda proizvod u manual_products.toml ili ispravi "
+                "ključ u mapi cijena (price_map.toml)."
+            )
+        elif entry.manual_key is not None:
+            action = "Javite Tomislavu ispravnu cijenu za manual_products.toml."
+        else:
+            action = (
+                "Provjerite oglas; ako se oglas namjerno promijenio, javite Tomislavu da "
+                "uskladi mapu cijena (price_map.toml)."
+            )
+        issues.append(
+            ReviewIssue(
+                "bom_price_missing",
+                entry.listing_id if entry.listing_id in active else None,
+                "high",
+                f"Stavka „{line}“ u popisu materijala za ogradu nema cijenu {sees}: "
+                f"{reason}. {action}",
+                {
+                    "item": entry.item.value,
+                    "size": entry.size,
+                    "listing_id": entry.listing_id,
+                    "problem": problem.value,
+                    "variants": match_dicts,
+                },
+                key=f"{entry.item.value}:{entry.size or ''}",
+                per_listing=False,
+            )
+        )
+    return issues
+
+
+def _match_text(match: Mapping[str, str | int]) -> str:
+    """A map variant table as Toni reads it: „153 cm / 250 cm / panel“."""
+    parts = [
+        f"{value} cm" if field.endswith("_cm") else str(value) for field, value in match.items()
+    ]
+    return "„" + " / ".join(parts) + "“"
+
+
 # --- all checks ----------------------------------------------------------------------------------
 
 LISTING_CHECKS: tuple[Callable[[CheckListing], list[ReviewIssue]], ...] = (
@@ -768,11 +862,14 @@ def run_all_checks(
     *,
     today: date,
     allowlist_warnings: Iterable[Mapping[str, Any]] = (),
+    price_map: PriceMap | None = None,
 ) -> list[ReviewIssue]:
-    """Every check over the whole catalogue, the manual-product dates and the latest
-    sync's allowlist warnings."""
+    """Every check over the whole catalogue, the manual-product dates, the latest
+    sync's allowlist warnings and (when given) the BOM price map."""
     issues = [issue for listing in listings for issue in check_listing(listing)]
     issues += check_duplicate_listings(listings)
     issues += check_manual_products(manual_products, today=today)
     issues += check_allowlist_warnings(allowlist_warnings)
+    if price_map is not None:
+        issues += check_bom_price_map(price_map, listings, manual_products)
     return issues

@@ -36,8 +36,8 @@ type Retriever = Callable[[str], Awaitable[Retrieval]]
 class BomPricer(Protocol):
     """The unit price of one BOM line from the synced data, or None ("cijena na upit").
 
-    #125 adds the real one. Until then the graph runs without a pricer and every line is
-    unpriced; it never guesses a price.
+    The real one is `martom.agent.pricer.PostgresBomPricer` (#125: the reviewed price map,
+    exact match only). Without a pricer every line is unpriced; it never guesses a price.
     """
 
     async def unit_price(self, line: BomLine) -> Decimal | None: ...

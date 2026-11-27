@@ -28,7 +28,7 @@ from martom.extract.schema import ExtractedProduct
 from martom.extract.search_text import build_search_text
 from martom.extract.store import ProductRecord, VariantRow, load_pending, save_products
 from martom.olx.store import finish_run, start_run
-from martom.review.job import ReviewStats, run_review_checks
+from martom.review.job import PriceMapCheckSkippedError, ReviewStats, run_review_checks
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,12 @@ async def run_extraction(
     if stats.status != "failed":
         try:
             stats.review = await run_review_checks(conn)
+        except PriceMapCheckSkippedError as exc:
+            # Only the BOM price check was skipped (the cause is already logged once);
+            # every other check ran and was saved.
+            stats.review = exc.stats
+            stats.status = "partial"
+            stats.error = str(exc)
         except Exception as exc:
             # The products are saved; only Toni's queue is stale, so 'partial', not 'failed'.
             logger.exception("review checks after extraction run %s failed", stats.run_id)

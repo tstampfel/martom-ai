@@ -1,0 +1,367 @@
+{
+  "source": "product_variant rows of the six listings the BOM price map points at, copied from the local synced catalogue on 27 Nov 2026 (OLX prices of that day)",
+  "listings": {
+    "63996799": [
+      {
+        "label": "3D Panelna ograda 83 x 200 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "83",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "27,00 KM",
+        "price": "27.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 83 x 250 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "83",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "31,00 KM",
+        "price": "31.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 103 x 200 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "103",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "31,00 KM",
+        "price": "31.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 103 x 250 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "103",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "41,00 KM",
+        "price": "41.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 123 x 200 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "123",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "36,00 KM",
+        "price": "36.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 123 x 250 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "123",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "44,00 KM",
+        "price": "44.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 153 x 200 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "153",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "44,00 KM",
+        "price": "44.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 153 x 250 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "153",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "53,00 KM",
+        "price": "53.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 203 x 200 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "203",
+        "length": "200 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "56,00 KM",
+        "price": "56.00",
+        "unit": "panel"
+      },
+      {
+        "label": "3D Panelna ograda 203 x 250 cm (Ø 4,20/4,40 mm PVC)",
+        "height": "203",
+        "length": "250 cm",
+        "colour": null,
+        "size": null,
+        "price_text": "85,00 KM",
+        "price": "85.00",
+        "unit": "panel"
+      },
+      {
+        "label": "Stup H-85 cm sa stopom (za panele visine 83 cm)",
+        "height": "H-85 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "16,80 KM",
+        "price": "16.80",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-105 cm sa stopom (za panele visine 103 cm)",
+        "height": "H-105 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "19,00 KM",
+        "price": "19.00",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-125 cm sa stopom (za panele visine 123 cm)",
+        "height": "H-125 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "21,50 KM",
+        "price": "21.50",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-155 cm sa stopom (za panele visine 153 cm)",
+        "height": "H-155 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "24,90 KM",
+        "price": "24.90",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup H-205 cm sa stopom (za panele visine 203 cm)",
+        "height": "H-205 cm",
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "31,00 KM",
+        "price": "31.00",
+        "unit": "kom"
+      },
+      {
+        "label": "PVC kopča sa samorezivim vijkom",
+        "height": null,
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "1,00 KM",
+        "price": "1.00",
+        "unit": "kom"
+      },
+      {
+        "label": "Tiplo anker FI 10 / M8 x 80 mm (za pričvršćivanje stope stupa u beton)",
+        "height": null,
+        "length": null,
+        "colour": null,
+        "size": "FI 10 / M8 x 80 mm",
+        "price_text": "1,30 KM",
+        "price": "1.30",
+        "unit": "kom"
+      }
+    ],
+    "59473597": [
+      {
+        "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-100 cm",
+        "height": "H-100",
+        "length": null,
+        "colour": "zelena",
+        "size": null,
+        "price_text": "11,50 KM",
+        "price": "11.50",
+        "unit": "kom"
+      },
+      {
+        "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-125 cm",
+        "height": "H-125",
+        "length": null,
+        "colour": "zelena",
+        "size": null,
+        "price_text": "10,00 KM",
+        "price": "10.00",
+        "unit": "kom"
+      },
+      {
+        "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-150 cm",
+        "height": "H-150",
+        "length": null,
+        "colour": "zelena",
+        "size": null,
+        "price_text": "12,25 KM",
+        "price": "12.25",
+        "unit": "kom"
+      },
+      {
+        "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-175 cm",
+        "height": "H-175",
+        "length": null,
+        "colour": "zelena",
+        "size": null,
+        "price_text": "14,00 KM",
+        "price": "14.00",
+        "unit": "kom"
+      },
+      {
+        "label": "T-stup metalni plastificirani 35 x 35 x 3,50 mm – visina H-200 cm",
+        "height": "H-200",
+        "length": null,
+        "colour": "zelena",
+        "size": null,
+        "price_text": "17,00 KM",
+        "price": "17.00",
+        "unit": "kom"
+      }
+    ],
+    "81645615": [
+      {
+        "label": "Stup / kolac sa stopom 40 x 40 mm – visina 60 cm",
+        "height": "60 cm",
+        "length": null,
+        "colour": null,
+        "size": "40 x 40 mm",
+        "price_text": "10,50 KM",
+        "price": "10.50",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup / kolac sa stopom 40 x 40 mm – visina 80 cm",
+        "height": "80 cm",
+        "length": null,
+        "colour": null,
+        "size": "40 x 40 mm",
+        "price_text": "11,90 KM",
+        "price": "11.90",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup / kolac sa stopom 40 x 40 mm – visina 100 cm",
+        "height": "100 cm",
+        "length": null,
+        "colour": null,
+        "size": "40 x 40 mm",
+        "price_text": "14,00 KM",
+        "price": "14.00",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup / kolac sa stopom 40 x 40 mm – visina 125 cm",
+        "height": "125 cm",
+        "length": null,
+        "colour": null,
+        "size": "40 x 40 mm",
+        "price_text": "16,50 KM",
+        "price": "16.50",
+        "unit": "kom"
+      },
+      {
+        "label": "Stup / kolac sa stopom 40 x 40 mm – visina 150 cm",
+        "height": "150 cm",
+        "length": null,
+        "colour": null,
+        "size": "40 x 40 mm",
+        "price_text": "21,00 KM",
+        "price": "21.00",
+        "unit": "kom"
+      }
+    ],
+    "18129143": [
+      {
+        "label": "Zatezač za žicu (španer) – Zeleni (plastificirani)",
+        "height": null,
+        "length": null,
+        "colour": "Zeleni",
+        "size": null,
+        "price_text": "1,65 KM",
+        "price": "1.65",
+        "unit": "kom"
+      },
+      {
+        "label": "Zatezač za žicu (španer) – Antracit (plastificirani)",
+        "height": null,
+        "length": null,
+        "colour": "Antracit",
+        "size": null,
+        "price_text": "1,65 KM",
+        "price": "1.65",
+        "unit": "kom"
+      },
+      {
+        "label": "Zatezač za žicu (španer) – Cinčani (pocinčani čelik)",
+        "height": null,
+        "length": null,
+        "colour": "Cinčani",
+        "size": null,
+        "price_text": "1,65 KM",
+        "price": "1.65",
+        "unit": "kom"
+      },
+      {
+        "label": "Zatezač za bodljikavu žicu (ojačani model – slika 2)",
+        "height": null,
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "3,50 KM",
+        "price": "3.50",
+        "unit": "kom"
+      }
+    ],
+    "46677177": [
+      {
+        "label": "ŽICA PVC 3,10MM -100M- 20,00KM",
+        "height": null,
+        "length": "100M",
+        "colour": null,
+        "size": "3,10MM",
+        "price_text": "20,00 KM",
+        "price": "20.00",
+        "unit": "100M"
+      },
+      {
+        "label": "ŽICA PVC 2,70MM -100M- 18,00KM",
+        "height": null,
+        "length": "100M",
+        "colour": null,
+        "size": "2,70MM",
+        "price_text": "18,00 KM",
+        "price": "18.00",
+        "unit": "100M"
+      },
+      {
+        "label": "ŽICA PVC 2,2MM -100M- 14,000KM",
+        "height": null,
+        "length": "100M",
+        "colour": null,
+        "size": "2,2MM",
+        "price_text": "14,00 KM",
+        "price": "14.00",
+        "unit": "100M"
+      }
+    ],
+    "48475613": [
+      {
+        "label": "NOSAČ DRŽAČ ŽICE NA STUPU STUBU - 0,40KMKOM",
+        "height": null,
+        "length": null,
+        "colour": null,
+        "size": null,
+        "price_text": "0,40 KM",
+        "price": "0.40",
+        "unit": "KOM"
+      }
+    ]
+  }
+}
