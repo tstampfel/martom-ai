@@ -419,7 +419,7 @@ async def _recorded(
         raise
     take_client_counters()
     await store.finish_run(conn, stats.run_id, stats.columns())
-    _log_summary(stats)
+    _log_summary(stats, olx)
     return stats
 
 
@@ -574,11 +574,25 @@ async def _finish_quietly(conn: psycopg.AsyncConnection, stats: RunStats) -> Non
         logger.exception("could not record sync run %d as failed", stats.run_id)
 
 
-def _log_summary(stats: RunStats) -> None:
+def _log_summary(stats: RunStats, olx: OlxClient) -> None:
+    """One line per run. Besides the `sync_run` columns it carries the OLX timing
+    (requests, 429s, the wait OLX asked for, elapsed) that #105 needs and that has no
+    column. `olx_429_requested_wait_seconds` is the sum of the 429 waits OLX asked for
+    (Retry-After, or our backoff), not time actually slept.
+
+    The counters are the client's totals; `martom sync` uses one client per run.
+    """
+    timing = {
+        "olx_requests_sent": olx.requests_sent,
+        "olx_429_count": olx.rate_limited_count,
+        "olx_429_requested_wait_seconds": olx.rate_limit_requested_wait_seconds,
+        "olx_elapsed_seconds": olx.elapsed_seconds,
+    }
     log = logger.info if stats.status == "succeeded" else logger.error
     log(
         "sync run %s (%s) %s: seen %d, new %d, deactivated %d, reactivated %d, "
-        "fetched %d, changed %d, errors %d, coverage %s",
+        "fetched %d, changed %d, errors %d, coverage %s; "
+        "OLX %d requests in %.0f s, %d x 429, OLX asked to wait %.0f s",
         stats.run_id,
         stats.kind,
         stats.status,
@@ -590,7 +604,17 @@ def _log_summary(stats: RunStats) -> None:
         stats.changed,
         stats.errors,
         "n/a" if stats.coverage is None else f"{stats.coverage:.2%}",
-        extra={"event": "sync_run", **stats.columns(), "run_id": stats.run_id, "kind": stats.kind},
+        olx.requests_sent,
+        olx.elapsed_seconds,
+        olx.rate_limited_count,
+        olx.rate_limit_requested_wait_seconds,
+        extra={
+            "event": "sync_run",
+            **stats.columns(),
+            **timing,
+            "run_id": stats.run_id,
+            "kind": stats.kind,
+        },
     )
 
 

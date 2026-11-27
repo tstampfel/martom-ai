@@ -810,6 +810,38 @@ async def test_a_run_records_the_request_interval_it_ended_with(
     assert run["retried_count"] == 1
 
 
+async def test_the_run_summary_log_says_how_long_olx_asked_us_to_wait(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    original = server.__call__
+    answered = set()
+
+    def one_429(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/listings/2" and 2 not in answered:
+            answered.add(2)
+            server.requests.append(request)
+            return httpx.Response(429, headers={"Retry-After": "600"})
+        return original(request)
+
+    clock = FakeClock()
+    with caplog.at_level(logging.INFO, logger="martom.olx.job"):
+        async with OlxClient(
+            transport=httpx.MockTransport(one_429),
+            clock=clock.monotonic,
+            sleep=clock.sleep,
+            max_attempts=2,
+        ) as olx:
+            await run_sync(conn, olx, kind="nightly")
+
+    [summary] = [r for r in caplog.records if getattr(r, "event", None) == "sync_run"]
+    assert summary.olx_429_count == 1
+    assert summary.olx_429_requested_wait_seconds == 600.0
+    assert summary.olx_requests_sent == len(server.requests)
+    assert summary.olx_elapsed_seconds == clock.now - 1000.0
+    assert "1 x 429, OLX asked to wait 600 s" in summary.getMessage()
+
+
 async def test_abort_during_candidate_check_deactivates_nothing(
     conn: psycopg.AsyncConnection,
 ) -> None:

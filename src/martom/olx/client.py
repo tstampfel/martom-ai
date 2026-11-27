@@ -24,6 +24,7 @@ with fakes and never wait for real.
 
 import asyncio
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
@@ -114,13 +115,21 @@ class RateLimiter:
         self._next_start: float | None = None  # earliest moment the next request may start
         self._last_start: float | None = None  # when the last request started
         self._abort_reason: str | None = None  # set by `abort()`; never cleared
+        self._created_at = clock()  # the run's start, for `elapsed_seconds`
+        # Request starts claimed through this limiter (every client sharing it counts).
+        self.requests_started = 0
         # Absolute clock time after which no request may start (None: no deadline).
-        self._deadline = None if deadline_seconds is None else clock() + deadline_seconds
+        self._deadline = None if deadline_seconds is None else self._created_at + deadline_seconds
 
     @property
     def interval(self) -> float:
         """The current minimum gap between request starts, in seconds."""
         return self._min_interval
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Seconds since this limiter was created (one limiter per run: since the run began)."""
+        return self._clock() - self._created_at
 
     def slow_down(self) -> float:
         """After a 429: grow the interval by 50%, up to 6 s; return the new interval.
@@ -150,6 +159,7 @@ class RateLimiter:
             self._check_deadline(self._clock())
             self._last_start = self._clock()
             self._next_start = self._last_start + self._min_interval
+            self.requests_started += 1
 
     def _check_deadline(self, start_at: float) -> None:
         """Stop for good (`OlxRunDeadlineError`) if a request would start after the deadline."""
@@ -260,6 +270,12 @@ class OlxClient:
         self._now = now
         # Calls that succeeded only after at least one retry (sync_run.retried_count).
         self.recovered_requests = 0
+        # 429 answers, and the seconds OLX asked us to wait for them (their Retry-After, or
+        # our backoff when there was none). It is the wait *asked for*, added when the
+        # limiter is paused, not time actually slept: when the deadline stops the run or no
+        # request follows, the full value still counts. Logged with the run summary.
+        self.rate_limited_count = 0
+        self.rate_limit_requested_wait_seconds = 0.0
         self._limiter = rate_limiter or RateLimiter(
             min_request_interval_seconds,
             clock=clock,
@@ -290,6 +306,20 @@ class OlxClient:
     def request_interval(self) -> float:
         """The current gap between request starts (grows after each 429)."""
         return self._limiter.interval
+
+    @property
+    def requests_sent(self) -> int:
+        """Requests started through this client's limiter so far, retries included.
+
+        Every request actually sent counts once, whatever came back: 2xx, 429, 5xx, other
+        4xx, or a timeout. A call the abort or the run deadline stopped before sending doesn't.
+        """
+        return self._limiter.requests_started
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Seconds since this client's limiter was created (the run's start)."""
+        return self._limiter.elapsed_seconds
 
     async def get_shop(self) -> Any:
         """GET /users/{shop}: the shop's public profile (its numeric id is `data.id`)."""
@@ -337,12 +367,13 @@ class OlxClient:
                 if status != 429 and status < 500:
                     raise failure  # other 4xx: retrying won't help
                 if status == 429:
-                    interval = self._limiter.slow_down()
-                    logger.warning("OLX sent 429: request interval raised to %.1f s", interval)
+                    self._on_429(path, response)
                 # Raises OlxRateLimitAbortError for an absurd or unparseable header.
                 retry_after = self._checked_retry_after(response, failure)
 
             delay = retry_after if retry_after is not None else self._backoff_delay(attempt)
+            if failure.status_code == 429:
+                self.rate_limit_requested_wait_seconds += delay
             # Pause the shared limiter BEFORE either give-up below, so whoever sends the
             # next request through this limiter (another coroutine, or the sync moving on
             # after catching OlxApiError) still waits as long as OLX asked. The delay is
@@ -365,6 +396,43 @@ class OlxClient:
             )
 
         raise AssertionError("unreachable: the loop always returns or raises")
+
+    def _on_429(self, path: str, response: httpx.Response) -> None:
+        """Raise the interval and log one `olx_429` line with the numbers #105 measures.
+
+        Logged before the Retry-After is checked, so a 429 that aborts the run is logged too.
+        """
+        self.rate_limited_count += 1
+        interval_before = self._limiter.interval
+        interval_after = self._limiter.slow_down()
+        raw = response.headers.get("Retry-After")
+        try:
+            retry_after = parse_retry_after(raw, now=self._now())
+        except ValueError:
+            retry_after = None  # `_checked_retry_after` aborts on it right after this
+        if retry_after is not None and not math.isfinite(retry_after):
+            # json.dumps would write `Infinity`, which jq and CloudWatch can't parse.
+            retry_after = None
+        elapsed = self._limiter.elapsed_seconds
+        requests = self._limiter.requests_started
+        logger.warning(
+            "OLX sent 429 after %.0f s and %d requests: request interval raised to %.1f s, "
+            "Retry-After %s",
+            elapsed,
+            requests,
+            interval_after,
+            "none" if retry_after is None else f"{retry_after:.0f} s",
+            extra={
+                "event": "olx_429",
+                "path": path,
+                "elapsed_seconds": elapsed,
+                "requests_sent": requests,
+                "interval_before": interval_before,
+                "interval_after": interval_after,
+                "retry_after_seconds": retry_after,  # None: absent, unparseable or infinite
+                "retry_after_header": None if raw is None else raw[:50],
+            },
+        )
 
     def _checked_retry_after(self, response: httpx.Response, failure: OlxApiError) -> float | None:
         """Return the response's Retry-After in seconds (None if absent), or abort.
