@@ -188,7 +188,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 | M1-1 | OLX client: 1 request / 2.0 s limiter by default (1.3 s floor, ×1.5 after each 429, max 6 s), 429/5xx backoff honouring Retry-After, timeouts | Unit tests with a fake transport prove pacing and retries |
 | M1-2 | Category sync: discovery, per-category pagination, dedupe, coverage reconciliation | Test reproduces the duplicate-pagination bug; nothing deactivated below 100% coverage |
 | M1-3 | Detail fetch, HTML cleanup (footer strip), summary/detail hashes | Fixture tests on real descriptions; unchanged listings are not re-fetched |
-| M1-4 | Persistence (psycopg 3), `sync_run` records, CLI `martom sync` | Integration test against Postgres in CI; a full sync of ~2,600 listings finishes without 429 |
+| M1-4 | Persistence (psycopg 3), `sync_run` records, CLI `martom sync` | Integration test against Postgres in CI; a full sync of ~2,600 listings: any 429 is honoured (Retry-After) and the run completes |
 
 ### M2 — Extraction and data quality
 

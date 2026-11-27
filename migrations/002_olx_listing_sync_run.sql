@@ -83,8 +83,8 @@ CREATE TABLE IF NOT EXISTS sync_run (
     -- but a rising count shows OLX getting less reliable.
     retried_count           integer NOT NULL DEFAULT 0,
     -- Listing ids whose detail fetch or re-check still failed after its retries, or that
-    -- a run OLX stopped early did not get to; the next nightly/full run fetches and
-    -- re-checks these first.
+    -- a run that stopped early (partial or failed) did not get to; the next nightly/full
+    -- run fetches and re-checks these first.
     failed_listing_ids      bigint[],
     -- The gap between OLX requests (seconds) when the run ended: 2.0 by default (or
     -- OLX_REQUEST_INTERVAL), raised by 50% after each 429, up to 6.0.

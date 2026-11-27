@@ -660,6 +660,31 @@ async def test_abort_keeps_last_runs_failed_ids_it_did_not_get_to(
     assert run["failed_listing_ids"] == [3]
 
 
+async def test_a_failed_run_keeps_last_runs_failed_ids_at_the_front(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+    server.detail_errors = {3: 500}
+    await sync(conn, server)
+    server.detail_errors = {}
+    server.errors_on = {"/search": 403}  # not retryable: the run fails during discovery
+    await sync(conn, server)
+    failed_run = await last_run(conn)
+    assert failed_run["status"] == "failed"
+    assert failed_run["failed_listing_ids"] == [3]
+    assert failed_run["errors"] == 0
+    server.errors_on = {}
+    server.listed[1] = "Panel 103"  # changed too, but goes after the carried-over id
+    server.requests.clear()
+
+    await sync(conn, server)
+
+    assert server.detail_requests() == [3, 1]
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    assert run["failed_listing_ids"] is None
+
+
 async def test_abort_during_detail_fetch_saves_what_was_fetched(
     conn: psycopg.AsyncConnection,
 ) -> None:

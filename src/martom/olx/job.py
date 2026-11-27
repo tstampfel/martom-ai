@@ -424,16 +424,20 @@ async def _recorded(
 
 
 async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) -> None:
-    """One nightly/full run; when OLX stops it early, carry over the ids still to do."""
+    """One nightly/full run; when it stops early, carry over the ids still to do.
+
+    That holds for every way it can stop (OLX stopping it -> 'partial', or any other
+    error -> 'failed'), so the run after it still takes those ids first.
+    """
     assert stats.run_id is not None  # set by `_recorded` before the run starts
     # Listings whose GET still failed last run go first, so a short run retries them.
     failed_last_run = await store.previous_failed_ids(conn, stats.run_id)
     # Ids that still need a GET this run (detail fetch or re-check), kept up to date as
-    # the run goes, for the case that OLX stops it: those go to the next run.
+    # the run goes, for the case that it stops early: those go to the next run.
     todo = set(failed_last_run)
     try:
         await _sync_steps(conn, olx, stats, failed_last_run, todo)
-    except OlxRateLimitAbortError:
+    except Exception:
         _carry_over(stats, todo)
         raise
 
