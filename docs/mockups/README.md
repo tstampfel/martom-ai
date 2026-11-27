@@ -75,4 +75,4 @@ Both were captured from martom.springmedia.hr at 4× size. Ask Toni for the orig
 
 ## Prices on the mockups
 
-Prices from 26 Nov 2026: panel 153 × 250 cm = 53 KM, stup 155 cm s pločom = 24,90 KM, PVC traka 19 cm × 35 m = 73 KM, Garden Light 150 cm = 7,50 KM/m (OLX); PVC kopča sa samoreznim vijkom = 1,00 KM and tiplo anker M8 × 80 mm = 1,30 KM (Toni's reference prices). Quantities follow `docs/domain/fence-rules.md`: one post more than panels, 4 clips and 4 anchors per post at 153 cm. The 25 m example: 10 × 53 + 11 × 24,90 + 44 × 1,00 + 44 × 1,30 = 905,10 KM.
+Reference prices from OLX, 26 Nov 2026: panel 153 × 250 cm = 53 KM, PVC traka 19 cm × 35 m = 73 KM, Garden Light 150 cm = 7,50 KM/m. Stup 155 cm s pločom = 24,90 KM, PVC kopča sa samoreznim vijkom = 1,00 KM and tiplo anker M8 × 80 mm = 1,30 KM are not separate listings: their prices are in the description of panel listing 63996799 (see "Where the prices live" in `docs/domain/fence-rules.md`). Quantities follow `docs/domain/fence-rules.md`: one post more than panels, 4 clips and 4 anchors per post at 153 cm. The 25 m example: 10 × 53 + 11 × 24,90 + 44 × 1,00 + 44 × 1,30 = 905,10 KM.
