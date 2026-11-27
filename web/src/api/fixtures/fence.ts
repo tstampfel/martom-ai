@@ -59,6 +59,17 @@ export const fenceClarify: ChatEvent[] = [
           { value: 'unknown', label: 'Ne znam', badge: null, note: null },
         ],
       },
+      // The closed-loop flag as its own chip question (no contract change);
+      // the UI shows a question with this id as the "Ide okolo" toggle.
+      {
+        id: 'closed',
+        text: 'Ide li ograda okolo (zatvoreno)?',
+        kind: 'single',
+        options: [
+          { value: 'no', label: 'Ne, otvorena', badge: null, note: null },
+          { value: 'yes', label: 'Ide okolo (zatvoreno)', badge: null, note: null },
+        ],
+      },
       { id: 'sides', text: 'Dužina svake strane (m)', kind: 'side_lengths', options: [] },
       {
         id: 'posts',

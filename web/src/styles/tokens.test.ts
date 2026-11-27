@@ -25,6 +25,9 @@ const expected: Record<string, string> = {
   '--color-dark-border-soft': '#5A5F68',
   '--color-step-done': '#34C46A',
   '--color-step-working': '#F5A623',
+  '--color-step-question': '#C27A00',
+  '--color-photo-stripe': '#DEDED9',
+  '--color-photo-stripe-light': '#E8E8E4',
   '--hexagon': 'polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)',
 }
 

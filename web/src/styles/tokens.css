@@ -20,6 +20,12 @@
   --color-step-done: #34c46a;
   --color-step-working: #f5a623;
 
+  /* Chat on light backgrounds (2-clarify.html, 3-results.html): the "?" step
+     mark, and the striped photo placeholder of a product card. */
+  --color-step-question: #c27a00;
+  --color-photo-stripe: #deded9;
+  --color-photo-stripe-light: #e8e8e4;
+
   --font-heading: 'Outfit', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
 

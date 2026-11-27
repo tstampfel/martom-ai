@@ -54,6 +54,7 @@ Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "St
 | Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
 | Agent card | `#4A4F57` (border), `#5A5F68` ("primjer" badge border), `#34C46A` (step done), `#F5A623` (step working) | "Kako savjetnik radi" card on charcoal. Since canvas version 26 the start screens show only done steps, so no mockup uses `#F5A623` now |
+| Chat on light | `#C27A00` ("?" step mark), `#DEDED9` / `#E8E8E4` (striped photo placeholder) | Agent steps and product-card placeholders on screens 2–3 |
 | Headings | Outfit 700/800 | |
 | Body | Inter 400–700 | |
 | Hexagon | `clip-path: polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)` | Badges and step numbers (echoes the hex nut in the logo) |
