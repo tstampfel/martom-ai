@@ -278,6 +278,69 @@ async def test_each_429_raises_the_interval_by_half_up_to_6_seconds(
     assert gaps(server.starts) == [3.0, 3.0, 4.5, 4.5, 6.0, 6.0, 6.0]
 
 
+async def test_each_429_logs_when_it_came_and_how_long_olx_asked_to_wait(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    server = Recorder(
+        clock, [ok(), ok(), httpx.Response(429, headers={"Retry-After": "1592"}), ok()]
+    )
+
+    async with make_client(clock, server) as client:
+        for listing_id in range(3):
+            await client.get_listing(listing_id)
+
+    [record] = [r for r in caplog.records if getattr(r, "event", None) == "olx_429"]
+    # Third request started at 4.0 s (two 2.0 s gaps) and got the 429.
+    assert record.elapsed_seconds == 4.0
+    assert record.requests_sent == 3
+    assert record.interval_before == 2.0
+    assert record.interval_after == 3.0
+    assert record.retry_after_seconds == 1592.0
+    assert record.path == "/listings/2"
+    assert "after 4 s and 3 requests" in record.getMessage()
+
+
+async def test_429_without_retry_after_logs_none_for_it(caplog: pytest.LogCaptureFixture) -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429), ok()])
+
+    async with make_client(clock, server) as client:
+        await client.get_listing(1)
+
+    [record] = [r for r in caplog.records if getattr(r, "event", None) == "olx_429"]
+    assert record.retry_after_seconds is None
+
+
+async def test_429_with_an_absurd_retry_after_is_still_logged_before_the_abort(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    server = Recorder(clock, [httpx.Response(429, headers={"Retry-After": "86400"})])
+
+    async with make_client(clock, server) as client:
+        with pytest.raises(OlxRateLimitAbortError):
+            await client.get_listing(1)
+
+    [record] = [r for r in caplog.records if getattr(r, "event", None) == "olx_429"]
+    assert record.retry_after_seconds == 86400.0
+
+
+async def test_client_counts_429s_requests_and_forced_wait() -> None:
+    clock = FakeClock()
+    too_many = httpx.Response(429, headers={"Retry-After": "100"})
+    server = Recorder(clock, [ok(), too_many, ok(), too_many, ok()])
+
+    async with make_client(clock, server) as client:
+        for listing_id in range(3):
+            await client.get_listing(listing_id)
+
+    assert client.requests_sent == 5
+    assert client.rate_limited_count == 2
+    assert client.rate_limit_wait_seconds == 200.0
+    assert client.elapsed_seconds == clock.now - 1000.0
+
+
 async def test_5xx_does_not_raise_the_interval() -> None:
     clock = FakeClock()
     server = Recorder(clock, [httpx.Response(503), ok()])
