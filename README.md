@@ -36,6 +36,19 @@ uv run ruff format --check  # formatting
 
 If ports 5432 or 6379 are already in use (e.g. a local Postgres), start compose with the port inline, `POSTGRES_PORT=5433 docker compose up -d --wait`, and pass the matching URLs: `DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run martom migrate` and `TEST_DATABASE_URL=postgresql://martom:martom@localhost:5433/postgres uv run pytest`.
 
+### API keys (`.env`)
+
+The app never reads `.env` by itself: config comes from environment variables only. To run a command that needs a real key, put the key in your local `.env` (copied from `.env.example`) and let uv pass the file to that one command:
+
+```sh
+uv run --env-file .env martom extract
+uv run --env-file .env python scripts/record_extraction_fixtures.py --record
+```
+
+`--env-file` only fills variables that are not set already: a variable exported in your shell, or given inline (`ANTHROPIC_API_KEY=... uv run ...`), wins over the value in the file. Without `ANTHROPIC_API_KEY`, both commands above print a one-line hint and exit 1.
+
+`.env` is git-ignored and never committed. AI agents working in this repo never read, source or pass `.env` (see [CLAUDE.md](CLAUDE.md)); only a person runs the commands above.
+
 ### API
 
 ```sh
