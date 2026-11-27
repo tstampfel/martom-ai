@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatClient, ChatRequest } from '../api/chatClient'
 import { CHAT_EVENT_TYPES } from '../api/events'
+import { createFakeBomRecalculator } from '../api/fakeBomRecalculator'
 import { createFakeChatClient } from '../api/fakeChatClient'
 import { fixtures } from '../api/fixtures'
 import { copy } from '../copy'
@@ -23,7 +24,8 @@ function recordingClient(pickReply?: (request: ChatRequest) => readonly unknown[
 }
 
 function renderChat(firstMessage: string, client: ChatClient) {
-  return render(<ChatView firstMessage={firstMessage} client={client} onBack={() => {}} />)
+  const recalculator = createFakeBomRecalculator({ wait: noWait })
+  return render(<ChatView firstMessage={firstMessage} client={client} recalculator={recalculator} onBack={() => {}} />)
 }
 
 const FENCE = 'Treba mi 25 m ograde za dvorište, visina oko 1,5 m'
@@ -60,7 +62,14 @@ describe('ChatView', () => {
     const { rerender } = renderChat('Imate li dugi katanac?', first.client)
     await screen.findByRole('heading', { name: 'Katanac dugi 50/40 i 30 mm' })
     const second = recordingClient(() => fixtures.productQuestion)
-    rerender(<ChatView firstMessage="Imate li dugi katanac?" client={second.client} onBack={() => {}} />)
+    rerender(
+      <ChatView
+        firstMessage="Imate li dugi katanac?"
+        client={second.client}
+        recalculator={createFakeBomRecalculator({ wait: noWait })}
+        onBack={() => {}}
+      />,
+    )
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(second.requests).toEqual([])
     expect(screen.getAllByRole('heading', { name: 'Katanac dugi 50/40 i 30 mm' })).toHaveLength(1)
@@ -268,5 +277,42 @@ describe('ChatView', () => {
     expect(bom).toHaveTextContent('25 m · panel 153 cm · antracit')
     expect(bom).toHaveTextContent('Panel 153 × 250 cm')
     expect(bom).toHaveTextContent('Stupovi za betoniranje – po upitu')
+  })
+
+  it('on phones, shows the materials list in the conversation and recalculates through the interface', async () => {
+    renderChat('x', recordingClient(() => fixtures.fenceBom).client)
+    const conversation = screen.getByRole('region', { name: copy.chat.label })
+    const bom = await within(conversation).findByRole('region', { name: 'Popis materijala' })
+    const total = within(bom).getByTestId('bom-total')
+    expect(total).toHaveTextContent(copy.chat.bom.totalLabel.card)
+    expect(total).toHaveTextContent('913,10 KM')
+    fireEvent.click(within(bom).getByRole('button', { name: copy.chat.bom.more('Panel 153 × 250 cm') }))
+    await expect.poll(() => total.textContent).toContain('966,10 KM')
+    expect(within(bom).getByRole('listitem', { name: 'Panel 153 × 250 cm' })).toHaveTextContent('583,00')
+  })
+
+  describe('on wide screens', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    function stubWideScreen() {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query.includes('min-width'),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }))
+    }
+
+    it('shows the materials list as the panel beside the conversation', async () => {
+      stubWideScreen()
+      renderChat('x', recordingClient(() => fixtures.fenceBom).client)
+      const bom = await screen.findByRole('region', { name: 'Popis materijala' })
+      const conversation = screen.getByRole('region', { name: copy.chat.label })
+      expect(conversation).not.toContainElement(bom)
+      expect(within(bom).getByTestId('bom-total')).toHaveTextContent(copy.chat.bom.totalLabel.panel)
+      expect(bom).toHaveTextContent(copy.chat.bom.panelFootnote)
+    })
   })
 })

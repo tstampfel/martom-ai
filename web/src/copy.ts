@@ -27,6 +27,15 @@ function cornerWord(n: number): string {
   return 'kutova'
 }
 
+/** Bosnian plural: 1 stavka, 2–4 stavke, 5+ stavki (21 stavka, 22 stavke, 11–14 stavki). */
+function itemWord(n: number): string {
+  const lastTwo = n % 100
+  const last = n % 10
+  if (last === 1 && lastTwo !== 11) return 'stavka'
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return 'stavke'
+  return 'stavki'
+}
+
 export const copy = {
   shop,
   topStrip: {
@@ -145,9 +154,26 @@ export const copy = {
       unanswered: '—',
       hint: 'Promijenite bilo šta u razgovoru — popis materijala se ponovo izračuna.',
     },
-    // Interim view of the bom event; the full materials list card is #74.
+    // The materials list card (3-results.html): a white card on phones, the
+    // charcoal panel beside the conversation on wide screens. The title,
+    // summary, line names, prices and notes come from the bom event.
     bom: {
-      quantity: (n: number) => `× ${n}`,
+      perUnit: (price: string) => `${price} / kom`,
+      onRequest: 'Cijena na upit',
+      less: (name: string) => `Manje: ${name}`,
+      more: (name: string) => `Više: ${name}`,
+      quantity: (name: string) => `Količina: ${name}`,
+      totalLabel: { card: 'Okvirno ukupno', panel: 'Okvirno' },
+      // Tomislav, 26 Nov: never a fake 0,00 KM when nothing has a price.
+      totalOnRequest: 'cijena na upit',
+      unpriced: (n: number) => `+ ${n} ${itemWord(n)} na upit`,
+      // After the total on phones (mobile/3-results.html, canvas 123e).
+      afterTotal: '+ dostava',
+      // Under the total on wide screens (web/3-results.html, canvas 123e).
+      panelFootnote: '+ dostava · cijene informativne, pribor možete izbaciti',
+      addAll: 'Dodaj sve u korpu',
+      updating: 'Računam novi iznos…',
+      failed: 'Novi iznos nije izračunat. Pokušajte ponovo.',
     },
     // The backend sends only the kind; the words are ours.
     errors: {
