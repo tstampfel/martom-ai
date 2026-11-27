@@ -1,13 +1,11 @@
 # EventBridge Scheduler starts the job task (ecs.tf) once a night, at 01:00 Europe/Sarajevo:
 #
-#   Tuesday-Sunday (nightly-sync):  sync --scheduled -> extract -> embed
-#   Monday (sunday-night-sync):     the same, then sync --full --scheduled -> extract -> embed
+#   every night (nightly-sync):  sync --scheduled -> extract -> embed
 #
-# Monday 01:00 is the night from Sunday to Monday, so the weekly full re-fetch runs on
-# Sunday night right after that night's nightly chain, inside the same task. `martom sync`
-# has no lock of its own; running both in one task, one step after the other, is what
-# keeps the full run from overlapping the nightly one. Each task is killed after 16 h
-# (job_timeout_seconds in ecs.tf), so it can't run into the next night's task either.
+# There is no weekly full run (#135): the nightly sync re-fetches the oldest 1/7 of the
+# listing details itself (rolling refresh), so every listing is refreshed within 7 nights.
+# `martom sync` has no lock of its own; each task is killed after 16 h
+# (job_timeout_seconds in ecs.tf), so it can't run into the next night's task.
 # --scheduled marks the runs that count toward the 10%-guard auto-apply streak (CLAUDE.md,
 # `martom sync`).
 #
@@ -92,14 +90,8 @@ resource "aws_iam_role_policy" "scheduler_run_job" {
 locals {
   schedules = {
     nightly-sync = {
-      description = "Nightly OLX sync, then extract and embed (Tuesday to Sunday)"
+      description = "Nightly OLX sync with its rolling refresh, then extract and embed (every night)"
       expression  = var.nightly_sync_cron
-      weekly_full = "false"
-    }
-    sunday-night-sync = {
-      description = "Sunday night: nightly sync, extract, embed, then the weekly full re-fetch, extract, embed"
-      expression  = var.sunday_night_sync_cron
-      weekly_full = "true"
     }
   }
 }
@@ -133,14 +125,6 @@ resource "aws_scheduler_schedule" "sync" {
         assign_public_ip = true # no NAT gateway (network.tf)
       }
     }
-
-    # Passed to RunTask as overrides: only WEEKLY_FULL differs between the two schedules.
-    input = jsonencode({
-      containerOverrides = [{
-        name        = "job"
-        environment = [{ name = "WEEKLY_FULL", value = each.value.weekly_full }]
-      }]
-    })
 
     dead_letter_config {
       arn = aws_sqs_queue.scheduler_dlq.arn

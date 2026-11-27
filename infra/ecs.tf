@@ -14,8 +14,9 @@
 # | REDIS_URL                | redis://localhost:6379/0 (sidecar)| not set (no Redis)          |
 # | OLX_API_BASE_URL         | not set (Settings default)        | https://api.olx.ba          |
 # | OLX_SHOP_USERNAME        | not set                           | martom                      |
-# | OLX_REQUEST_INTERVAL     | not set                           | 2.0; weekly full sync: 2.8  |
-# | FULL_SYNC_REQUEST_INTERVAL | not set                         | var.full_sync_request_interval (2.8) |
+# | OLX_REQUEST_INTERVAL     | not set                           | var.sync_request_interval (2.8) |
+# | OLX_NIGHTLY_DETAIL_CAP   | not set                           | not set (Settings default 1000) |
+# | OLX_ROLLING_REFRESH_DAYS | not set                           | not set (Settings default 7) |
 # | ANTHROPIC_API_KEY        | secret app:ANTHROPIC_API_KEY      | secret app:ANTHROPIC_API_KEY|
 # | FAST_MODEL               | claude-haiku-5-5                  | claude-haiku-5-5            |
 # | AGENT_MODEL              | claude-sonnet-5-5                 | not set                     |
@@ -27,7 +28,6 @@
 # | LANGSMITH_TRACING        | true                              | true                        |
 # | LANGSMITH_PROJECT        | var.langsmith_project             | var.langsmith_project       |
 # | LANGSMITH_API_KEY        | secret app:LANGSMITH_API_KEY      | secret app:LANGSMITH_API_KEY|
-# | WEEKLY_FULL              | not set                           | false; true on Sunday night |
 #
 # AGENT_MODEL (Settings.agent_model, M4-3) is the advisor's Sonnet model; only the API reads it.
 
@@ -65,12 +65,12 @@ locals {
   })
 
   job_environment = merge(local.common_environment, {
-    OLX_API_BASE_URL       = "https://api.olx.ba"
-    OLX_SHOP_USERNAME      = "martom"
-    OLX_REQUEST_INTERVAL   = "2.0"
+    OLX_API_BASE_URL  = "https://api.olx.ba"
+    OLX_SHOP_USERNAME = "martom"
+    # The nightly sync (with its rolling refresh, up to ~1,000 detail GETs) and any
+    # one-off `martom sync --full` in this task run at this interval (#135).
+    OLX_REQUEST_INTERVAL   = tostring(var.sync_request_interval)
     EXTRACTION_CONCURRENCY = "4"
-    # Only the weekly full sync uses it, as its OLX_REQUEST_INTERVAL (job script below).
-    FULL_SYNC_REQUEST_INTERVAL = tostring(var.full_sync_request_interval)
   })
 
   # ECS wants lists of {name, value} / {name, valueFrom}; build them from the maps above.
@@ -86,10 +86,9 @@ locals {
   ])
 
   # The scheduled job runs the whole pipeline: sync, then extract the listings whose
-  # details changed, then embed the products whose text changed. On Sunday night
-  # (WEEKLY_FULL=true, scheduler.tf) the same task then runs the weekly full re-fetch and
-  # extract + embed again, so the full run starts only after the nightly chain has
-  # finished and the two can never overlap.
+  # details changed, then embed the products whose text changed. There is no weekly full
+  # run any more (#135): the nightly sync re-fetches the oldest 1/7 of the details itself.
+  # `martom sync --full` stays available as a one-off task (README).
   #
   # Each step runs even if the one before it failed or was partial (extract and embed only
   # pick up what changed, so they are safe to run). The task exits with the first non-zero
@@ -101,19 +100,14 @@ locals {
     step martom sync --scheduled
     step martom extract
     step martom embed
-    if [ "$WEEKLY_FULL" = "true" ]; then
-      step env OLX_REQUEST_INTERVAL="$FULL_SYNC_REQUEST_INTERVAL" martom sync --full --scheduled
-      step martom extract
-      step martom embed
-    fi
     exit "$rc"
   EOT
 
   # Hard stop for a scheduled task: 16 h. A task starts at 23:00-01:00 UTC at the latest
   # (01:00 Sarajevo, plus up to 1 h of start retries), so it is gone by 17:00 UTC: before
-  # the 18:00 UTC RDS backup window and long before the next night's task. 16 h is the
-  # worst case of the Sunday-night task (two chains of 3 h sync + 2 h extract + 3 h embed,
-  # infra/README.md "Schedules"). Needs `timeout` in the image (coreutils or busybox).
+  # the 18:00 UTC RDS backup window and long before the next night's task. The worst case
+  # of one chain is ~8 h (3 h sync + 2 h extract + 3 h embed, infra/README.md
+  # "Schedules"), so 16 h leaves room. Needs `timeout` in the image (coreutils or busybox).
   job_timeout_seconds = 57600
 }
 
@@ -319,12 +313,11 @@ resource "aws_ecs_task_definition" "job" {
       name      = "job"
       image     = local.image
       essential = true
-      # Default command: the scheduled pipeline, killed after job_timeout_seconds. The
-      # Sunday-night schedule sets WEEKLY_FULL=true; one-off tasks override the command
-      # (README: `martom migrate`).
+      # Default command: the scheduled pipeline, killed after job_timeout_seconds. One-off
+      # tasks override the command (README: `martom migrate`, `martom sync --full`).
       command = ["timeout", tostring(local.job_timeout_seconds), "sh", "-c", local.job_script]
 
-      environment = [for name, value in merge(local.job_environment, { WEEKLY_FULL = "false" }) : { name = name, value = value }]
+      environment = [for name, value in local.job_environment : { name = name, value = value }]
       secrets     = local.job_secrets
 
       logConfiguration = {

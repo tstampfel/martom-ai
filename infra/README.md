@@ -18,7 +18,7 @@ ECS Fargate service: API task = `martom api` + Redis sidecar (localhost:6379)
 RDS Postgres 16 + pgvector (private subnets)     │
         ▲                                        │
         └── job task: `martom sync` → `martom extract` → `martom embed`
-              started by EventBridge Scheduler at 01:00 Europe/Sarajevo; on Sunday night the weekly full run follows in the same task
+              started by EventBridge Scheduler at 01:00 Europe/Sarajevo, every night (the sync's rolling refresh replaced the weekly full run, #135)
 ```
 
 | File | What it holds |
@@ -148,8 +148,9 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `REDIS_URL` | `redis://localhost:6379/0` (sidecar) | not set | plain |
 | `OLX_API_BASE_URL` | not set | `https://api.olx.ba` | plain |
 | `OLX_SHOP_USERNAME` | not set | `martom` | plain |
-| `OLX_REQUEST_INTERVAL` | not set | `2.0`; the weekly full sync uses `FULL_SYNC_REQUEST_INTERVAL` instead | plain |
-| `FULL_SYNC_REQUEST_INTERVAL` | not set | `2.8` (`var.full_sync_request_interval`, at least 1.3) | plain, job script only |
+| `OLX_REQUEST_INTERVAL` | not set | `2.8` (`var.sync_request_interval`, at least 1.3), for the nightly sync and one-off syncs | plain |
+| `OLX_NIGHTLY_DETAIL_CAP` | not set | not set: the Settings default, 1000 detail GETs a night | plain (add to `job_environment` to change) |
+| `OLX_ROLLING_REFRESH_DAYS` | not set | not set: the Settings default, 7 nights | plain (add to `job_environment` to change) |
 | `ANTHROPIC_API_KEY` | `martom/production/app` → `ANTHROPIC_API_KEY` | same | secret (by hand) |
 | `FAST_MODEL` | `claude-haiku-5-5` | `claude-haiku-5-5` | plain |
 | `AGENT_MODEL` | `claude-sonnet-5-5` (read from M4) | not set | plain |
@@ -161,7 +162,6 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `LANGSMITH_TRACING` | `true` | `true` | plain |
 | `LANGSMITH_PROJECT` | `martom-ai-production` | same | plain |
 | `LANGSMITH_API_KEY` | `app` → `LANGSMITH_API_KEY` | same | secret (by hand) |
-| `WEEKLY_FULL` | not set | `false`; `true` from the Sunday-night schedule | plain, job script only |
 
 Not set in AWS: `TEST_DATABASE_URL`, `TEST_REDIS_URL`, `POSTGRES_PORT`, `REDIS_PORT` (local and CI only), and `ORDER_PHONE`, `TURNSTILE_SECRET_KEY`, `RATE_LIMIT_PER_MINUTE`, `MAX_TOKENS_PER_CONVERSATION` until M5-6/M5-7 read them. If your LangSmith account is in the EU region, add `LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com` to `common_environment` in `ecs.tf`.
 
@@ -257,27 +257,24 @@ One scheduled task a night, at 01:00 Europe/Sarajevo (00:00 UTC in winter, 23:00
 
 | Night | Schedule | Task runs |
 | --- | --- | --- |
-| Mon→Tue … Sat→Sun (cron `TUE-SUN`) | `nightly-sync` | `sync --scheduled` → `extract` → `embed` |
-| Sun→Mon (cron `MON`) | `sunday-night-sync` | the same, then `sync --full --scheduled` → `extract` → `embed` |
+| every night (cron `* * ?`) | `nightly-sync` | `sync --scheduled` → `extract` → `embed` |
 
-`martom sync` has no lock of its own. The weekly full run can't overlap the nightly one because both run in the same task, one step after the other. Two tasks can't overlap either: each is killed after 16 h (`timeout`, `job_timeout_seconds` in `ecs.tf`) and the next one starts 24 h after it.
+There is no weekly full run any more (#135). #105's full run made 2,719 OLX requests in 2 h 37 min, found no changed listing and still got 429s, so the nightly sync now does a **rolling refresh** instead: besides the listings whose list-page fields changed, it re-fetches the details of about 1/7 of the active listings (the ones fetched longest ago), so every listing is refreshed within 7 nights. The night's detail GETs are capped at 1,000 (`OLX_NIGHTLY_DETAIL_CAP`); changed listings always go through, and the rolling slice gets what is left (`sync_run.rolling_deferred` counts what waited). `sync_run.oldest_detail_age_days` records the oldest detail among the active listings after each run, and `detail_refresh_overdue` is set (with a WARNING in the log) when it is over 8 days: that is what the M6-3 alarm watches. `martom sync --full` still works as a one-off task (`run_once martom sync --full`, which runs at the task's 2.8 s too).
 
-Worst-case timeline for the Sunday-night task (the longest one):
+`martom sync` has no lock of its own. Two tasks can't overlap: each is killed after 16 h (`timeout`, `job_timeout_seconds` in `ecs.tf`) and the next one starts 24 h after it. Don't start a one-off `martom sync --full` while the nightly task is running.
+
+Worst-case timeline for one night's task:
 
 | Step | Normal | Worst case | What bounds it |
 | --- | --- | --- | --- |
-| nightly `sync --scheduled` | minutes | 3 h | the sync's own 3 h deadline |
+| `sync --scheduled` | ~1 h: up to 1,000 detail GETs at 2.8 s ≈ 47 min, plus list pages | 3 h | the sync's own 3 h deadline |
 | `extract` | minutes (changed listings only) | ~2 h | every listing changed: ~2,600 Haiku calls, 4 at a time, with retries |
 | `embed` | minutes | ~3 h | ~28 Cohere batches × 6 attempts × 60 s |
-| `sync --full --scheduled` | ~2 h: ~2,570–2,620 requests at 2.8 s ≈ 2 h, plus list pages | 3 h | the 3 h deadline |
-| `extract` + `embed` again | minutes | ~5 h | as above |
-| **Total** | **~2.5 h** | **16 h**: the hard stop | `timeout` kills the task |
+| **Total** | **~1 h** | **~8 h**; 16 h is the hard stop | `timeout` kills the task |
 
-The weekly full sync runs at `full_sync_request_interval` (2.8 s by default, never below 1.3) instead of the nightly 2.0 s: OLX allows about 1,400 requests before a ~1,600 s 429 penalty (#105), and the full run makes about 2,600. The nightly run fetches only changed listings (tens of detail calls), so 2.0 s is fine there.
+The job task runs every sync at `sync_request_interval` (2.8 s by default, never below 1.3): OLX allows about 1,400 requests before a ~1,600 s 429 penalty (#105), and the nightly run can now make about 1,100 (the detail cap plus the list pages). A sync started by hand outside the task uses the Settings default of 2.0 s unless `OLX_REQUEST_INTERVAL` says otherwise.
 
 So the latest a task can still be running is 17:00 UTC (a 01:00 UTC start after an hour of start retries, plus 16 h). The RDS backup window (18:00–18:30 UTC daily) and maintenance window (Wed 19:00–20:00 UTC) come after that, in summer and winter time alike.
-
-The full run right after the nightly one also means: if both trip the 10% deactivation guard, the second trip doesn't auto-apply, because auto-apply needs the previous trip to have started at least 12 h earlier. The next night's run can still complete the streak.
 
 ## Notes
 
