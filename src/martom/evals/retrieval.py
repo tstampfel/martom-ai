@@ -188,7 +188,9 @@ async def run_search_eval(
         ]
 
     async def hybrid(text: str) -> list[int]:
-        hits = await search_hybrid(conn, text, embedder=model, limit=limit)
+        # fallback=False: a failed query embedding stops the eval instead of quietly
+        # turning this question into a keyword-only answer scored as hybrid.
+        hits = await search_hybrid(conn, text, embedder=model, limit=limit, fallback=False)
         return [hit.listing_id for hit in hits]
 
     searches = {"vector": vector, "hybrid": hybrid}

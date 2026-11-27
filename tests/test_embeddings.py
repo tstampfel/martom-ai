@@ -151,7 +151,9 @@ def test_query_embedding_is_quick_to_give_up_and_batch_embedding_patient() -> No
     settings = Settings(embedding_provider="cohere", embedding_model=None, cohere_api_key="k")
     query = make_embedder(settings, for_queries=True).embeddings
     batch = make_embedder(settings).embeddings
-    assert (query.max_retries, query.request_timeout) == (1, 3.0)  # one attempt, no retry
+    # One langchain-cohere attempt (the Cohere SDK may still retry a 429/5xx itself;
+    # search_hybrid's 5 s cap bounds that).
+    assert (query.max_retries, query.request_timeout) == (1, 3.0)
     assert (batch.max_retries, batch.request_timeout) == (6, 60.0)
 
 
@@ -190,3 +192,25 @@ def test_an_unknown_local_model_is_an_error() -> None:
     # Each local model needs its prefixes known, or its vectors are quietly worse.
     with pytest.raises(EmbeddingError, match="intfloat/multilingual-e5-large"):
         make_embedder(Settings(embedding_provider="local", embedding_model="some/model"))
+
+
+def test_a_local_model_loads_once_even_when_threads_race() -> None:
+    import threading
+    import time
+
+    embedder = make_embedder(Settings(embedding_provider="local", embedding_model=None))
+    local = embedder.embeddings
+    loads: list[int] = []
+
+    def slow_load() -> StubSentenceModel:
+        loads.append(1)
+        time.sleep(0.05)
+        return StubSentenceModel()
+
+    local._load = slow_load  # stands in for the 2 GB download/load
+    threads = [threading.Thread(target=local.embed_query, args=("x",)) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert loads == [1]

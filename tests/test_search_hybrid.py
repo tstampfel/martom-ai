@@ -300,6 +300,7 @@ async def test_a_slow_query_embedding_times_out_into_keyword_results(
     monkeypatch.setattr(hybrid, "QUERY_EMBED_TIMEOUT_SECONDS", 0.05)
     hits = await search_hybrid(conn, "panelna ograda", embedder=Embedder(MODEL, SlowEmbeddings()))
     assert set(ids(hits)[:2]) == PANELS
+    assert all(hit.vector_rank is None for hit in hits)  # keyword only: the timeout fired
 
 
 async def test_typo_matches_stay_when_the_model_has_no_vectors_yet(
@@ -323,3 +324,39 @@ async def test_a_typo_match_on_a_listing_without_a_vector_stays(
     assert 1199211 in ids(await search_hybrid(conn, "panelan", embedder=embedder))
     hits = await search_hybrid(conn, "kolica", embedder=embedder, candidates=3)
     assert BRUSILICA not in ids(hits)
+
+
+async def test_without_fallback_a_failing_query_embedding_raises(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # Evals must never score keyword results as hybrid (R2-1).
+    with pytest.raises(RuntimeError, match="provider down"):
+        await search_hybrid(
+            conn, "panelan", embedder=Embedder(MODEL, FailingEmbeddings()), fallback=False
+        )
+
+
+async def test_without_fallback_a_slow_query_embedding_is_waited_for(
+    conn: psycopg.AsyncConnection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(hybrid, "QUERY_EMBED_TIMEOUT_SECONDS", 0.05)
+
+    class SlightlySlow(VocabEmbeddings):
+        async def aembed_query(self, text: str) -> list[float]:
+            await asyncio.sleep(0.2)
+            return self._vector(text)
+
+    hits = await search_hybrid(
+        conn, "panelna ograda", embedder=Embedder(MODEL, SlightlySlow()), fallback=False
+    )
+    assert hits[0].vector_rank is not None
+
+
+async def test_the_hybrid_eval_fails_loudly_instead_of_scoring_keyword_results(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    questions = [EvalQuestion("q", "panelan", tuple(PANELS), "seed")]
+    with pytest.raises(RuntimeError, match="provider down"):
+        await run_search_eval(
+            conn, questions, "hybrid", embedder=Embedder(MODEL, FailingEmbeddings())
+        )

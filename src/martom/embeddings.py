@@ -23,6 +23,7 @@ import json
 import math
 import os
 import random
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,9 +48,11 @@ DEFAULT_COHERE_MODEL = "embed-multilingual-v3.0"  # 100+ languages
 # connection can't hang the run.
 COHERE_BATCH_MAX_RETRIES = 6
 COHERE_BATCH_TIMEOUT_SECONDS = 60.0
-# A search query gets one attempt of at most 3 s: langchain-cohere's shortest wait before a
-# retry is 4 s, more than a search should spend, and hybrid search answers with keyword
-# results when the query can't be embedded (search/hybrid.py).
+# A search query gets one langchain-cohere attempt with a 3 s request timeout: its shortest
+# wait before a retry is 4 s, more than a search should spend. The Cohere SDK underneath
+# still retries a 429 or 5xx itself (twice, honouring Retry-After up to 60 s), so a caller
+# outside search_hybrid can wait longer; search_hybrid caps the whole wait at 5 s and then
+# answers with keyword results (search/hybrid.py).
 COHERE_QUERY_MAX_RETRIES = 1
 COHERE_QUERY_TIMEOUT_SECONDS = 3.0
 
@@ -179,20 +182,27 @@ class LocalSentenceEmbeddings(Embeddings):
         self.query_prefix = query_prefix
         self.document_prefix = document_prefix
         self.model: object | None = None  # a SentenceTransformer once loaded
+        # The async methods run _encode in worker threads; the lock keeps two of them from
+        # loading the (2 GB) model at the same time.
+        self._load_lock = threading.Lock()
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
-        if self.model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-            except ImportError as exc:
-                raise EmbeddingError(
-                    "EMBEDDING_PROVIDER=local needs `uv sync --group local-embeddings`"
-                ) from exc
-            self.model = SentenceTransformer(self.name)
+        with self._load_lock:
+            if self.model is None:
+                self.model = self._load()
         # normalize_embeddings: unit-length vectors, so cosine distance behaves the same for
         # every model.
         vectors = self.model.encode(texts, normalize_embeddings=True)  # type: ignore[attr-defined]
         return [[float(x) for x in vector] for vector in vectors]
+
+    def _load(self) -> object:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise EmbeddingError(
+                "EMBEDDING_PROVIDER=local needs `uv sync --group local-embeddings`"
+            ) from exc
+        return SentenceTransformer(self.name)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self._encode([self.document_prefix + t for t in texts])

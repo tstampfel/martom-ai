@@ -19,6 +19,8 @@ How `search_hybrid` runs:
 
 If the query can't be embedded (provider down, rate limit, timeout), the search answers
 with keyword results alone and logs a warning: a slower or worse search beats no search.
+Evals pass `fallback=False` instead: no timeout, and an embedding error is raised, so a
+keyword-only answer is never scored as hybrid.
 
 Out of scope here (M3-4): rerank, and parsing filters out of the question.
 """
@@ -97,12 +99,13 @@ async def search_hybrid(
     embedder: Embedder,
     limit: int = 10,
     candidates: int = DEFAULT_CANDIDATES,
+    fallback: bool = True,
 ) -> list[HybridHit]:
     """Active products for `query` and `filters`, best first (see the module docstring)."""
     if not strip_filler_words(query):
         return []  # nothing but filler words: nothing to search for, nothing to embed
     keyword = await search_keyword(conn, query, filters, limit=candidates)
-    vector = await _vector_hits(conn, query, filters, embedder, candidates)
+    vector = await _vector_hits(conn, query, filters, embedder, candidates, fallback=fallback)
     if vector is None:
         vector = []  # keyword results only; every typo match stays
     else:
@@ -140,8 +143,16 @@ async def _vector_hits(
     filters: SearchFilters | None,
     embedder: Embedder,
     candidates: int,
+    *,
+    fallback: bool,
 ) -> list[VectorHit] | None:
-    """Vector search's hits, or None when the query couldn't be embedded in time."""
+    """Vector search's hits, or None when the query couldn't be embedded in time.
+
+    With fallback=False there is no time limit and an embedding error is raised.
+    """
+    if not fallback:
+        vector = await embedder.embed_query(query)
+        return await search_vector(conn, vector, embedder.model, filters, limit=candidates)
     try:
         vector = await asyncio.wait_for(
             embedder.embed_query(query), timeout=QUERY_EMBED_TIMEOUT_SECONDS

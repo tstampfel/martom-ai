@@ -44,7 +44,10 @@ PANELS = {63996799, 1199211}
 
 
 async def hybrid_ids(conn: psycopg.AsyncConnection, query: str, embedder: Embedder) -> list[int]:
-    return [hit.listing_id for hit in await search_hybrid(conn, query, embedder=embedder)]
+    # fallback=False: a failed embedding must stop the comparison, not make "kolica" look
+    # like a keyword-only search (which returns the grinder).
+    hits = await search_hybrid(conn, query, embedder=embedder, fallback=False)
+    return [hit.listing_id for hit in hits]
 
 
 async def compare(models: list[str], eval_set: Path) -> None:
