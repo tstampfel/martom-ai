@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # Listings extracted at the same time (one Claude call each).
     extraction_concurrency: int = Field(default=4, ge=1, le=16)
 
+    # Bearer token for the /admin endpoints (M2-3), e.g. GET /admin/review-issues.
+    # Unset (the default) turns them off: they answer 404, never open. At least 32
+    # characters, so a short guessable token is rejected at startup.
+    admin_token: SecretStr | None = Field(default=None, min_length=32)
+
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")
     @classmethod
