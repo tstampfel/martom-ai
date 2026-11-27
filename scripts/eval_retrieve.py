@@ -12,7 +12,8 @@ must not return the grinder, 'panelan' must find the panels) and the off-topic q
 best rerank score.
 
 Needs a database with the catalogue and its embeddings, COHERE_API_KEY and
-ANTHROPIC_API_KEY (uv passes them from .env; never put a key on the command line):
+ANTHROPIC_API_KEY. Tomislav only (agents never read .env); uv passes the keys from his
+.env, never put a key on the command line:
 
     DATABASE_URL=postgresql://martom:martom@localhost:5433/martom \\
         uv run --env-file .env python scripts/eval_retrieve.py
@@ -113,7 +114,7 @@ async def timed_run(
         print(
             f"{stage:<11} p50 {percentile(values, 50):>7.1f} ms"
             f"   p95 {percentile(values, 95):>7.1f} ms"
-            f" ms   max {max(values):>7.1f} ms"
+            f"   max {max(values):>7.1f} ms"
         )
     print(f"fallbacks: parse {not_parsed}/{runs}, rerank {not_reranked}/{runs}")
 
@@ -125,7 +126,7 @@ async def main(eval_set: Path, repeat: int, pause: float) -> None:
     parser: QueryParser | None = make_query_parser(settings)
     reranker = make_reranker(settings)
     if parser is None or reranker is None:
-        raise SystemExit("needs ANTHROPIC_API_KEY and COHERE_API_KEY (uv run --env-file .env ...)")
+        raise SystemExit("needs ANTHROPIC_API_KEY and COHERE_API_KEY (Tomislav runs this)")
     pausing = PausingReranker(reranker, pause)
     print(f"embeddings {embedder.model}, parser {parser.model_name}, rerank {reranker.model}")
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
@@ -145,6 +146,8 @@ async def main(eval_set: Path, repeat: int, pause: float) -> None:
             d = details[question.id]
             top = d.hits[0].relevance if d.hits else None
             dropped = " (dropped: matched nothing)" if d.filters_dropped else ""
+            if d.unfiltered_added:
+                dropped += f" (+{d.unfiltered_added} unfiltered)"
             print(f"  {question.id:<32} {d.filters}{dropped}  best relevance {top}")
 
         kolica, panelan = await issue_102_hits(conn, embedder)

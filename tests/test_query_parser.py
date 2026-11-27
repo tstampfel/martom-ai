@@ -185,6 +185,10 @@ def test_make_query_parser_builds_a_fast_haiku_without_thinking(
     parser = make_query_parser(Settings(anthropic_api_key=SecretStr("sk-test")))
     assert parser is not None
     assert built["model"] == "claude-haiku-5-5"
+    # The real key, never the mask: ChatAnthropic unwraps a SecretStr itself, a str() of it
+    # would send "**********" (the #15 Cohere bug).
+    key = built["api_key"]
+    assert (key.get_secret_value() if isinstance(key, SecretStr) else key) == "sk-test"
     assert built["thinking"] == {"type": "disabled"}  # latency: no thinking for a lookup
     assert built["effort"] == "low"
     assert built["max_retries"] == 0  # the parser's own timeout decides, not SDK retries
@@ -206,8 +210,8 @@ CASES = _load("cases.json")["cases"]
 def test_recorded_replies_match_the_current_prompt() -> None:
     responses = _load("responses.json")
     assert responses["prompt_version"] == PROMPT_VERSION, (
-        "the prompt or schema changed: re-record with "
-        "`uv run python scripts/record_query_parser_fixtures.py --record`"
+        "the prompt or schema changed: ask Tomislav to re-record with "
+        "`scripts/record_query_parser_fixtures.py --record`"
     )
     assert set(responses["responses"]) == {case["question"] for case in CASES}
 

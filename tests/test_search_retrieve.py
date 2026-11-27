@@ -8,6 +8,7 @@ import asyncio
 import logging
 import unicodedata
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 
 import psycopg
 import pytest
@@ -19,12 +20,20 @@ from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder
 from martom.evals.retrieval import EvalQuestion
 from martom.evals.retrieve_eval import run_retrieve_eval
+from martom.extract.store import save_products
 from martom.search.hybrid import search_hybrid
 from martom.search.keyword import SearchFilters
 from martom.search.query_parser import ParsedQuery, QueryParser
 from martom.search.rerank import RerankScore
 from martom.search.retrieve import retrieve
-from search_catalogue import BRUSILICA, PANELS, T_POST, build_catalogue
+from search_catalogue import (
+    BRUSILICA,
+    PANELS,
+    T_POST,
+    add_listing,
+    build_catalogue,
+    synthetic,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -128,7 +137,7 @@ def ids(hits: list) -> list[int]:
     return [hit.listing_id for hit in hits]
 
 
-async def test_parsed_filters_narrow_the_search(
+async def test_parsed_filters_put_matching_listings_first(
     conn: psycopg.AsyncConnection, embedder: Embedder
 ) -> None:
     parser = parser_replying(
@@ -140,8 +149,55 @@ async def test_parsed_filters_narrow_the_search(
     assert result.parsed
     assert result.filters == SearchFilters(height_cm=150.0)
     assert not result.filters_dropped
-    assert T_POST in ids(result.hits)
-    assert BRUSILICA not in ids(result.hits)  # no height to read on a grinder
+    found = ids(result.hits)
+    assert T_POST in found
+    # No height to read on a grinder: it fails the filter, so it can only come after the
+    # listings that pass it, from the unfiltered top-up.
+    if BRUSILICA in found:
+        assert found.index(T_POST) < found.index(BRUSILICA)
+
+
+SINGLE_T_POST = 900301  # sells one thing: no variants, the height only in its title
+
+
+async def _add_single_t_post(conn: psycopg.AsyncConnection, embedder: Embedder) -> None:
+    await add_listing(conn, SINGLE_T_POST, "T STUP 150 CM", "t-stup-150-cm-900301")
+    record = replace(synthetic(SINGLE_T_POST, "t stup", "T STUP 150 CM | t stup"), variants=[])
+    await save_products(conn, [record])
+    await run_embedding(conn, embedder)
+
+
+@pytest.mark.parametrize("candidates", [30, 1])
+async def test_a_parsed_height_never_hides_a_listing_without_variants(
+    conn: psycopg.AsyncConnection, embedder: Embedder, candidates: int
+) -> None:
+    # R1-1: the height filter can't match a listing with no variants ("no height to
+    # read"), so the filtered search never returns "T STUP 150 CM". The unfiltered top-up
+    # must still bring it to the reranker, also when the filtered list is already full
+    # (candidates=1: T_POST alone fills it).
+    await _add_single_t_post(conn, embedder)
+    parser = parser_replying(
+        ParsedQuery(height="150 cm", colour=None, min_price=None, max_price=None)
+    )
+    reranker = FakeReranker(favourite="T STUP 150 CM")
+    result = await retrieve(
+        conn,
+        "T stup za ogradu 150 cm",
+        embedder=embedder,
+        parser=parser,
+        reranker=reranker,
+        candidates=candidates,
+    )
+    assert result.filters == SearchFilters(height_cm=150.0)
+    assert result.unfiltered_added > 0
+    assert result.hits[0].listing_id == SINGLE_T_POST
+
+
+async def test_without_filters_there_is_no_top_up(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    result = await retrieve(conn, "panelna ograda", embedder=embedder, parser=None, reranker=None)
+    assert result.unfiltered_added == 0
 
 
 async def test_filters_that_match_nothing_are_dropped(

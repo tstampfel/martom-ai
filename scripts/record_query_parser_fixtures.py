@@ -1,8 +1,8 @@
 """Re-record the query parser's replies (M3-4). Run by hand, never in CI.
 
-    # ask claude-haiku-5-5 about every question in tests/fixtures/query_parser/cases.json
-    # and save its replies to responses.json (a fraction of a cent; needs ANTHROPIC_API_KEY,
-    # which uv passes from your local .env):
+    # Tomislav only (agents never read .env). Ask claude-haiku-5-5 about every question
+    # in tests/fixtures/query_parser/cases.json and save its replies to responses.json
+    # (a fraction of a cent; needs ANTHROPIC_API_KEY, which uv passes from your .env):
     uv run --env-file .env python scripts/record_query_parser_fixtures.py --record
 
 Then run `uv run pytest tests/test_query_parser.py` and review the git diff of
@@ -28,8 +28,7 @@ async def record() -> None:
     parser = make_query_parser(settings)
     if parser is None:
         raise SystemExit(
-            "ANTHROPIC_API_KEY is not set; run it with your local key file: "
-            "uv run --env-file .env python scripts/record_query_parser_fixtures.py --record"
+            "ANTHROPIC_API_KEY is not set (Tomislav runs this with his local key file)"
         )
     cases = json.loads((FIXTURES / "cases.json").read_text(encoding="utf-8"))["cases"]
     responses = {}

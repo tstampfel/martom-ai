@@ -6,11 +6,18 @@ This is the "Retrieve" node of the agent graph (docs/PLAN.md, Agent graph):
    the question for filters (search/query_parser.py) while the embedding provider embeds
    it. Neither needs the other, so the slower one sets the time, not their sum.
 2. Search: hybrid search (search/hybrid.py) with those filters returns its best
-   `candidates` (30) in RRF order. If the parsed filters match nothing at all, the search
-   runs again without them: a model's misreading must not leave the customer with no
-   answer. `Retrieval.filters_dropped` says when that happened.
-3. Rerank: Cohere scores the 30 candidates' search_text against the question
-   (search/rerank.py) and the best `limit` are returned with their relevance.
+   `candidates` (30) in RRF order. Parsed filters narrow, but must never hide a strong
+   match: a height filter can't match a listing that sells one thing without variants
+   ("T STUP 150 CM" keeps its height in the title), and a colour filter misses a listing
+   whose colour wasn't extracted. So when filters are set, the search also runs without
+   them (the query vector is reused: one more SQL query, no paid call), and the
+   unfiltered hits the filtered list lacks are added after it: enough to fill it up to
+   `candidates`, and at least UNFILTERED_TOP_UP even when it is full
+   (`Retrieval.unfiltered_added`). If the filters match nothing at all they are dropped
+   (`Retrieval.filters_dropped`).
+3. Rerank: Cohere scores the candidates' search_text against the question
+   (search/rerank.py) and the best `limit` are returned with their relevance. The
+   filtered hits come first, so without a rerank the filters still decide the order.
 
 Every outside call has a fallback, so a customer's search never fails because a provider is
 down or slow: no filters if Haiku fails, keyword results only if the embedding fails
@@ -48,6 +55,11 @@ logger = logging.getLogger(__name__)
 # The most a search waits for the reranker before answering in RRF order. Rerank 4 Fast on
 # 30 short texts usually takes a few hundred milliseconds.
 RERANK_TIMEOUT_SECONDS = 1.5
+# Unfiltered hits added after a full filtered list (see the module docstring). With 30
+# filtered candidates the reranker reads at most 40 texts: still one Cohere search unit
+# (up to 100 documents), and a strong match the filter can't see is almost always in the
+# unfiltered top 10.
+UNFILTERED_TOP_UP = 10
 
 
 @dataclass(frozen=True)
@@ -72,6 +84,7 @@ class Retrieval:
     filters: SearchFilters  # the filters the returned search ran with
     parsed: bool  # the query parser answered (False: none configured, failed or too slow)
     filters_dropped: bool  # the parsed filters matched nothing, so they were left out
+    unfiltered_added: int  # candidates added from the search without filters (R1-1)
     reranked: bool  # False: no reranker configured, it failed, or it was too slow
     timings_ms: dict[str, float] = field(default_factory=dict)
 
@@ -144,7 +157,7 @@ async def retrieve(
         # Nothing to search for (search_hybrid would return []): skip the paid calls.
         for name in ("understand", "search", "rerank", "total"):
             timings[name] = 0.0
-        return Retrieval([], SearchFilters(), False, False, False, timings)
+        return Retrieval([], SearchFilters(), False, False, False, 0, timings)
 
     parse: Awaitable[SearchFilters | None] = (
         parser.filters(question, fallback=fallback) if parser else _no_filters()
@@ -160,12 +173,23 @@ async def retrieve(
         conn, question, filters, embedder=known, limit=candidates, fallback=fallback
     )
     filters_dropped = False
-    if not hybrid and filters != SearchFilters():
-        logger.info("parsed filters matched nothing; searching without them")
-        filters, filters_dropped = SearchFilters(), True
-        hybrid = await search_hybrid(
-            conn, question, filters, embedder=known, limit=candidates, fallback=fallback
+    unfiltered_added = 0
+    if filters != SearchFilters():
+        # Room for the top-up beyond hits the filtered list already has.
+        unfiltered = await search_hybrid(
+            conn,
+            question,
+            SearchFilters(),
+            embedder=known,
+            limit=candidates + UNFILTERED_TOP_UP,
+            fallback=fallback,
         )
+        if not hybrid:
+            logger.info("parsed filters matched nothing; searching without them")
+            filters, filters_dropped = SearchFilters(), True
+            hybrid = unfiltered[:candidates]
+        else:
+            hybrid, unfiltered_added = _top_up(hybrid, unfiltered, candidates)
     mark = lap("search", mark)
 
     scores = await _rerank(conn, question, hybrid, reranker, rerank_timeout, fallback=fallback)
@@ -180,9 +204,21 @@ async def retrieve(
         filters=filters,
         parsed=parsed_filters is not None,
         filters_dropped=filters_dropped,
+        unfiltered_added=unfiltered_added,
         reranked=scores is not None,
         timings_ms=timings,
     )
+
+
+def _top_up(
+    filtered: list[HybridHit], unfiltered: list[HybridHit], candidates: int
+) -> tuple[list[HybridHit], int]:
+    """The filtered hits, then unfiltered ones they lack: up to `candidates` in all, and at
+    least UNFILTERED_TOP_UP of them (when there are that many)."""
+    seen = {hit.listing_id for hit in filtered}
+    missing = [hit for hit in unfiltered if hit.listing_id not in seen]
+    added = missing[: max(candidates - len(filtered), UNFILTERED_TOP_UP)]
+    return filtered + added, len(added)
 
 
 def _hit(hit: HybridHit, relevance: float | None) -> RetrievedHit:
