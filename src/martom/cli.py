@@ -14,6 +14,8 @@ import uvicorn
 from pydantic import ValidationError
 
 from martom.api.admin import AdminTokenError, check_admin_token
+from martom.bom.manual_products import DEFAULT_PATH as MANUAL_PRODUCTS_PATH
+from martom.bom.manual_products import load_manual_products
 from martom.checkpointer import setup_checkpointer
 from martom.embed_job import EmbedStats, run_embedding
 from martom.embeddings import EmbeddingError, make_embedder
@@ -30,6 +32,7 @@ from martom.migrate import MigrationError, run_migrations
 from martom.olx.client import OlxClient
 from martom.olx.job import RunKind, RunStats, apply_skipped_run, run_sync
 from martom.review.report import ReportIssue, format_report, load_open_issues
+from martom.search.manual import ManualSyncStats, sync_manual_products
 from martom.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -96,6 +99,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="folder with the chunk files (default: ./knowledge, so run from the repo root)",
     )
 
+    load_manual = commands.add_parser(
+        "load-manual-products",
+        help="index manual_products.toml for search (manual_product); `embed` also does this",
+    )
+    load_manual.add_argument(
+        "--file",
+        type=Path,
+        default=MANUAL_PRODUCTS_PATH,
+        help="the TOML file (default: src/martom/bom/manual_products.toml)",
+    )
+
     extract = commands.add_parser(
         "extract",
         help="extract products and variants with Claude Haiku from listings whose detail changed",
@@ -126,6 +140,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "embed":
         return run_embed_command()
+
+    if args.command == "load-manual-products":
+        return run_load_manual_products_command(args.file)
 
     if args.command == "load-knowledge":
         return run_load_knowledge_command(args.dir)
@@ -168,7 +185,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         if library_migrations:
             print(f"checkpointer: applied {library_migrations} library migrations")
+        # The search index of manual_products.toml (#112). The migrate task runs on every
+        # deploy, so a changed price reaches the search price filter at once instead of at
+        # the next nightly `martom embed` (R1-1). Prints only when it changed something.
+        try:
+            manual = asyncio.run(_sync_manual_if_indexed(database_url))
+        except (OSError, ValueError, psycopg.Error) as exc:
+            print(f"manual products sync failed: {exc}", file=sys.stderr)
+            return 1
+        if manual is not None and (manual.inserted or manual.updated or manual.deleted):
+            print(_manual_sync_line(manual))
     return 0
+
+
+async def _sync_manual_if_indexed(database_url: str) -> ManualSyncStats | None:
+    """Sync manual_products.toml into `manual_product`; None when the table doesn't exist
+    (a migrations folder without 009)."""
+    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
+        cursor = await conn.execute("SELECT to_regclass('manual_product') IS NOT NULL")
+        row = await cursor.fetchone()
+        if not (row and row[0]):
+            return None
+        return await sync_manual_products(conn, load_manual_products(MANUAL_PRODUCTS_PATH))
 
 
 def run_load_knowledge_command(directory: Path) -> int:
@@ -189,10 +227,46 @@ def run_load_knowledge_command(directory: Path) -> int:
     return 0
 
 
+def _manual_sync_line(stats: ManualSyncStats) -> str:
+    return (
+        f"manual products: inserted {stats.inserted}, updated {stats.updated}, "
+        f"unchanged {stats.unchanged}, deleted {stats.deleted}"
+    )
+
+
+def run_load_manual_products_command(path: Path) -> int:
+    """`martom load-manual-products [--file FILE]`: exit 0 when synced, 1 otherwise.
+
+    An invalid file loads nothing (it is read and checked before the database is touched).
+    """
+    database_url = os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
+    try:
+        products = load_manual_products(path)
+    except (OSError, ValueError) as exc:  # tomllib's TOMLDecodeError is a ValueError
+        print(f"load-manual-products failed: {exc}", file=sys.stderr)
+        return 1
+
+    async def load() -> ManualSyncStats:
+        async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
+            return await sync_manual_products(conn, products)
+
+    try:
+        stats = asyncio.run(load())
+    except psycopg.Error as exc:
+        print(f"load-manual-products failed: database error: {exc}", file=sys.stderr)
+        return 1
+    print(_manual_sync_line(stats))
+    return 0
+
+
 def run_embed_command() -> int:
     """`martom embed`: exit 0 when every changed text was embedded, 1 otherwise.
 
-    Rows embedded before a failure stay saved, so running it again continues from there.
+    Syncs manual_products.toml into `manual_product` first (#112), so the nightly chain
+    (sync -> extract -> embed) keeps the manual products searchable after a deploy changed
+    the file. An invalid TOML (or a failed sync) is logged and the products and knowledge
+    chunks are still embedded, then the command exits 1 (R1-2). Rows embedded before a
+    failure stay saved, so running it again continues from there.
     """
     try:
         settings = Settings()
@@ -202,24 +276,35 @@ def run_embed_command() -> int:
         return 1
     configure_logging(settings.log_level)
 
-    async def embed() -> EmbedStats:
+    async def embed() -> tuple[ManualSyncStats | None, EmbedStats]:
         async with await psycopg.AsyncConnection.connect(
             settings.database_url, autocommit=True
         ) as conn:
-            return await run_embedding(conn, embedder)
+            manual: ManualSyncStats | None = None
+            try:
+                products = load_manual_products(MANUAL_PRODUCTS_PATH)
+                manual = await sync_manual_products(conn, products)
+            except (OSError, ValueError, psycopg.Error):
+                # Never let the manual index stop the catalogue's embedding; the rows
+                # already in manual_product are still embedded below.
+                logger.exception("manual products sync failed; embedding the rest")
+            return manual, await run_embedding(conn, embedder)
 
     try:
-        stats = asyncio.run(embed())
+        manual, stats = asyncio.run(embed())
     except Exception:
         logger.exception("embedding run crashed")
         return 1
     print(
+        f"{_manual_sync_line(manual) if manual else 'manual products: sync failed'}\n"
         f"model {embedder.model}\n"
         f"products: embedded {stats.products_embedded}, unchanged {stats.products_unchanged}\n"
         f"knowledge chunks: embedded {stats.chunks_embedded}, "
-        f"unchanged {stats.chunks_unchanged}"
+        f"unchanged {stats.chunks_unchanged}\n"
+        f"manual products: embedded {stats.manual_embedded}, "
+        f"unchanged {stats.manual_unchanged}"
     )
-    return 0
+    return 0 if manual else 1
 
 
 def run_report_command() -> int:

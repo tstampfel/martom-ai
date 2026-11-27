@@ -22,9 +22,11 @@ import psycopg
 
 from martom.embeddings import Embedder, make_embedder
 from martom.evals.retrieval import (
+    EvalId,
     EvalQuestion,
     RunScores,
     load_questions,
+    missing_manual_keys,
     run_search_eval,
     score_run,
 )
@@ -35,7 +37,7 @@ MODES = ("keyword", "vector", "hybrid")
 
 
 def print_scores(
-    questions: list[EvalQuestion], results: dict[str, list[int]], scores: RunScores
+    questions: list[EvalQuestion], results: dict[str, list[EvalId]], scores: RunScores
 ) -> None:
     print(f"{'question':<32} {'R@5':>5} {'R@10':>5} {'RR':>5}  top 3 ids")
     for question in questions:
@@ -68,6 +70,11 @@ async def main(eval_set: Path, mode: str, limit: int) -> None:
     settings = Settings()
     embedder: Embedder | None = make_embedder(settings) if mode != "keyword" else None
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
+        if missing := await missing_manual_keys(conn, questions):
+            raise SystemExit(
+                f"manual_product has no row for {missing}: run `martom load-manual-products`"
+                " (or `martom embed`) first, or those questions score 0"
+            )
         results = await run_search_eval(conn, questions, mode, embedder=embedder, limit=limit)
     print(f"search: {mode}" + (f" ({embedder.model})" if embedder else ""))
     print_scores(questions, results, score_run(questions, results))

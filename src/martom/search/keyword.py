@@ -16,7 +16,10 @@ How a query runs (all in one SQL statement):
    their candidates through GIN indexes (migration 006); only candidates are ranked.
 5. Filters (type, height, colour, price) narrow the candidates; they never add any.
 
-Only listings in `active_olx_listing` are returned, never sold ones (CLAUDE.md).
+Only listings in `active_olx_listing` are returned, never sold ones (CLAUDE.md). Manual
+products (manual_products.toml, indexed in `manual_product` by search/manual.py) are searched
+the same way, with the same scoring, and merged in by score: their hits have
+`source="manual"`, a `manual_key` instead of a listing id, and no OLX link (#112).
 
 Search returns listing ids and names, never prices: prices in an answer come from the
 database through the tools that read them (the grounding rule).
@@ -25,6 +28,7 @@ database through the tools that read them (the grounding rule).
 import re
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Literal
 
 import psycopg
 
@@ -137,9 +141,39 @@ class SearchFilters:
     max_price: Decimal | None = None
 
 
+# Where a hit comes from: an OLX listing, or a manual_products.toml entry (#112).
+Source = Literal["olx", "manual"]
+# One id for a hit of either source, e.g. ("olx", 63996799) or ("manual", "anchor_m8x70").
+# Tuples compare element by element, so a list of them sorts without mixing int and str.
+HitKey = tuple[str, int | str]
+
+
+def hit_key(source: Source, listing_id: int | None, manual_key: str | None) -> HitKey:
+    """The HitKey of a hit; a manual hit is keyed by its TOML key, an OLX hit by its id."""
+    if source == "manual":
+        assert manual_key is not None
+        return ("manual", manual_key)
+    assert listing_id is not None
+    return ("olx", listing_id)
+
+
+def key_from_row(source: str, value: str) -> HitKey:
+    """The HitKey of a SQL row that returns ('olx', listing id as text) or ('manual', key):
+    a UNION over product and manual_product needs one column type, so ids come back as text.
+    """
+    return (source, int(value)) if source == "olx" else (source, value)
+
+
+def listing_url(source: Source, slug: str | None) -> str | None:
+    """The OLX link of a hit; None for a manual product (it has no listing) or no slug."""
+    if source != "olx" or not slug:
+        return None
+    return LISTING_URL.format(slug=slug)
+
+
 @dataclass(frozen=True)
 class KeywordHit:
-    listing_id: int
+    listing_id: int | None  # None for a manual product (source "manual")
     title: str
     slug: str | None
     product_type: str
@@ -147,10 +181,16 @@ class KeywordHit:
     # False when only trigram similarity (a typo match) found it, which is the weakest
     # evidence: hybrid search keeps such a hit only when vector search agrees (#102).
     text_match: bool = True
+    source: Source = "olx"
+    manual_key: str | None = None  # the manual_products.toml key, for source "manual"
+
+    @property
+    def key(self) -> HitKey:
+        return hit_key(self.source, self.listing_id, self.manual_key)
 
     @property
     def url(self) -> str | None:
-        return LISTING_URL.format(slug=self.slug) if self.slug else None
+        return listing_url(self.source, self.slug)
 
 
 def filter_params(filters: SearchFilters) -> dict[str, object]:
@@ -232,6 +272,24 @@ FILTERS_SQL = """
     )
 """
 
+# FILTERS_SQL for a manual product (alias `p` = manual_product, same parameters). A manual
+# product has no variants, colours or heights: a colour or height filter never matches it
+# (retrieve()'s relaxed top-up can still bring it back, marked as not matching). Its price
+# is the TOML price copied into price_km; 0 is not a real price, as for a listing.
+MANUAL_FILTERS_SQL = """
+    (%(product_type)s::text IS NULL
+     OR to_tsvector('martom', martom_search_normalize(p.product_type))
+        @@ plainto_tsquery('martom', martom_search_normalize(%(product_type)s::text)))
+    AND %(colour)s::text IS NULL
+    AND %(height_cm)s::numeric IS NULL
+    AND (
+        (%(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
+        OR (p.price_km > 0
+            AND (%(min_price)s::numeric IS NULL OR p.price_km >= %(min_price)s::numeric)
+            AND (%(max_price)s::numeric IS NULL OR p.price_km <= %(max_price)s::numeric))
+    )
+"""
+
 # %(...)s are psycopg parameters (values are sent separately, never pasted into the SQL).
 #
 # `query` turns the words into an OR tsquery: plainto_tsquery gives 'a' & 'b', and
@@ -255,8 +313,7 @@ FILTERS_SQL = """
 # (like a correlated subquery): `trigram` is the mean similarity of all query words, for
 # ranking; `best_word` the best similarity of a typo word, checked again at the end so the
 # threshold holds even if the setting differs.
-_SEARCH = (
-    """
+_QUERY_CTE = """
 WITH query AS (
     SELECT
         replace(
@@ -272,7 +329,34 @@ WITH query AS (
             regexp_split_to_array(martom_search_normalize(%(text)s), '[^a-z0-9]+'), ''
         ) AS words
     ) AS split
-),
+)"""
+
+# Needs the alias `p` for a table with search_tsv and search_norm (product, manual_product).
+_SIMILARITY = """
+    CROSS JOIN LATERAL (
+        SELECT
+            coalesce(avg(word_similarity(word, p.search_norm)), 0) AS trigram,
+            coalesce(
+                (SELECT max(word_similarity(typo_word, p.search_norm))
+                 FROM unnest(query.typo_words) AS typo_word), 0
+            ) AS best_word
+        FROM unnest(query.words) AS word
+    ) AS similarity
+"""
+
+_RESULT = """
+SELECT
+    id, title, slug, product_type, text_rank + %(trigram_weight)s * trigram AS score,
+    text_match
+FROM scored
+WHERE text_match OR best_word >= %(min_trigram)s
+ORDER BY score DESC, id
+LIMIT %(limit)s
+"""
+
+_SEARCH = (
+    _QUERY_CTE
+    + """,
 candidates AS (
     SELECT p.listing_id
     FROM product AS p CROSS JOIN query
@@ -285,7 +369,7 @@ candidates AS (
 ),
 scored AS (
     SELECT
-        p.listing_id,
+        p.listing_id AS id,
         l.title,
         l.slug,
         p.product_type,
@@ -297,28 +381,48 @@ scored AS (
     JOIN product AS p ON p.listing_id = c.listing_id
     JOIN active_olx_listing AS l ON l.id = p.listing_id
     CROSS JOIN query
-    CROSS JOIN LATERAL (
-        SELECT
-            coalesce(avg(word_similarity(word, p.search_norm)), 0) AS trigram,
-            coalesce(
-                (SELECT max(word_similarity(typo_word, p.search_norm))
-                 FROM unnest(query.typo_words) AS typo_word), 0
-            ) AS best_word
-        FROM unnest(query.words) AS word
-    ) AS similarity
+"""
+    + _SIMILARITY
+    + """
     WHERE
 """
     + FILTERS_SQL
     + """
 )
-SELECT
-    listing_id, title, slug, product_type, text_rank + %(trigram_weight)s * trigram AS score,
-    text_match
-FROM scored
-WHERE text_match OR best_word >= %(min_trigram)s
-ORDER BY score DESC, listing_id
-LIMIT %(limit)s
 """
+    + _RESULT
+)
+
+# The same search over manual_product (#112): the same candidates rule and scoring, so the
+# scores of both searches can be merged. A handful of rows: no candidates step needed.
+_SEARCH_MANUAL = (
+    _QUERY_CTE
+    + """,
+scored AS (
+    SELECT
+        p.key AS id,
+        p.name AS title,
+        NULL::text AS slug,
+        p.product_type,
+        ts_rank_cd(p.search_tsv, query.tsq) AS text_rank,
+        similarity.trigram,
+        similarity.best_word,
+        p.search_tsv @@ query.tsq AS text_match
+    FROM manual_product AS p
+    CROSS JOIN query
+"""
+    + _SIMILARITY
+    + """
+    WHERE (p.search_tsv @@ query.tsq
+           OR EXISTS (SELECT 1 FROM unnest(query.typo_words) AS typo(word)
+                      WHERE typo.word <%% p.search_norm))
+      AND
+"""
+    + MANUAL_FILTERS_SQL
+    + """
+)
+"""
+    + _RESULT
 )
 
 
@@ -343,8 +447,9 @@ async def search_keyword(
             "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)",
             (str(MIN_TRIGRAM_SIMILARITY),),
         )
-        rows = await _run_search(conn, text, filters, limit)
-    return [
+        listings = await _run_search(conn, _SEARCH, text, filters, limit)
+        manual = await _run_search(conn, _SEARCH_MANUAL, text, filters, limit)
+    hits = [
         KeywordHit(
             listing_id=row[0],
             title=row[1] or "",
@@ -353,15 +458,31 @@ async def search_keyword(
             score=float(row[4]),
             text_match=bool(row[5]),
         )
-        for row in rows
+        for row in listings
+    ] + [
+        KeywordHit(
+            listing_id=None,
+            title=row[1] or "",
+            slug=None,
+            product_type=row[3],
+            score=float(row[4]),
+            text_match=bool(row[5]),
+            source="manual",
+            manual_key=row[0],
+        )
+        for row in manual
     ]
+    # Both lists are scored the same way, so they merge by score. sorted() is stable: hits
+    # with equal scores keep their order, listings (by id) before manual products.
+    hits.sort(key=lambda hit: -hit.score)
+    return hits[:limit]
 
 
 async def _run_search(
-    conn: psycopg.AsyncConnection, text: str, filters: SearchFilters, limit: int
+    conn: psycopg.AsyncConnection, sql: str, text: str, filters: SearchFilters, limit: int
 ) -> list[tuple]:
     cursor = await conn.execute(
-        _SEARCH,
+        sql,
         {
             "text": text,
             **filter_params(filters),

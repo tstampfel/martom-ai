@@ -46,10 +46,12 @@ import psycopg
 from martom.embeddings import make_embedder
 from martom.evals.retrieval import (
     ISSUE_102_CASES,
+    EvalId,
     EvalQuestion,
     RunScores,
     case_status,
     load_questions,
+    missing_manual_keys,
     run_search_eval,
     score_run,
 )
@@ -81,7 +83,9 @@ class PausingReranker:
         return await self.inner.rerank(query, documents)
 
 
-def print_run(name: str, questions: list[EvalQuestion], results: dict[str, list[int]]) -> RunScores:
+def print_run(
+    name: str, questions: list[EvalQuestion], results: dict[str, list[EvalId]]
+) -> RunScores:
     scores = score_run(questions, results)
     print(f"\n== {name}")
     print(f"{'question':<32} {'R@5':>5} {'R@10':>5} {'RR':>5}  top 5 ids")
@@ -295,6 +299,11 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
     # setup must not cost the first live-row question its parse (R-A3-1).
     await live_parser.parse_filters(questions[0].question)
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
+        if missing := await missing_manual_keys(conn, questions):
+            raise SystemExit(
+                f"manual_product has no row for {missing}: run `martom load-manual-products`"
+                " (or `martom embed`) first, or those questions score 0"
+            )
         hybrid = await run_search_eval(conn, questions, "hybrid", embedder=embedder)
         case_runs = [("hybrid", print_run("hybrid (M3-3 baseline)", questions, hybrid))]
 
