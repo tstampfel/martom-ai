@@ -129,13 +129,14 @@ def make_embedder(settings: Settings, *, for_queries: bool = False) -> Embedder:
     so use it only to try the commands locally, never to judge search quality.
     """
     provider = settings.embedding_provider
-    if provider is None:
-        raise EmbeddingError("EMBEDDING_PROVIDER is not set (use 'fake' to try it locally)")
     if provider == "fake":
         return Embedder(model="fake/deterministic", embeddings=HashFakeEmbeddings())
     if provider == "cohere":
         if settings.cohere_api_key is None:
-            raise EmbeddingError("EMBEDDING_PROVIDER=cohere needs COHERE_API_KEY")
+            raise EmbeddingError(
+                "EMBEDDING_PROVIDER=cohere (the default) needs COHERE_API_KEY "
+                "(EMBEDDING_PROVIDER=fake tries the commands without one)"
+            )
         # Imported here so the other providers don't load the Cohere SDK.
         from langchain_cohere import CohereEmbeddings
 

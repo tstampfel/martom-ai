@@ -11,12 +11,13 @@ from martom.migrate import run_migrations
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
 
-def test_without_a_provider_it_exits_1_naming_the_env_var(
+def test_by_default_it_uses_cohere_and_exits_1_without_its_key(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.delenv("COHERE_API_KEY", raising=False)
     assert cli.main(["embed"]) == 1
-    assert "EMBEDDING_PROVIDER" in capsys.readouterr().err
+    assert "COHERE_API_KEY" in capsys.readouterr().err
 
 
 def test_cohere_without_its_key_exits_1(

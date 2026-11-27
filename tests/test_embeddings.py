@@ -92,9 +92,12 @@ def test_fake_provider_needs_no_key_and_has_the_right_size() -> None:
     assert len(embedder.embeddings.embed_query("x")) == EMBEDDING_DIMENSIONS
 
 
-def test_no_provider_is_an_error_naming_the_env_var() -> None:
-    with pytest.raises(EmbeddingError, match="EMBEDDING_PROVIDER"):
-        make_embedder(Settings(embedding_provider=None))
+def test_cohere_multilingual_v3_is_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The model chosen in M3-3 (CLAUDE.md, "Hybrid search").
+    monkeypatch.delenv("EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+    embedder = make_embedder(Settings(cohere_api_key="fake-key"))
+    assert embedder.model == "cohere/embed-multilingual-v3.0"
 
 
 def test_file_cache_embeds_each_text_once(tmp_path: Path) -> None:
