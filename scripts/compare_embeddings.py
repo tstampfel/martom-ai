@@ -25,9 +25,8 @@ from pathlib import Path
 import psycopg
 
 from martom.embed_job import run_embedding
-from martom.embeddings import Embedder, FileCachedEmbeddings, make_embedder
-from martom.evals.retrieval import load_questions, run_search_eval, score_run
-from martom.search.hybrid import search_hybrid
+from martom.embeddings import FileCachedEmbeddings, make_embedder
+from martom.evals.retrieval import issue_102_hits, load_questions, run_search_eval, score_run
 from martom.settings import Settings
 
 REPO = Path(__file__).resolve().parents[1]
@@ -41,13 +40,6 @@ DEFAULT_MODELS = (
 # #102: hybrid search must drop the grinder for "kolica" and keep the panels for "panelan".
 GRINDER = 52889522
 PANELS = {63996799, 1199211}
-
-
-async def hybrid_ids(conn: psycopg.AsyncConnection, query: str, embedder: Embedder) -> list[int]:
-    # fallback=False: a failed embedding must stop the comparison, not make "kolica" look
-    # like a keyword-only search (which returns the grinder).
-    hits = await search_hybrid(conn, query, embedder=embedder, fallback=False)
-    return [hit.listing_id for hit in hits]
 
 
 async def compare(models: list[str], eval_set: Path) -> None:
@@ -82,10 +74,7 @@ async def compare(models: list[str], eval_set: Path) -> None:
             hybrid = score_run(
                 questions, await run_search_eval(conn, questions, "hybrid", embedder=embedder)
             )
-            kolica = [h.listing_id for h in await search_hybrid(conn, "kolica", embedder=embedder)]
-            panelan = [
-                h.listing_id for h in await search_hybrid(conn, "panelan", embedder=embedder)
-            ]
+            kolica, panelan = await issue_102_hits(conn, embedder)
             rows.append(
                 f"{embedder.model:<40} {vector.recall_at_5:>6.3f} {vector.recall_at_10:>6.3f}"
                 f" {vector.mrr:>6.3f} {hybrid.recall_at_5:>6.3f} {hybrid.recall_at_10:>6.3f}"

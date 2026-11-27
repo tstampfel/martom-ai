@@ -20,7 +20,7 @@ from langchain_core.embeddings import Embeddings
 
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder, vector_literal
-from martom.evals.retrieval import EvalQuestion, run_search_eval
+from martom.evals.retrieval import EvalQuestion, issue_102_hits, run_search_eval
 from martom.extract.store import VariantRow, save_products
 from martom.search import hybrid
 from martom.search.hybrid import search_hybrid
@@ -360,3 +360,14 @@ async def test_the_hybrid_eval_fails_loudly_instead_of_scoring_keyword_results(
         await run_search_eval(
             conn, questions, "hybrid", embedder=Embedder(MODEL, FailingEmbeddings())
         )
+
+
+async def test_the_102_checks_fail_loudly_instead_of_using_keyword_results(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    # compare_embeddings.py's kolica/panelan columns (R3-1): a keyword fallback would show
+    # the grinder for "kolica" because the embedding failed, not because the rule did.
+    kolica, panelan = await issue_102_hits(conn, embedder)
+    assert set(kolica) >= set(KOLICA) and set(panelan) >= PANELS
+    with pytest.raises(RuntimeError, match="provider down"):
+        await issue_102_hits(conn, Embedder(MODEL, FailingEmbeddings()))

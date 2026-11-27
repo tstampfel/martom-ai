@@ -197,3 +197,20 @@ async def run_search_eval(
     if mode not in searches:
         raise ValueError(f"unknown search mode {mode!r}")
     return await run_eval(questions, searches[mode])
+
+
+async def issue_102_hits(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> tuple[list[int], list[int]]:
+    """Hybrid results for the two #102 cases: ("kolica" ids, "panelan" ids).
+
+    "kolica" must not return the grinder 52889522; "panelan" must still find the panels.
+    fallback=False, like the eval: if a query can't be embedded this raises, instead of
+    answering with keyword results (where "kolica" returns the grinder for the wrong reason).
+    """
+
+    async def ids(query: str) -> list[int]:
+        hits = await search_hybrid(conn, query, embedder=embedder, fallback=False)
+        return [hit.listing_id for hit in hits]
+
+    return await ids("kolica"), await ids("panelan")
