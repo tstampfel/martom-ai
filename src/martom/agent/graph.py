@@ -166,7 +166,7 @@ class AgentDeps:
     models: AgentModels
     retriever: Retriever
     catalogue: Catalogue
-    pricer: BomPricer | None = None  # None until #125: every BOM line is "cijena na upit"
+    pricer: BomPricer | None = None  # PostgresBomPricer; None: every line "cijena na upit"
 
 
 def build_graph(
