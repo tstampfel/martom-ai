@@ -1,0 +1,168 @@
+variable "region" {
+  description = "AWS region. eu-central-1 (Frankfurt): customer data stays in the EU."
+  type        = string
+  default     = "eu-central-1"
+}
+
+variable "environment" {
+  description = "Environment name, used in resource names and tags."
+  type        = string
+  default     = "production"
+}
+
+variable "name" {
+  description = "Prefix for resource names."
+  type        = string
+  default     = "martom"
+}
+
+variable "vpc_cidr" {
+  description = "Address range of the VPC."
+  type        = string
+  default     = "10.40.0.0/16"
+}
+
+# --- API service ---
+
+variable "image_tag" {
+  description = "Tag of the app image in ECR, used by the API and the scheduled jobs. CD (M6-2) sets it per deploy."
+  type        = string
+  default     = "latest"
+}
+
+variable "api_desired_count" {
+  description = "Number of API tasks. Use 0 for the first apply, before an image has been pushed to ECR."
+  type        = number
+  default     = 1
+}
+
+# Fargate sizes: CPU units (1024 = 1 vCPU) and MiB. The API task holds two containers (API +
+# Redis sidecar) that share these numbers.
+variable "api_cpu" {
+  description = "API task CPU units (256 = 0.25 vCPU). The API mostly waits on Claude, Cohere and Postgres."
+  type        = number
+  default     = 256
+}
+
+variable "api_memory" {
+  description = "API task memory in MiB, shared by the API and the Redis sidecar."
+  type        = number
+  default     = 1024
+}
+
+variable "redis_maxmemory" {
+  description = "Redis sidecar memory cap (redis-server --maxmemory); least-recently-used keys are evicted above it."
+  type        = string
+  default     = "128mb"
+}
+
+variable "cors_allowed_origins" {
+  description = "CORS_ALLOWED_ORIGINS for the API. Settings only accepts the pages.dev site and localhost."
+  type        = string
+  default     = "http://localhost:5173,https://martom-savjetnik.pages.dev"
+}
+
+variable "langsmith_project" {
+  description = "LangSmith project the production traces go to."
+  type        = string
+  default     = "martom-ai-production"
+}
+
+# --- Scheduled jobs (sync -> extract -> embed) ---
+
+variable "job_cpu" {
+  description = "Job task CPU units. extract sends 4 Claude calls at a time, so it is network-bound."
+  type        = number
+  default     = 512
+}
+
+variable "job_memory" {
+  description = "Job task memory in MiB."
+  type        = number
+  default     = 1024
+}
+
+variable "schedule_timezone" {
+  description = "Time zone of the cron expressions below (the shop's time zone)."
+  type        = string
+  default     = "Europe/Sarajevo"
+}
+
+variable "nightly_sync_cron" {
+  description = "Nightly sync, every night except the one from Sunday to Monday (EventBridge Scheduler cron: minutes hours day-of-month month day-of-week year). Default: 01:00, Tuesday to Sunday."
+  type        = string
+  default     = "cron(0 1 ? * TUE-SUN *)"
+}
+
+# The night from Sunday to Monday runs the nightly chain and then the weekly full chain in
+# one task (ecs.tf), so the full run can't start while the nightly one is still running.
+# Keep the two crons on different days at the same time of night.
+variable "sunday_night_sync_cron" {
+  description = "Sunday-night run: the nightly sync, then the weekly full re-fetch, in one task. Default: Monday 01:00, the night from Sunday to Monday."
+  type        = string
+  default     = "cron(0 1 ? * MON *)"
+}
+
+# OLX allows roughly 1,400 requests before a ~1,600 s 429 penalty (#105). The weekly full
+# run fetches every listing (~2,570-2,620 requests), so it goes slower than the nightly
+# run's 2.0 s to stay under that quota: ~2,600 x 2.8 s is about 2 h, inside the 3 h deadline.
+variable "full_sync_request_interval" {
+  description = "OLX_REQUEST_INTERVAL (seconds between OLX requests) for the weekly full sync only. The nightly sync keeps 2.0."
+  type        = number
+  default     = 2.8
+
+  validation {
+    condition     = var.full_sync_request_interval >= 1.3
+    error_message = "The OLX politeness rule never allows an interval below 1.3 seconds."
+  }
+}
+
+variable "schedules_enabled" {
+  description = "Run the scheduled jobs. Off by default so nothing runs before an image is pushed and the database is migrated (README); also set to false while RDS is stopped."
+  type        = bool
+  default     = false
+}
+
+# --- Database ---
+
+variable "db_instance_class" {
+  description = "RDS instance class. db.t4g.micro (2 vCPU burstable, 1 GiB) is the smallest Graviton class."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_engine_version" {
+  description = "Postgres major version. RDS picks its default minor; pgvector 0.8 (needed by migration 007) ships with 16.5 and later."
+  type        = string
+  default     = "16"
+}
+
+variable "db_allocated_storage" {
+  description = "Initial RDS storage in GiB (gp3; 20 is the minimum)."
+  type        = number
+  default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "RDS storage autoscaling ceiling in GiB."
+  type        = number
+  default     = 50
+}
+
+variable "db_backup_retention_days" {
+  description = "Days of automated RDS backups (free up to the size of the database)."
+  type        = number
+  default     = 7
+}
+
+variable "db_deletion_protection" {
+  description = "Block deleting the database. Set to false (and apply) only when tearing everything down on purpose."
+  type        = bool
+  default     = true
+}
+
+variable "log_retention_days" {
+  description = "Days CloudWatch keeps container logs."
+  type        = number
+  default     = 30
+}

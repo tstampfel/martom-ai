@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (git-ignored) after the first deploy (README step 6). Terraform
+# reads it on every plan and apply. Only non-secret settings belong here.
+schedules_enabled = true

@@ -50,6 +50,9 @@ node_modules/
 .terraform/
 *.tfstate
 *.tfstate.*
+# Saved plans hold the full state in plain text; CI fails if one is ever tracked.
+tfplan
+*.tfplan
 *.tfvars
 !*.tfvars.example
 crash.log

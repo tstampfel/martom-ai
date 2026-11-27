@@ -1,0 +1,15 @@
+-- 008: `sync_run.allowlist_warnings` (#45). The allowlist guard checks, after each
+-- nightly/full sync, that the category sync returned every listing in
+-- src/martom/olx/allowlist.toml, in any category. Re-runs safely (IF NOT EXISTS).
+--
+--   NULL  the guard didn't run (an apply_skipped or extraction run, or a run that broke
+--         or stopped before it)
+--   []    checked, every allowlisted listing is fine
+--   [...] one object per problem: {"listing_id", "name", "reason", "expected_category_id",
+--         "category_id", "error"}; reason is '404', 'inactive', 'not_martom', 'not_seen'
+--         or 'recheck_failed' (src/martom/olx/allowlist.py)
+--
+-- A warning never changes the run's status. The review checks (src/martom/review/) raise
+-- review_issues for Toni from the latest non-NULL value; 'not_seen' only from a run with
+-- coverage >= 1 (load_allowlist_warnings in src/martom/review/store.py).
+ALTER TABLE sync_run ADD COLUMN IF NOT EXISTS allowlist_warnings jsonb;

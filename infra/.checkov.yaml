@@ -1,0 +1,51 @@
+# checkov findings accepted on purpose, one reason each. checkov reads this file when it
+# runs from infra/ (README: "Checking the code"). Most are monitoring or encryption extras
+# that cost money every month on a personal ~$80 budget; revisit them when traffic or data
+# justifies it. Remove a line here when the check should start failing again.
+framework:
+  - terraform
+skip-check:
+  # --- No custom domain, so no certificate for the ALB or CloudFront (PLAN: free addresses) ---
+  - CKV_AWS_2        # ALB listener is HTTP: internal ALB reached only through the CloudFront VPC origin
+  - CKV_AWS_103      # TLS 1.2 on the ALB listener: same, there is no HTTPS listener
+  - CKV2_AWS_20      # ALB HTTP->HTTPS redirect: same
+  - CKV_AWS_378      # HTTP target group: ALB -> task traffic stays inside the VPC
+  - CKV_AWS_174      # CloudFront minimum TLS 1.2: the default *.cloudfront.net certificate can't set it
+  - CKV2_AWS_42      # CloudFront custom certificate: needs a custom domain (later, only a DNS change)
+
+  # --- Paid extras skipped for cost (KMS keys $1/month each, logging and monitoring per GB) ---
+  - CKV_AWS_136      # ECR with a KMS CMK: AES256 encryption at rest is on
+  - CKV_AWS_145      # state bucket with KMS: SSE-S3 (AES256) is on
+  - CKV_AWS_149      # Secrets Manager with a CMK: the AWS-managed key encrypts them
+  - CKV_AWS_158      # CloudWatch log groups with KMS: logs hold no secrets (Settings hides values)
+  - CKV_AWS_297      # EventBridge Scheduler with a CMK: schedules hold only command flags
+  - CKV_AWS_354      # Performance Insights with a CMK: Performance Insights is off
+  - CKV_AWS_353      # RDS Performance Insights: not worth it on db.t4g.micro yet
+  - CKV_AWS_118      # RDS enhanced monitoring: extra CloudWatch cost; basic metrics are enough
+  - CKV2_AWS_30      # Postgres query logging: log volume costs; errors are exported (postgresql log)
+  - CKV_AWS_157      # RDS Multi-AZ: doubles the RDS cost; single AZ + daily backups accepted
+  - CKV_AWS_65       # ECS Container Insights: extra metrics cost; container logs are in CloudWatch
+  - CKV_AWS_338      # log retention under 1 year: 30 days (var.log_retention_days) keeps cost down
+  - CKV_AWS_68       # CloudFront WAF: ~$6+/month; abuse protection is Turnstile + rate limits (M5-7)
+  - CKV2_AWS_47      # WAF Log4j rule: no WAF (above), and the app is Python
+  - CKV_AWS_86       # CloudFront access logs: LangSmith traces and app logs cover requests
+  - CKV_AWS_91       # ALB access logs: same
+  - CKV2_AWS_11      # VPC flow logs: per-GB cost; revisit if network debugging is needed
+  - CKV_AWS_18       # access logging on the state bucket: only Tomislav uses it
+  - CKV_AWS_144      # cross-region replication of the state bucket: versioning covers mistakes
+  - CKV2_AWS_62      # event notifications on the state bucket: nothing listens to them
+
+  # --- Design choices (infra/README.md explains each) ---
+  - CKV_AWS_333      # public IP on Fargate tasks: no NAT gateway (~$35/month); the SGs allow no inbound from the internet
+  - CKV_AWS_150      # ALB deletion protection: the stack is torn down between test phases (README)
+  - CKV_AWS_161      # RDS IAM authentication: the app connects with the RDS-managed password (PGPASSWORD from Secrets Manager)
+  - CKV2_AWS_57      # rotation on the app secret: API keys are rotated by hand at the vendors (the RDS password secret rotates, see below)
+  - CKV_AWS_304      # RDS password rotation every 365 days, not 90: a rotation breaks the running API until it restarts, so rotate by hand + redeploy (README, "Database password")
+  - CKV_AWS_51       # immutable ECR tags: `latest` moves until CD (M6-2) picks per-commit tags
+  - CKV_AWS_305      # CloudFront default root object: it fronts an API, not a website
+  - CKV_AWS_310      # CloudFront origin failover: one region, one origin
+  - CKV_AWS_374      # CloudFront geo restriction: customers and Tomislav may be outside BiH
+
+  # --- False positives ---
+  - CKV_AWS_260      # "port 80 open to 0.0.0.0/0": the rule allows only the CloudFront origin-facing prefix list
+  - CKV2_AWS_5       # "job security group not attached": EventBridge Scheduler attaches it to each job task

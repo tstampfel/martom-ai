@@ -1,0 +1,59 @@
+{
+ "_about": "Listing-page rows of the three allowlisted listings (#45), as GET /users/martom/listings returned them; copied 27 Nov 2026 from the local sync database (a read-only SELECT), trimmed to the fields the sync reads. 81645615 was already in 881 (Ograde) by then.",
+ "rows": [
+  {
+   "id": 18129143,
+   "slug": "spaner-zatezac-za-zicu-za-vinograd-zeleni-cincani-i-antracit-18129143",
+   "title": "ŠPANER ZATEZAČ ZA ŽICU ZA VINOGRAD ZELENI CINČANI I ANTRACIT",
+   "category_id": 1126,
+   "top_category_id": "224",
+   "user_id": 17193,
+   "status": "active",
+   "price": 1.65,
+   "display_price": "1,65 KM",
+   "date": 1795624601,
+   "images": [
+    "https://d4n0y8dshd77z.cloudfront.net/listings/18129143/sm/2JCFCHxJ1hXn8HiMpkmU.jpg",
+    "https://d4n0y8dshd77z.cloudfront.net/listings/18129143/sm/img-1795693871-deca641948e3.jpg"
+   ],
+   "state": "new"
+  },
+  {
+   "id": 48475613,
+   "slug": "nosac-nosive-zice-na-stupu-kopca-zakacja-48475613",
+   "title": "NOSAČ NOSIVE ŽICE NA STUPU KOPČA ZAKAČJA",
+   "category_id": 1188,
+   "top_category_id": "224",
+   "user_id": 17193,
+   "status": "active",
+   "price": 0.4,
+   "display_price": "0,40 KM",
+   "date": 1795624433,
+   "images": [
+    "https://d4n0y8dshd77z.cloudfront.net/listings/48475613/sm/XqZL5ujODOtnRJhG3xrb.jpg",
+    "https://d4n0y8dshd77z.cloudfront.net/listings/48475613/sm/zxty4ktIEc2cdtvYlFTs.jpg",
+    "https://d4n0y8dshd77z.cloudfront.net/listings/48475613/sm/img-1740133218-1ae66b44ea4f.jpg",
+    "https://d4n0y8dshd77z.cloudfront.net/listings/48475613/sm/img-1740133374-148ed6c3e031.jpg"
+   ],
+   "state": "new"
+  },
+  {
+   "id": 81645615,
+   "slug": "stup-stupovi-koci-za-stopom-40x40mm-60-80-100-125-i-150cm-81645615",
+   "title": "STUP STUPOVI KOCI ZA STOPOM 40X40MM 60, 80, 100, 125 I 150CM",
+   "category_id": 881,
+   "top_category_id": "701",
+   "user_id": 17193,
+   "status": "active",
+   "price": 10.5,
+   "display_price": "10,50 KM",
+   "date": 1795691216,
+   "images": [
+    "https://d4n0y8dshd77z.cloudfront.net/listings/81645615/sm/img-1795692116-6eccd521b8b8.jpg",
+    "https://d4n0y8dshd77z.cloudfront.net/listings/81645615/sm/img-1795692124-23daa0decde7.jpg",
+    "https://d4n0y8dshd77z.cloudfront.net/listings/81645615/sm/img-1795692136-01494ee2980c.jpg"
+   ],
+   "state": "new"
+  }
+ ]
+}

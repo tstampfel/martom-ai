@@ -12,6 +12,7 @@ Prices, product IDs and quantities always come from the database or the material
 
 - [`docs/PLAN.md`](docs/PLAN.md): goal, architecture, stack, data model, milestones and issues. The source of truth.
 - [`docs/mockups/`](docs/mockups/): the customer screens, mobile and web.
+- [`infra/README.md`](infra/README.md): the AWS stack (Terraform): bootstrap → init → plan → apply, budget alerts ($65 warning, $80 alert, set by hand), monthly cost, and how to pause or tear it down between test phases.
 
 ## Stack
 
