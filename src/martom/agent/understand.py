@@ -138,12 +138,17 @@ class Plan:
     contact_martom: bool = False  # offer the WhatsApp order button with the request as note
 
 
-_NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
+# "1.200,5" / "1.200" (thousands dots), "25,5", "25.5", "-3".
+_NUMBER = re.compile(r"-?(?:\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)")
 _CM = re.compile(r"\d\s*cm\b", re.IGNORECASE)
 
 
 def parse_length_m(text: str) -> float | None:
-    """'25m' -> 25.0, '25,5 m' -> 25.5, '2500 cm' -> 25.0, '-3' -> -3.0; None without one.
+    """'25m' -> 25.0, '25,5 m' -> 25.5, '1.200 m' -> 1200.0, '2500 cm' -> 25.0, '-3' -> -3.0.
+
+    A dot followed by groups of exactly three digits is a thousands separator ("1.200 m",
+    "1.000,5 m"), as Bosnian writes it; otherwise it is a decimal point ("25.5 m").
+    None without a number.
 
     A zero or negative result is kept on purpose: it is an input error the advisor asks
     about again (Tomislav, 26 Nov 2026), not something to drop silently.
@@ -151,7 +156,10 @@ def parse_length_m(text: str) -> float | None:
     match = _NUMBER.search(text)
     if not match:
         return None
-    value = float(match.group(0).replace(",", "."))
+    text_value = match.group(0)
+    if re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+(?:,\d+)?", text_value):
+        text_value = text_value.replace(".", "")
+    value = float(text_value.replace(",", "."))
     return value / 100 if _CM.search(text) else value
 
 
@@ -189,7 +197,10 @@ def update_spec(
             width_cm = round(width * 100) if width < 10 else round(width)
             spec.panel_width_cm = width_cm if width_cm in PANEL_WIDTHS_CM else None
     if understanding.post_spacing:
-        spec.requested_spacing_m = parse_length_m(understanding.post_spacing)
+        spacing = parse_length_m(understanding.post_spacing)
+        # A spacing of 0 m or less means nothing; the BOM always uses 2 m anyway, the
+        # requested spacing only adds Toni's note (R1-4).
+        spec.requested_spacing_m = spacing if spacing is not None and spacing > 0 else None
     if understanding.wants_concrete_posts:
         if spec.kind == "panel":
             spec.posts = "concrete"
@@ -264,7 +275,14 @@ def _plan_fence(
     if spec.invalid_length:
         spec.clarified = True
         chips = ChipsEvent(intro=copy.INVALID_LENGTH, questions=[_layout_question()])
-        return Plan("clarify", spec=spec, chips=chips, answer=copy.INVALID_LENGTH)
+        return Plan(
+            "clarify",
+            spec=spec,
+            chips=chips,
+            answer=copy.INVALID_LENGTH,
+            notes=notes,
+            extra_lines=extra_lines,
+        )
 
     # A plain straight run defaults to 0 corners without asking (Toni, 26 Nov 2026). After
     # the chips were shown once, a customer who skipped the layout keeps the one length
@@ -302,7 +320,14 @@ def _plan_fence(
         spec.sides_m = []
         spec.invalid_length = True
         chips = ChipsEvent(intro=copy.INVALID_LENGTH, questions=[_layout_question()])
-        return Plan("clarify", spec=spec, chips=chips, answer=copy.INVALID_LENGTH)
+        return Plan(
+            "clarify",
+            spec=spec,
+            chips=chips,
+            answer=copy.INVALID_LENGTH,
+            notes=notes,
+            extra_lines=extra_lines,
+        )
 
     return Plan(
         "retrieve",

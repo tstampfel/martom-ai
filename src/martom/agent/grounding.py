@@ -1,19 +1,26 @@
-"""The grounding check: every price, listing id and quantity in an answer came from a tool.
+"""The grounding check: every number in an answer has a source the model didn't invent.
 
 CLAUDE.md: "Prices, product IDs and quantities in any answer come only from tools
-(database, BOM calculator), never from the model." This is plain Python, no model:
+(database, BOM calculator), never from the model." This is plain Python, no model.
 
-- `facts_from_output` walks a tool's JSON output and collects what the model may repeat:
-  prices (`price`, `unit_price`, `line_total`, `total`), listing ids (`listing_id`),
-  quantities (`quantity`), and the names of lines that have no price (`price_on_request`).
-- `check_grounding` finds every price ("53,00 KM"), listing id (7–9 digits) and quantity
-  ("10 panela", "44 kom") in the answer and reports each one that isn't in the facts.
-  A sentence that names a price together with something that never has one (a gate,
-  installation, "po narudžbi", "na upit", concrete posts, or an unpriced BOM line) fails
-  even when the amount itself is known: the model must not attach a price to those.
+Rather than listing the ways a price or a count can be written (and missing some: "KM
+49,00", "49,- KM", "49 maraka", "12 stubova"), the check finds **every number** in the
+answer and asks where it came from:
+
+- A price (a number with a currency before or after it: KM, BAM, marka/maraka, €, EUR,
+  or the ",-" of a whole amount) must equal a price a tool returned (`price`,
+  `unit_price`, `line_total`, `total`). A euro amount always fails: Martom prices in KM.
+- A listing id (7–9 digits) must be one a tool or the Retrieve step returned.
+- Any other number must appear in a tool output (a quantity, a size in a title, a BOM
+  line), in what the customer wrote, in the fence spec built from it, or in the advisor's
+  fixed copy (agent/copy.py: Martom's phone, "10–15 dana", RAL colours).
+
+A sentence that names a price together with something that never has one (a gate,
+installation, "po narudžbi", "na upit", concrete posts, or an unpriced BOM line) fails
+even when the amount itself is known.
 
 The check is deliberately strict: a false alarm costs a retry (and at worst the plain
-search results), a missed one would show the customer an invented price.
+search results); a missed one would show the customer an invented price or quantity.
 """
 
 # ruff: noqa: RUF002, RUF003
@@ -26,21 +33,28 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from martom.agent import copy
+
 PRICE_KEYS = frozenset({"price", "unit_price", "line_total", "total"})
 
-# "1.234,50 KM" (thousands dots), "53,00 KM", "24.90 KM", "53 KM", also "BAM".
+# One amount: "1.234,50" / "1 234,50" (grouped thousands), "53,00", "24.90", "53", "49,-".
+_AMOUNT = r"(?:\d{1,3}(?:[.\u00a0 ]\d{3})+(?:,\d{1,2}|,-)?|\d+(?:[.,]\d{1,2})?(?:,-)?)"
+_KM = r"(?:KM\b|BAM\b|konvertibiln\w*\s+mar\w*|mar(?:ka|aka|ke|ki)\b)"
+_EURO = r"(?:€|EUR\b|eur[ao]?\b|euro\w*)"
+_CURRENCY = rf"(?:{_KM}|{_EURO})"
 _PRICE = re.compile(
-    r"(?<![\d.,])(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:KM|BAM)\b",
+    rf"(?<![\d.,])(?P<after>{_AMOUNT})\s*(?P<cur_after>{_CURRENCY})"
+    rf"|(?P<cur_before>{_CURRENCY})\s*(?P<before>{_AMOUNT})(?![\d.,]*\d)",
     re.IGNORECASE,
 )
-# OLX listing ids have 7 to 9 digits. Martom's phone (036 651 427) is in 3-digit groups.
+# A bare amount with the ",-" of a whole price ("49,-") is a price even without "KM".
+_DASH_PRICE = re.compile(r"(?<![\d.,])(\d+(?:[.\u00a0 ]\d{3})*),-")
+# OLX listing ids have 7 to 9 digits.
 _LISTING_ID = re.compile(r"(?<![\d.,])\d{7,9}(?!\d|[.,]\d)")
-# A count followed by a piece word. Sizes ("153 cm", "25 m") and "153 × 250" never match.
-_QUANTITY = re.compile(
-    r"(?<![\d.,])(\d+)\s+(?:kom\b|komad\w*|panel\w*|stup\w*|kopč\w*|kopc\w*|anker\w*|"
-    r"rol\w*|zatezač\w*|zatezac\w*|španer\w*|spaner\w*|kolut\w*|nosač\w*|nosac\w*)",
-    re.IGNORECASE,
-)
+# Any other number: "25", "25,5", "2.70".
+_NUMBER = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?(?!\d)")
+# "53,00 KM za 1 kom" / "po 1 kom": the per-unit 1 isn't a quantity claim.
+_PER_ONE = re.compile(r"(?:\bza|\bpo|/)\s*1\s*(?:kom\w*|komad\w*)", re.IGNORECASE)
 # Things that never carry a price in an answer (fence-rules.md).
 NEVER_PRICED = (
     "na upit",
@@ -56,18 +70,18 @@ _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
 class Facts(BaseModel):
-    """What the tools returned this turn; kept in the graph state as plain JSON."""
+    """What tools returned in this conversation; kept in the graph state as plain JSON."""
 
     prices: list[str] = Field(default_factory=list)  # Decimal as text, e.g. "53.00"
     listing_ids: list[int] = Field(default_factory=list)
-    quantities: list[int] = Field(default_factory=list)
+    numbers: list[str] = Field(default_factory=list)  # every other number, as Decimal text
     unpriced_names: list[str] = Field(default_factory=list)
 
     def merge(self, other: "Facts") -> "Facts":
         return Facts(
             prices=_unique(self.prices + other.prices),
             listing_ids=_unique(self.listing_ids + other.listing_ids),
-            quantities=_unique(self.quantities + other.quantities),
+            numbers=_unique(self.numbers + other.numbers),
             unpriced_names=_unique(self.unpriced_names + other.unpriced_names),
         )
 
@@ -85,68 +99,126 @@ class GroundingResult:
         return not self.problems
 
 
-def facts_from_output(output: Any) -> Facts:
-    """Every price, listing id, quantity and unpriced line name in a tool's JSON output."""
+def facts_from_output(output: Any, *, skip_keys: Iterable[str] = ()) -> Facts:
+    """Every price, listing id, number and unpriced line name in a tool's JSON output.
+
+    `skip_keys`: keys whose values only echo the model's own input (the cart's quantity),
+    so they never become a fact.
+    """
+    skipped = frozenset(skip_keys)
     prices: list[str] = []
     listing_ids: list[int] = []
-    quantities: list[int] = []
+    numbers: list[str] = []
     unpriced: list[str] = []
 
     def walk(value: Any) -> None:
         if isinstance(value, Mapping):
             for key, item in value.items():
+                if key in skipped:
+                    continue
                 if key in PRICE_KEYS and item is not None:
                     price = _decimal(item)
                     if price is not None:
                         prices.append(str(price))
-                elif key == "listing_id" and _is_int(item):
+                        continue
+                if key == "listing_id" and _is_int(item):
                     listing_ids.append(item)
-                elif key == "quantity" and _is_int(item):
-                    quantities.append(item)
                 walk(item)
             if value.get("price_on_request") is True and isinstance(value.get("name"), str):
                 unpriced.append(value["name"])
         elif isinstance(value, list | tuple):
             for item in value:
                 walk(item)
+        elif isinstance(value, str):
+            numbers.extend(str(number) for number in numbers_in(value))
+        elif _is_int(value) or isinstance(value, float | Decimal):
+            number = _decimal(value)
+            if number is not None:
+                numbers.append(str(number))
 
     walk(output)
     return Facts(
         prices=_unique(prices),
         listing_ids=_unique(listing_ids),
-        quantities=_unique(quantities),
+        numbers=_unique(numbers),
         unpriced_names=_unique(unpriced),
     )
 
 
+def numbers_in(text: str) -> list[Decimal]:
+    """Every number written in `text` (customer text, titles), read like the answer is."""
+    found = [
+        parse_km(match.group("after") or match.group("before")) for match in _PRICE.finditer(text)
+    ]
+    rest = _PRICE.sub(" ", text)
+    found += [parse_km(match.group(0)) for match in _NUMBER.finditer(rest)]
+    return [number for number in found if number is not None]
+
+
 def parse_km(text: str) -> Decimal | None:
-    """'1.234,50' -> 1234.50, '53,00' -> 53.00, '24.90' -> 24.90; None if not a number."""
-    if "," in text:
-        text = text.replace(".", "").replace(",", ".")
-    elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        text = text.replace(".", "")  # "1.234" with no decimals: thousands dots
+    """'1.234,50' / '1 234,50' -> 1234.50, '53,00' -> 53.00, '49,-' -> 49; None if not one."""
+    text = text.strip().removesuffix(",-").replace("\u00a0", " ")
+    if re.fullmatch(r"\d{1,3}(?:[. ]\d{3})+(?:,\d+)?", text):
+        text = text.replace(".", "").replace(" ", "")  # thousands groups
+    text = text.replace(" ", "").replace(",", ".")
     try:
         return Decimal(text)
     except InvalidOperation:
         return None
 
 
-def check_grounding(text: str, facts: Facts) -> GroundingResult:
-    """Each problem is one short English line, for the retry prompt and the logs."""
+# Numbers in the advisor's own fixed texts (phone groups, "10–15 dana", RAL 7016 ...).
+_COPY_NUMBERS: frozenset[Decimal] = frozenset(
+    number
+    for value in vars(copy).values()
+    if isinstance(value, str)
+    for number in numbers_in(value)
+)
+
+
+def check_grounding(
+    text: str, facts: Facts, *, known_numbers: Iterable[Decimal] = ()
+) -> GroundingResult:
+    """Each problem is one short English line, for the retry prompt and the logs.
+
+    `known_numbers`: numbers from the customer (their messages and the fence spec), which
+    the answer may repeat, but never as a price.
+    """
     problems: list[str] = []
+    text = text.replace(copy.MARTOM_PHONE, " ")
+    text = _PER_ONE.sub(" ", text)
     known_prices = facts.price_set()
     for match in _PRICE.finditer(text):
-        amount = parse_km(match.group(1))
-        if amount is None or amount not in known_prices:
+        amount = parse_km(match.group("after") or match.group("before"))
+        currency = match.group("cur_after") or match.group("cur_before")
+        if re.fullmatch(_EURO, currency, re.IGNORECASE):
+            problems.append(f"price '{match.group(0)}' is in euros; Martom prices are in KM")
+        elif amount is None or amount not in known_prices:
             problems.append(f"price '{match.group(0)}' is not in any tool result")
+    rest = _PRICE.sub(" ", text)
+    for match in _DASH_PRICE.finditer(rest):
+        if parse_km(match.group(1)) not in known_prices:
+            problems.append(f"price '{match.group(0)}' is not in any tool result")
+    rest = _DASH_PRICE.sub(" ", rest)
+
     known_ids = set(facts.listing_ids)
-    for match in _LISTING_ID.finditer(text):
+    for match in _LISTING_ID.finditer(rest):
         if int(match.group(0)) not in known_ids:
             problems.append(f"listing id {match.group(0)} is not in any tool result")
-    known_quantities = set(facts.quantities)
-    for match in _QUANTITY.finditer(text):
-        if int(match.group(1)) not in known_quantities:
-            problems.append(f"quantity '{match.group(0)}' is not in any tool result")
+    rest = _LISTING_ID.sub(" ", rest)
+
+    allowed = (
+        {Decimal(number) for number in facts.numbers}
+        | known_prices
+        | set(known_numbers)
+        | _COPY_NUMBERS
+    )
+    for match in _NUMBER.finditer(rest):
+        number = parse_km(match.group(0))
+        if number is None or number not in allowed:
+            problems.append(
+                f"number '{match.group(0)}' is not in any tool result or customer message"
+            )
     problems.extend(_priced_never_priced(text, facts.unpriced_names))
     return GroundingResult(problems)
 
@@ -156,7 +228,8 @@ def _priced_never_priced(text: str, unpriced_names: Iterable[str]) -> list[str]:
     problems = []
     for sentence in _SENTENCE_END.split(text):
         lowered = sentence.lower()
-        if _PRICE.search(sentence) and any(word in lowered for word in words):
+        priced = _PRICE.search(sentence) or _DASH_PRICE.search(sentence)
+        if priced and any(word in lowered for word in words):
             problems.append(
                 f"sentence '{sentence.strip()}' gives a price for something that is "
                 "never priced (gate, installation, made to order or on request)"
@@ -168,9 +241,10 @@ def _decimal(value: Any) -> Decimal | None:
     if isinstance(value, bool):
         return None
     try:
-        return Decimal(str(value))
+        number = Decimal(str(value))
     except InvalidOperation:
         return None
+    return number if number.is_finite() else None
 
 
 def _is_int(value: Any) -> bool:

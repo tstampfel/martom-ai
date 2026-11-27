@@ -29,7 +29,7 @@
 # | LANGSMITH_API_KEY        | secret app:LANGSMITH_API_KEY      | secret app:LANGSMITH_API_KEY|
 # | WEEKLY_FULL              | not set                           | false; true on Sunday night |
 #
-# AGENT_MODEL is listed in .env.example for M4; Settings ignores it until then.
+# AGENT_MODEL (Settings.agent_model, M4-3) is the advisor's Sonnet model; only the API reads it.
 
 data "aws_caller_identity" "current" {}
 

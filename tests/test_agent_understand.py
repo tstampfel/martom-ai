@@ -46,7 +46,16 @@ def question_ids(plan) -> list[str]:
 
 @pytest.mark.parametrize(
     ("text", "metres"),
-    [("25m", 25.0), ("25,5 m", 25.5), ("2500 cm", 25.0), ("-3 m", -3.0), ("0", 0.0)],
+    [
+        ("25m", 25.0),
+        ("25,5 m", 25.5),
+        ("25.5 m", 25.5),
+        ("1.200 m", 1200.0),
+        ("1.000,5 m", 1000.5),
+        ("2500 cm", 25.0),
+        ("-3 m", -3.0),
+        ("0", 0.0),
+    ],
 )
 def test_parse_length_m(text: str, metres: float) -> None:
     assert parse_length_m(text) == metres
@@ -202,3 +211,21 @@ def test_skipped_layout_after_chips_keeps_the_one_length() -> None:
 def test_total_length_text() -> None:
     assert total_length_text([25.0]) == "25 m"
     assert total_length_text([10.0, 15.5]) == "25,5 m"
+
+
+def test_thousands_dot_length_is_too_large() -> None:
+    # R1-10: "1.200 m" is 1200 m, never 1,2 m.
+    plan = plan_for(height="153", lengths=["1.200 m"], layout="straight")
+    assert plan.answer == copy.FENCE_TOO_LARGE
+
+
+def test_zero_spacing_is_ignored() -> None:
+    plan = plan_for(request="fence_roll", height="100", lengths=["25 m"], post_spacing="0 m")
+    assert plan.spec.requested_spacing_m is None
+
+
+def test_invalid_length_chips_keep_the_gate_answer() -> None:
+    # R1-13: "panel ograda -5 m, i treba mi kapija".
+    plan = plan_for(height="153", lengths=["-5 m"], layout="straight", asks_gate=True)
+    assert plan.answer == copy.INVALID_LENGTH
+    assert copy.GATE in plan.notes

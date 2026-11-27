@@ -36,14 +36,16 @@ traces each node under its name, and each model call carries a run name and tags
 The checkpointer is injected (`build_graph(..., checkpointer=...)`): tests use
 InMemorySaver, the API gets the Postgres one from #124. With a checkpointer, each
 conversation is a `thread_id` and the fence spec and messages survive between requests.
-Output for the SSE endpoint (#21): `answer`, `chips`, `bom`, `cart`, `hits`,
-`contact_martom` and `fallback` in the final state.
+Output for the SSE endpoint (#21): `answer`, `chips`, `bom` (send it when `bom_changed`),
+`cart` (this turn's additions), `hits`, `contact_martom` (offer the WhatsApp button with
+the customer's last message as the note) and `fallback` in the final state.
 """
 
 import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.language_models import BaseChatModel
@@ -65,7 +67,7 @@ from pydantic import ValidationError
 
 from martom.agent import copy
 from martom.agent.catalogue import Catalogue
-from martom.agent.grounding import Facts, check_grounding, facts_from_output
+from martom.agent.grounding import Facts, check_grounding, facts_from_output, numbers_in
 from martom.agent.prompts import (
     GENERATE_SYSTEM,
     GRADE_SYSTEM,
@@ -86,9 +88,16 @@ from martom.agent.tools import (
     ToolError,
     hit_json,
 )
-from martom.agent.understand import FenceSpec, Understanding, plan_turn, update_spec
+from martom.agent.understand import (
+    FenceSpec,
+    Understanding,
+    default_panel_width,
+    plan_turn,
+    update_spec,
+)
 from martom.api.chat_events import ExtraLine
 from martom.api.chat_request import ClarifyAnswers
+from martom.bom.roll import POST_SPACING_CM
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +131,9 @@ class AgentState(TypedDict, total=False):
     grade: Literal["ok", "weak"]
     rewrites: int
     facts: dict[str, Any]  # grounding.Facts
-    bom: dict[str, Any] | None
+    bom: dict[str, Any] | None  # the latest materials list of the conversation
+    bom_changed: bool  # this turn made (or cleared) `bom`: send it again (#21)
+    rewrite_failed: bool
     cart: list[dict[str, Any]]
     chips: dict[str, Any] | None
     notes: list[str]
@@ -192,13 +203,18 @@ def build_graph(
         spec = update_spec(previous, understanding, answers)
         heights = None
         if understanding.request == "fence_eurofence":
-            heights = await deps.catalogue.variant_heights(EUROFENCE_LISTING_ID)
+            try:
+                heights = await deps.catalogue.variant_heights(EUROFENCE_LISTING_ID)
+            except Exception as exc:
+                # Skip the "ne postoji" check; the search still finds the listing.
+                logger.warning("eurofence heights unavailable", extra=_error(exc))
         plan = plan_turn(
             understanding, spec, follow_up=answers is not None, eurofence_heights=heights
         )
-        has_fence = plan.spec is not None and plan.spec.kind is not None
+        # Saved whenever the plan built one, also before the fence type is known (R1-9).
+        project = plan.spec.model_dump(mode="json") if plan.spec else state.get("project")
         return {
-            "project": plan.spec.model_dump(mode="json") if has_fence else state.get("project"),
+            "project": project,
             "answers": None,
             "route": plan.route,
             "query": plan.query or question,
@@ -206,9 +222,13 @@ def build_graph(
             "reranked": False,
             "grade": "ok",
             "rewrites": 0,
-            "facts": Facts().model_dump(),
-            "bom": None,
+            # `facts` and `bom` stay: earlier tool results are still in the message history
+            # the model sees, so it may repeat their numbers (R1-3). A fence too large
+            # clears the old list.
+            "bom": None if plan.contact_martom else state.get("bom"),
+            "bom_changed": plan.contact_martom and state.get("bom") is not None,
             "cart": [],
+            "rewrite_failed": False,
             "chips": plan.chips.model_dump(mode="json") if plan.chips else None,
             "notes": plan.notes,
             "extra_lines": [line.model_dump(mode="json") for line in plan.extra_lines],
@@ -231,7 +251,15 @@ def build_graph(
         except Exception as exc:
             logger.warning("retrieval failed; answering without products", extra=_error(exc))
             return {"hits": [], "reranked": False}
-        return {"hits": [hit_json(hit) for hit in retrieval.hits], "reranked": retrieval.reranked}
+        hits = [hit_json(hit) for hit in retrieval.hits]
+        # The hits come from the database, so their ids and titles are tool data the answer
+        # may cite (R1-2); the scores are not.
+        found = facts_from_output([_hit_facts(hit) for hit in hits])
+        return {
+            "hits": hits,
+            "reranked": retrieval.reranked,
+            "facts": _facts(state).merge(found).model_dump(),
+        }
 
     async def grade(state: AgentState) -> dict[str, Any]:
         hits = state.get("hits", [])
@@ -273,8 +301,8 @@ def build_graph(
                 messages, config=llm_config("rewrite_llm", deps.models.guard_model_name)
             )
         except Exception as exc:
-            logger.warning("query rewrite failed; keeping the query", extra=_error(exc))
-            return {"rewrites": MAX_REWRITES}  # don't search the same query again
+            logger.warning("query rewrite failed; keeping the results", extra=_error(exc))
+            return {"rewrites": rewrites, "rewrite_failed": True}
         return {"query": result.query, "rewrites": rewrites}
 
     async def generate(state: AgentState) -> dict[str, Any]:
@@ -300,6 +328,7 @@ def build_graph(
         )
         facts = _facts(state)
         bom = state.get("bom")
+        bom_changed = state.get("bom_changed", False)
         cart = list(state.get("cart", []))
         contact = state.get("contact_martom", False)
         results: list[ToolMessage] = []
@@ -308,15 +337,22 @@ def build_graph(
             try:
                 output = await _run_tool(name, call["args"], ctx)
             except FenceTooLargeToolError as exc:
-                contact, bom = True, None
+                contact, bom, bom_changed = True, None, True
                 results.append(_tool_error(call_id, name, str(exc)))
                 continue
             except ToolError as exc:
                 results.append(_tool_error(call_id, name, str(exc)))
                 continue
-            facts = facts.merge(facts_from_output(output))
+            except Exception as exc:
+                # A database, retriever or pricer failure: the model answers without it.
+                logger.warning("tool failed", extra={"tool": name, **_error(exc)})
+                results.append(_tool_error(call_id, name, "the tool failed; answer without it"))
+                continue
+            # The cart echoes the model's own quantity back: never a fact (R1-11).
+            skip = ("quantity",) if name == "add_to_cart" else ()
+            facts = facts.merge(facts_from_output(output, skip_keys=skip))
             if name == "calculate_fence_bom":
-                bom = output
+                bom, bom_changed = output, True
             elif name == "add_to_cart":
                 cart.append(output["cart_line"])
             content = json.dumps(output, ensure_ascii=False)
@@ -325,6 +361,7 @@ def build_graph(
             "messages": results,
             "facts": facts.model_dump(),
             "bom": bom,
+            "bom_changed": bom_changed,
             "cart": cart,
             "contact_martom": contact,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
@@ -335,7 +372,7 @@ def build_graph(
         if state.get("generate_failed") or not isinstance(last, AIMessage):
             return _fallback(state, remove=None)
         text = last.text.strip()
-        result = check_grounding(text, _facts(state))
+        result = check_grounding(text, _facts(state), known_numbers=_customer_numbers(state))
         if text and not last.tool_calls and result.ok:
             return {"answer": _join(text, *state.get("notes", []))}
         problems = result.problems or ["the answer was empty or still calling tools"]
@@ -359,6 +396,10 @@ def build_graph(
         if state["grade"] == "weak" and state.get("rewrites", 0) < MAX_REWRITES:
             return "rewrite"
         return "generate"
+
+    def after_rewrite(state: AgentState) -> Literal["retrieve", "generate"]:
+        # A failed rewrite would search the same query again: answer with what we have.
+        return "generate" if state.get("rewrite_failed") else "retrieve"
 
     def after_generate(state: AgentState) -> Literal["tools", "grounding"]:
         last = state["messages"][-1] if state.get("messages") else None
@@ -388,7 +429,7 @@ def build_graph(
     builder.add_edge("clarify", END)
     builder.add_edge("retrieve", "grade")
     builder.add_conditional_edges("grade", after_grade, ["rewrite", "generate"])
-    builder.add_edge("rewrite", "retrieve")
+    builder.add_conditional_edges("rewrite", after_rewrite, ["retrieve", "generate"])
     builder.add_conditional_edges("generate", after_generate, ["tools", "grounding"])
     builder.add_edge("tools", "generate")
     builder.add_conditional_edges("grounding", after_grounding, ["generate", END])
@@ -446,6 +487,38 @@ def _fallback(state: AgentState, *, remove: BaseMessage | None) -> dict[str, Any
 def _spec(state: AgentState) -> FenceSpec | None:
     raw = state.get("project")
     return FenceSpec.model_validate(raw) if raw else None
+
+
+def _hit_facts(hit: dict[str, Any]) -> dict[str, Any]:
+    keys = ("listing_id", "title", "url", "product_type")
+    return {key: hit[key] for key in keys}
+
+
+def _customer_numbers(state: AgentState) -> set[Decimal]:
+    """Numbers the customer gave (messages, chip answers via the spec) or the spec implies."""
+    numbers: set[Decimal] = set()
+    for message in state.get("messages", []):
+        if isinstance(message, HumanMessage):
+            numbers.update(numbers_in(message.text))
+    spec = _spec(state)
+    if spec is not None:
+        values: list[float | int | None] = [
+            spec.height_cm,
+            spec.real_height_cm(),
+            spec.total_length_m,
+            spec.panel_width_cm,
+            spec.requested_spacing_m,
+            *spec.sides_m,
+        ]
+        if spec.sides_m:
+            corners = len(spec.sides_m) if spec.closed else len(spec.sides_m) - 1
+            values += [sum(spec.sides_m), len(spec.sides_m), corners]
+        if spec.kind == "roll":
+            values.append(POST_SPACING_CM / 100)  # "stupovi svaka 2 m" (fence-rules.md)
+        if spec.kind == "panel":
+            values.append(default_panel_width(spec))
+        numbers.update(Decimal(str(value)) for value in values if value is not None)
+    return numbers
 
 
 def _facts(state: AgentState) -> Facts:

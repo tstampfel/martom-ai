@@ -504,11 +504,21 @@ class RunNames(AsyncCallbackHandler):
         name: str | None = None,
         **kwargs: Any,
     ) -> None:
-        self.names.append(name or kwargs.get("metadata", {}).get("langgraph_node", ""))
+        self.names.append(name or "")
+
+    async def on_chat_model_start(
+        self,
+        serialized: Any,
+        messages: Any,
+        *,
+        run_id: UUID,
+        name: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self.names.append(name or "")
 
 
-@pytest.mark.parametrize("reranked", [True])
-async def test_every_node_is_a_traced_run(reranked: bool) -> None:
+async def test_every_node_is_a_traced_run() -> None:
     recorder = RunNames()
     graph = make_graph(
         Recorder(understanding(height="153 cm", lengths=["25 m"], layout="straight")),
@@ -520,4 +530,145 @@ async def test_every_node_is_a_traced_run(reranked: bool) -> None:
     nodes = {"guardrail", "retrieve", "grade", "rewrite", "generate", "tools", "grounding"}
     assert nodes <= set(recorder.names)
     assert "martom_agent" in recorder.names
-    assert {"guardrail_llm", "grade_llm", "rewrite_llm"} <= set(recorder.names)
+    llm_runs = {"guardrail_llm", "grade_llm", "rewrite_llm", "generate_llm"}
+    assert llm_runs <= set(recorder.names)
+
+
+# --- review round 1 regressions --------------------------------------------------------
+
+
+async def test_answer_citing_a_retrieve_hit_is_grounded() -> None:
+    # R1-2: the Retrieve step's ids come from the database.
+    reply = "Preporučujem PANEL 3D OGRADA: https://martom.olx.ba/artikal/panel-3d-ograda-63996799"
+    graph = make_graph(Recorder(understanding(request="product")), [AIMessage(reply)])
+    result = await ask(graph, "Treba mi panel")
+    assert result["fallback"] is False
+    assert result["answer"] == reply
+    assert result["grounding_problems"] == []
+
+
+async def test_follow_up_may_repeat_an_earlier_tool_price() -> None:
+    # R1-3: turn 2 answers from the turn-1 BOM still in the history.
+    guard = Recorder(
+        understanding(height="153 cm", lengths=["25 m"], layout="straight"),
+        understanding(request="product", search_query="ukupno"),
+    )
+    graph = make_graph(
+        guard,
+        [
+            tool_call("calculate_fence_bom"),
+            AIMessage("Evo popisa."),
+            AIMessage("Ukupno je 905,10 KM."),
+        ],
+        pricer=FakePricer(),
+    )
+    await ask(graph, "Panelna ograda 25 m, 153 cm", thread="follow")
+    second = await ask(graph, "A koliko je to ukupno?", thread="follow")
+    assert second["fallback"] is False
+    assert second["answer"] == "Ukupno je 905,10 KM."
+    assert second["bom"]["total"] == "905.10"
+    assert second["bom_changed"] is False
+
+
+async def test_zero_spacing_does_not_crash_the_turn() -> None:
+    # R1-4: post_spacing "0 m" used to raise out of roll_fence_bom.
+    graph = make_graph(
+        Recorder(
+            understanding(
+                request="fence_roll",
+                height="100 cm",
+                lengths=["25 m"],
+                layout="straight",
+                wants_concrete_posts=True,
+                post_spacing="0 m",
+            )
+        ),
+        [tool_call("calculate_fence_bom"), AIMessage("Evo popisa.")],
+    )
+    result = await ask(graph, "Mreža u roli 100 cm, 25 m, razmak 0 m")
+    assert result["answer"] == "Evo popisa."
+    assert result["bom"] is not None
+
+
+class BrokenCatalogue(FakeCatalogue):
+    async def get_product(self, listing_id: int) -> ProductInfo | None:
+        raise RuntimeError("database down")
+
+    async def variant_heights(self, listing_id: int) -> list[int]:
+        raise RuntimeError("database down")
+
+
+async def test_tool_exception_goes_back_to_the_model_as_an_error() -> None:
+    # R1-4: a database error inside a tool is an error ToolMessage, not a crash.
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [tool_call("get_product", {"listing_id": PANEL_ID}), AIMessage("Pokušajte kasnije.")],
+        catalogue=BrokenCatalogue(),
+    )
+    result = await ask(graph, "Koliko je panel?")
+    errors = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert [m.status for m in errors] == ["error"]
+    assert "database down" not in errors[0].text
+    assert result["answer"] == "Pokušajte kasnije."
+
+
+async def test_eurofence_heights_error_skips_the_check() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="fence_eurofence", height="100 cm")),
+        [AIMessage("Imamo Eurofence.")],
+        catalogue=BrokenCatalogue(),
+    )
+    result = await ask(graph, "Eurofence 100 cm")
+    assert result["answer"] == "Imamo Eurofence."
+
+
+async def test_unknown_fence_type_keeps_the_first_message_after_the_chips() -> None:
+    # R1-9: length and height survive until the customer picks the fence type.
+    guard = Recorder(
+        understanding(
+            request="fence_unknown_type", height="150 cm", lengths=["25 m"], layout="straight"
+        ),
+        understanding(request="other", search_query=""),
+    )
+    graph = make_graph(guard, [tool_call("calculate_fence_bom"), AIMessage("Evo popisa.")])
+    first = await ask(graph, "ograda 25 m 150 cm", thread="unknown")
+    assert [q["id"] for q in first["chips"]["questions"]] == ["fence_type"]
+    assert first["project"]["total_length_m"] == 25
+    second = await ask(
+        graph, "Panelna", answers={"choices": {"fence_type": "panel"}}, thread="unknown"
+    )
+    assert second["chips"] is None
+    assert second["project"]["height_cm"] == 150
+    assert second["bom"]["summary"] == "25 m · panel 153 cm"
+
+
+async def test_failed_rewrite_answers_with_the_existing_results() -> None:
+    # R1-12: no second search for the same query.
+    retriever = FakeRetriever()
+    graph = make_graph(
+        Recorder(understanding(request="product", search_query="kolca")),
+        [AIMessage("Nisam našao odgovarajući proizvod.")],
+        grade=Recorder(Grade(fits=False)),
+        rewrite=Recorder(),  # always fails
+        retriever=retriever,
+    )
+    result = await ask(graph, "kolca")
+    assert retriever.queries == ["kolca"]
+    assert result["answer"] == "Nisam našao odgovarajući proizvod."
+
+
+async def test_cart_count_must_come_from_the_customer() -> None:
+    # R1-11: the cart echoes the model's quantity; 13 was never asked for.
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [
+            tool_call(
+                "add_to_cart",
+                {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 13},
+            ),
+            AIMessage("Dodao sam 13 panela u korpu."),
+            AIMessage("Dodao sam panele u korpu."),
+        ],
+    )
+    result = await ask(graph, "Dodaj panele u korpu")
+    assert result["answer"] == "Dodao sam panele u korpu."
