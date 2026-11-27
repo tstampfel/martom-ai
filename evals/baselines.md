@@ -19,6 +19,13 @@ recall and MRR.
 | 2026-11-27 | branch m3-2b-eval-cases @ bcb165e (on top of bfce370, after #15) | 2,570 active listings, extraction run 4 | keyword | 14 lines (+ seed-12 kolica, seed-13 panelan, seed-14 građevinska kolica) | 13 | 0.737 | 0.814 | 0.698 | 0.000 (0 of 2) |
 | 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (copy of the 2,570-listing catalogue, embedded with Cohere embed-multilingual-v3.0) | vector | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.950 | n/a |
 | 2026-11-27 | #15 (PR #110), Tomislav's comparison | martom_m33 (same) | hybrid | 11 lines (seed-01 … seed-11) | 10 | 0.900 | 0.950 | 0.933 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid (same run, baseline) | 11 lines (seed-01 … seed-11) | 10 | 0.900 | 0.950 | 0.933 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v4.0-fast, no parser | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.950 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full: Haiku filters → hybrid → rerank-v4.0-fast, batch parser (no time limit), 0/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.950 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v4.0-fast, live parser (1.5 s), 4/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.950 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full: Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, live parser (1.5 s), 1/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 
 Vector and hybrid runs need Cohere embeddings and `COHERE_API_KEY`, so Tomislav runs them by
 hand. **Tomislav only:** agents never pass `--env-file .env` (CLAUDE.md); an agent that needs a
@@ -43,7 +50,44 @@ DATABASE_URL=postgresql://martom:martom@localhost:5433/martom uv run --env-file 
 - `--env-file` only fills variables that aren't set already, so the inline `DATABASE_URL` wins
   over any `DATABASE_URL` in `.env`.
 
+## Rerank comparison (#16, 2026-11-27)
+
+`scripts/eval_retrieve.py --rerank-models rerank-v4.0-fast,rerank-v5.0-fast`, Tomislav's run on
+his main database at dcd5ae4 (on the 11-line set, before the rebase onto #102's 14 lines). Both
+models saw the same questions, the same 30 candidates and the same Haiku filters. Latency is
+the live timed run: 33 searches per model (11 questions × 3), live timeouts and fallbacks on,
+the two models taking turns on each question.
+
+| Rerank model | recall@5 | recall@10 | MRR | Live parse fallbacks (scoring / timed) | Rerank fallbacks | p95 rerank | p95 total |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| rerank-v4.0-fast | 0.950 | 0.950 | 0.950 | 4/11 / 10/33 | 0/33 | 737 ms | 2,274 ms |
+| rerank-v5.0-fast | 0.950 | 0.950 | 0.900 | 1/11 / 6/33 | 0/33 | 704 ms | 2,227 ms |
+
+- **Decision (Tomislav):** the two tie. The MRR gap is one question (`seed-09-no-height-kokosi`:
+  v5.0 puts 73950900 first and the expected 68378185 second), which is noise at n = 10. By his
+  rule (equal within noise → the newer, cheaper model) the default is now `rerank-v5.0-fast`;
+  `RERANK_MODEL=rerank-v4.0-fast` still works.
+- **Recheck** both models with Toni's questions from #13 when they arrive, on the full eval set.
+- The two models score on different scales: best relevance on topic was 0.86–0.92 with
+  v4.0-fast and 0.71–0.79 with v5.0-fast; the off-topic question `seed-10` got 0.106 and 0.004.
+  Any "nothing relevant" threshold in M4 grading must be set for the model in use.
+- #102 checks, full pipeline: "kolica" doesn't return the grinder 52889522 with either model, and
+  "panelan" puts the panels 63996799 and 1199211 first with both.
+- **Parser limit:** Haiku alone took p50 1,330 ms and p95 1,599 ms (no time limit; 3 of 11 over
+  1.5 s), so the live 1.5 s limit sent 6–10 of 33 timed searches (18–30%) out without filters.
+  The understand stage (parse and embedding in parallel) was p95 ~1,504 ms, i.e. the limit. The
+  limit is now 2.5 s, and the embedding and the unfiltered search run during the parse, so the
+  live rows and the latency above are from **before** that change and should be re-run.
+- **p95 total ~2.2 s misses the plan's "p95 retrieval < 800 ms"**: the Haiku parse alone is p50
+  1.3 s on the critical path. Recall@5 0.95 meets "≥ 90%".
+
 ## Weak cases
+
+### seed-06 is a data issue, not a search bug (2026-11-27)
+
+`seed-06-anker-m8x80` misses 40021189 because that listing is "Na upit" with no sizes in the
+description; Toni has been asked to add sizes and prices. It stays at R@10 0.50 in every mode
+(keyword, vector, hybrid, rerank, both rerank models) until the listing changes.
 
 ### Vector and hybrid, 11-line set (2026-11-27, Tomislav's comparison)
 
