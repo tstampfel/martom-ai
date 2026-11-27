@@ -87,6 +87,12 @@ describe('BomCard', () => {
     expect(within(card).getByRole('button', { name: copy.chat.bom.addAll })).toBeEnabled()
   })
 
+  // Delivery still applies, as the wide panel's footnote says.
+  it('keeps "+ dostava" after "cijena na upit" on the phone card', () => {
+    const { card } = renderCard(bomOf(fixtures.bomAllOnRequest))
+    expect(totalRow(card)).toHaveTextContent(`${copy.chat.bom.totalOnRequest} ${copy.chat.bom.afterTotal}`)
+  })
+
   it('shows extra lines with their note, without a price or a stepper', () => {
     const { card } = renderCard(bomOf(fixtures.fenceConcretePosts))
     const extra = within(card).getByRole('listitem', { name: 'Stupovi za betoniranje – po upitu' })

@@ -616,9 +616,6 @@
 
 .bom-card__total-label {
   flex: none;
-}
-
-.bom-card__total-label {
   font-size: 15px;
   font-weight: 700;
 }

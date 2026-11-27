@@ -51,7 +51,7 @@ export function BomCard({ bom, quantities, pending, failed, variant, onQuantityC
           <span className="bom-card__total-label">{text.totalLabel[variant]}</span>
           <span className="bom-card__total-value">
             {bom.total === null ? text.totalOnRequest : formatPrice(bom.total)}
-            {variant === 'card' && bom.total !== null ? (
+            {variant === 'card' ? (
               <span className="bom-card__after-total"> {text.afterTotal}</span>
             ) : null}
           </span>
