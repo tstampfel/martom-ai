@@ -15,8 +15,9 @@ fallback count, which is what customers get. Then `full` is timed as live search
 (live timeouts and fallbacks on, Haiku called each time), --repeat times per question,
 the models taking turns on each question so they share network conditions,
 and p50 / p95 are printed per stage and model. A summary table puts recall@5, recall@10,
-MRR and p95 of each model side by side. Last, the #102 cases ('kolica' must not return
-the grinder, 'panelan' must find the panels) per model.
+MRR and p95 of each model side by side. Last, the #102 eval cases (seed-12 'kolica' and
+seed-14 'građevinska kolica' must not return the grinder, seed-13 'panelan' must find the
+panels) in every scored run, from the same eval scores (case_status).
 
 Needs a database with the catalogue and its embeddings, COHERE_API_KEY and
 ANTHROPIC_API_KEY. Tomislav only (agents never read .env); uv passes the keys from his
@@ -44,9 +45,10 @@ import psycopg
 
 from martom.embeddings import make_embedder
 from martom.evals.retrieval import (
+    ISSUE_102_CASES,
     EvalQuestion,
     RunScores,
-    issue_102_hits,
+    case_status,
     load_questions,
     run_search_eval,
     score_run,
@@ -85,6 +87,8 @@ def print_run(name: str, questions: list[EvalQuestion], results: dict[str, list[
     print(f"{'question':<32} {'R@5':>5} {'R@10':>5} {'RR':>5}  top 5 ids")
     for question in questions:
         top = ", ".join(str(i) for i in results[question.id][:5]) or "-"
+        if question.id in scores.forbidden_hit_ids:
+            top += "  FORBIDDEN id in top 10"
         score = scores.per_question.get(question.id)
         if score is None:
             print(f"{question.id:<32} {'n/a':>5} {'n/a':>5} {'n/a':>5}  {top}")
@@ -98,7 +102,24 @@ def print_run(name: str, questions: list[EvalQuestion], results: dict[str, list[
         f"recall@5 {scores.recall_at_5:.3f}  recall@10 {scores.recall_at_10:.3f}  "
         f"MRR {scores.mrr:.3f}"
     )
+    if scores.forbidden_hit_rate is not None:
+        hits = ", ".join(scores.forbidden_hit_ids) or "none"
+        print(
+            f"forbidden hit rate {scores.forbidden_hit_rate:.3f}"
+            f" ({len(scores.forbidden_hit_ids)} of {scores.forbidden_checked}: {hits})"
+        )
     return scores
+
+
+def print_cases(runs: list[tuple[str, RunScores]]) -> None:
+    """The #102 eval cases in every scored run: "ok" = full recall@10 and no forbidden id
+    in the top 10, else what failed ("-": the eval set has no such question)."""
+    width = max(len(name) for name, _ in runs)
+    print("\n== #102 cases (from the scores above)")
+    print(f"{'run':<{width}}" + "".join(f"  {case:<28}" for case in ISSUE_102_CASES))
+    for name, scores in runs:
+        cells = "".join(f"  {case_status(scores, case):<28}" for case in ISSUE_102_CASES)
+        print(f"{name:<{width}}{cells}")
 
 
 class CachingParser:
@@ -275,21 +296,21 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
     await live_parser.parse_filters(questions[0].question)
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
         hybrid = await run_search_eval(conn, questions, "hybrid", embedder=embedder)
-        print_run("hybrid (M3-3 baseline)", questions, hybrid)
+        case_runs = [("hybrid", print_run("hybrid (M3-3 baseline)", questions, hybrid))]
 
         for r in results:
             pausing = PausingReranker(rerankers[r.model], pause)
             reranked, rerank_details = await run_retrieve_eval(
                 conn, questions, embedder=embedder, parser=None, reranker=pausing
             )
-            print_run(
+            rerank_scores = print_run(
                 f"rerank with {r.model} (hybrid top 30 -> Cohere, no filters)", questions, reranked
             )
             print_fallbacks(rerank_details, parsed=False)
             full, details = await run_retrieve_eval(
                 conn, questions, embedder=embedder, parser=parser, reranker=pausing
             )
-            r.scores = print_run(
+            r.scores = batch_scores = print_run(
                 f"full with {r.model}, batch parser without time limit"
                 " (Haiku filters -> hybrid -> Cohere)",
                 questions,
@@ -299,7 +320,7 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
             live_full, live_details = await run_retrieve_eval(
                 conn, questions, embedder=embedder, parser=live, reranker=pausing
             )
-            r.live_scores = print_run(
+            r.live_scores = live_scores = print_run(
                 f"full with {r.model}, live parser ({PARSE_TIMEOUT_SECONDS} s, unfiltered"
                 " when slower)",
                 questions,
@@ -307,6 +328,11 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
             )
             print_fallbacks(live_details, parsed=True)
             r.live_not_parsed = sum(not d.parsed for d in live_details.values())
+            case_runs += [
+                (f"rerank {r.model}", rerank_scores),
+                (f"full {r.model}, batch parser", batch_scores),
+                (f"full {r.model}, live parser", live_scores),
+            ]
             print(f"\nfilters per question ({r.model}):")
             for question in questions:
                 d = details[question.id]
@@ -319,21 +345,7 @@ async def main(eval_set: Path, models: list[str], repeat: int, pause: float) -> 
 
         print_parse_latency(parser.parse_ms)
 
-        kolica, panelan = await issue_102_hits(conn, embedder)
-        print(f"\n#102 hybrid: 'kolica' top 5 {kolica[:5]}, 'panelan' top 5 {panelan[:5]}")
-        for r in results:
-            for text in ("kolica", "panelan"):
-                await asyncio.sleep(pause)
-                result = await retrieve(
-                    conn,
-                    text,
-                    embedder=embedder,
-                    parser=parser,
-                    reranker=rerankers[r.model],
-                    fallback=False,
-                )
-                top = [(h.listing_id, round(h.relevance or 0, 3)) for h in result.hits[:5]]
-                print(f"#102 full {r.model}: {text!r} top 5 (id, relevance) {top}")
+        print_cases(case_runs)
 
         await timed_run(conn, questions, settings, results, repeat, pause)
         print_summary(results, len(questions))

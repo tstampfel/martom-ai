@@ -20,7 +20,7 @@ from langchain_core.embeddings import Embeddings
 
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder, vector_literal
-from martom.evals.retrieval import EvalQuestion, issue_102_hits, run_search_eval, score_run
+from martom.evals.retrieval import EvalQuestion, run_search_eval, score_run
 from martom.extract.store import VariantRow, save_products
 from martom.search import hybrid
 from martom.search.hybrid import search_hybrid
@@ -182,7 +182,7 @@ async def test_kolica_does_not_return_the_grinder(
     # candidates=3 because vector search has no relevance floor: on this ~16-product
     # catalogue the default 30 returns every product, the grinder included. This shows the
     # mechanism; whether it holds at the default on the real catalogue is the kolica column
-    # of scripts/compare_embeddings.py (R1-3).
+    # of scripts/compare_embeddings.py (seed-12-kolica, R1-3).
     assert BRUSILICA in ids(await search_keyword(conn, "kolica"))
     hits = await search_hybrid(conn, "kolica", embedder=embedder, candidates=3)
     assert BRUSILICA not in ids(hits)
@@ -386,12 +386,19 @@ async def test_the_hybrid_eval_fails_loudly_instead_of_scoring_keyword_results(
         )
 
 
-async def test_the_102_checks_fail_loudly_instead_of_using_keyword_results(
+async def test_the_hybrid_eval_finds_the_102_cases_at_default_candidates(
     conn: psycopg.AsyncConnection, embedder: Embedder
 ) -> None:
-    # compare_embeddings.py's kolica/panelan columns (R3-1): a keyword fallback would show
-    # the grinder for "kolica" because the embedding failed, not because the rule did.
-    kolica, panelan = await issue_102_hits(conn, embedder)
-    assert set(kolica) >= set(KOLICA) and set(panelan) >= PANELS
-    with pytest.raises(RuntimeError, match="provider down"):
-        await issue_102_hits(conn, Embedder(MODEL, FailingEmbeddings()))
+    # compare_embeddings.py's seed-12/seed-13 columns (R3-1 of #15): at the default
+    # candidates "kolica" finds the wheelbarrows and "panelan" the panels. (A failing
+    # embedding raises instead of using keyword results: see the test above.)
+    questions = [
+        EvalQuestion("kolica", "kolica", tuple(KOLICA), "seed"),
+        EvalQuestion("panelan", "panelan", tuple(PANELS), "seed"),
+    ]
+    results = await run_search_eval(conn, questions, "hybrid", embedder=embedder)
+    scores = score_run(questions, results)
+    assert {q: s.recall_at_10 for q, s in scores.per_question.items()} == {
+        "kolica": 1.0,
+        "panelan": 1.0,
+    }

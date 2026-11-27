@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from martom.evals.retrieval import (
+    ISSUE_102_CASES,
     EvalQuestion,
+    case_status,
     forbidden_in_top_k,
     load_questions,
     recall_at_k,
@@ -129,6 +131,27 @@ def test_score_run_without_forbidden_ids_has_no_forbidden_rate() -> None:
     assert scores.forbidden_checked == 0
     assert scores.forbidden_hit_rate is None
     assert scores.forbidden_hit_ids == ()
+
+
+def test_case_status_says_ok_or_names_each_problem() -> None:
+    questions = [
+        EvalQuestion("good", "kolica", (1, 2), "seed", must_not_include_listing_ids=(9,)),
+        EvalQuestion("partial", "panelan", (1, 2), "seed"),
+        EvalQuestion("forbidden", "kolica", (1,), "seed", must_not_include_listing_ids=(9,)),
+        EvalQuestion("both", "kolica", (1, 2), "seed", must_not_include_listing_ids=(9,)),
+        EvalQuestion("off-topic", "sati", (), "seed", must_not_include_listing_ids=(9,)),
+    ]
+    scores = score_run(
+        questions,
+        {"good": [2, 1], "partial": [1], "forbidden": [9, 1], "both": [9, 2], "off-topic": [3]},
+    )
+    assert case_status(scores, "good") == "ok"
+    assert case_status(scores, "partial") == "R@10 0.50"
+    assert case_status(scores, "forbidden") == "FORBIDDEN"
+    assert case_status(scores, "both") == "FORBIDDEN, R@10 0.50"
+    assert case_status(scores, "off-topic") == "ok"
+    # An eval set without the case (compare_embeddings.py --set other.jsonl).
+    assert case_status(scores, "seed-12-kolica") == "-"
 
 
 def test_score_run_needs_a_result_for_every_question() -> None:
@@ -269,3 +292,9 @@ def test_the_repo_eval_set_pins_the_kolica_and_panelan_cases() -> None:
     questions = {q.question: q for q in load_questions(REPO_EVAL_SET)}
     assert 52889522 in questions["kolica"].must_not_include_listing_ids
     assert set(questions["panelan"].expected_listing_ids) == {63996799, 1199211}
+
+
+def test_the_issue_102_cases_are_in_the_repo_eval_set() -> None:
+    # A renamed case would otherwise show "-" in compare_embeddings.py and eval_retrieve.py.
+    ids = {q.id for q in load_questions(REPO_EVAL_SET)}
+    assert set(ISSUE_102_CASES) <= ids
