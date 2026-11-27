@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from martom.bom.manual_products import MAX_AGE_DAYS, ManualProduct, stale_manual_products
+from martom.bom.pricing import PriceMap, PriceProblem, resolve_price
 from martom.extract.store import VariantRow
 
 type Priority = Literal["high", "medium", "low"]
@@ -741,6 +742,68 @@ def check_allowlist_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[Revi
     return issues
 
 
+# --- BOM price map (#125) -------------------------------------------------------------------------
+
+_PRICE_PROBLEM_TEXT = {
+    PriceProblem.LISTING_INACTIVE: "oglas {listing} nije aktivan ili još nije obrađen",
+    PriceProblem.VARIANT_MISSING: "u oglasu {listing} više nema varijante {fields}",
+    PriceProblem.VARIANT_AMBIGUOUS: "u oglasu {listing} ima više varijanti {fields}",
+    PriceProblem.UNPRICED: "varijanta {fields} u oglasu {listing} nema cijenu",
+    PriceProblem.PRICES_DIFFER: "varijante {fields} u oglasu {listing} više nemaju istu cijenu",
+    PriceProblem.MANUAL_MISSING: "proizvod „{manual}“ nije u manual_products.toml",
+}
+
+
+def check_bom_price_map(
+    price_map: PriceMap,
+    listings: Iterable[CheckListing],
+    manual_products: Mapping[str, ManualProduct],
+) -> list[ReviewIssue]:
+    """A BOM line the price map prices that has lost its price (high: the customer sees
+    "cijena na upit" in the materials list).
+
+    Uses `resolve_price`, the same rule as the DB pricer, so Toni sees exactly the lines
+    the customer sees unpriced. `listings` are the active listings; one without an
+    extracted product counts as inactive. Lines the map leaves unmapped on purpose raise
+    nothing. The issue carries the listing only while it is active (the report hides
+    issues of inactive listings); its fingerprint is the BOM item and size alone, so a
+    variant going missing and then its listing going inactive stays one issue.
+    """
+    active = {listing.id: listing.variants for listing in listings if listing.product}
+    issues: list[ReviewIssue] = []
+    for entry in price_map.entries.values():
+        variants = active.get(entry.listing_id) if entry.listing_id is not None else None
+        problem = resolve_price(entry, variants, manual_products).problem
+        if problem is None:
+            continue
+        line = f"{entry.item.value} {entry.size}" if entry.size else entry.item.value
+        match_dicts = [dict(match) for match in entry.matches]
+        fields = ", ".join("„" + " / ".join(m.values()) + "“" for m in match_dicts)
+        reason = _PRICE_PROBLEM_TEXT[problem].format(
+            listing=entry.listing_id, fields=fields, manual=entry.manual_key
+        )
+        issues.append(
+            ReviewIssue(
+                "bom_price_missing",
+                entry.listing_id if entry.listing_id in active else None,
+                "high",
+                f"Stavka „{line}“ u popisu materijala za ogradu nema cijenu (kupac vidi "
+                f"„cijena na upit“): {reason}. Provjerite oglas; ako se oglas namjerno "
+                "promijenio, javite Tomislavu da uskladi mapu cijena (price_map.toml).",
+                {
+                    "item": entry.item.value,
+                    "size": entry.size,
+                    "listing_id": entry.listing_id,
+                    "problem": problem.value,
+                    "variants": match_dicts,
+                },
+                key=f"{entry.item.value}:{entry.size or ''}",
+                per_listing=False,
+            )
+        )
+    return issues
+
+
 # --- all checks ----------------------------------------------------------------------------------
 
 LISTING_CHECKS: tuple[Callable[[CheckListing], list[ReviewIssue]], ...] = (
@@ -768,11 +831,14 @@ def run_all_checks(
     *,
     today: date,
     allowlist_warnings: Iterable[Mapping[str, Any]] = (),
+    price_map: PriceMap | None = None,
 ) -> list[ReviewIssue]:
-    """Every check over the whole catalogue, the manual-product dates and the latest
-    sync's allowlist warnings."""
+    """Every check over the whole catalogue, the manual-product dates, the latest
+    sync's allowlist warnings and (when given) the BOM price map."""
     issues = [issue for listing in listings for issue in check_listing(listing)]
     issues += check_duplicate_listings(listings)
     issues += check_manual_products(manual_products, today=today)
     issues += check_allowlist_warnings(allowlist_warnings)
+    if price_map is not None:
+        issues += check_bom_price_map(price_map, listings, manual_products)
     return issues

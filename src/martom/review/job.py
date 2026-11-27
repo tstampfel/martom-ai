@@ -14,6 +14,8 @@ from pathlib import Path
 import psycopg
 
 from martom.bom.manual_products import DEFAULT_PATH, load_manual_products
+from martom.bom.pricing import DEFAULT_PATH as PRICE_MAP_PATH
+from martom.bom.pricing import load_price_map
 from martom.review.checks import run_all_checks
 from martom.review.store import load_allowlist_warnings, load_check_listings, save_issues
 
@@ -33,16 +35,19 @@ async def run_review_checks(
     *,
     today: date | None = None,
     manual_products_path: Path = DEFAULT_PATH,
+    price_map_path: Path = PRICE_MAP_PATH,
 ) -> ReviewStats:
-    """Check every active listing, manual_products.toml and the latest sync's allowlist
-    warnings; upsert by fingerprint."""
+    """Check every active listing, manual_products.toml, the latest sync's allowlist
+    warnings and the BOM price map (#125); upsert by fingerprint."""
     manual_products = load_manual_products(manual_products_path)
+    price_map = load_price_map(price_map_path)
     listings = await load_check_listings(conn)
     issues = run_all_checks(
         listings,
         manual_products,
         today=today or date.today(),
         allowlist_warnings=await load_allowlist_warnings(conn),
+        price_map=price_map,
     )
     raised, new, resolved = await save_issues(conn, issues)
     stats = ReviewStats(checked=len(listings), raised=raised, new=new, resolved=resolved)
