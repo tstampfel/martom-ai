@@ -12,10 +12,13 @@ import psycopg
 import pytest
 import uvicorn
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from martom import cli
-from martom.api.admin import AdminTokenMissingError
+from martom.api.admin import (
+    ADMIN_TOKEN_MIN_LENGTH,
+    AdminTokenMissingError,
+    AdminTokenTooShortError,
+)
 from martom.api.app import create_app
 from martom.migrate import run_migrations
 from martom.review.report import ReportIssue, ReportListing
@@ -68,46 +71,86 @@ def test_admin_token_is_read_from_the_environment(monkeypatch: pytest.MonkeyPatc
 SHORT_TOKEN = "shortsecretvalue123"
 
 
-def test_rejects_a_short_admin_token_without_showing_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
+def test_api_rejects_a_short_admin_token_without_showing_it() -> None:
+    settings = Settings(admin_token=SHORT_TOKEN)  # type: ignore[arg-type]
 
-    with pytest.raises(ValidationError) as error:
-        Settings()
+    with pytest.raises(AdminTokenTooShortError) as error:
+        create_app(settings, health_checks={})
 
     # The error ends up on stderr and in CloudWatch: it names the rule, never the value.
     assert SHORT_TOKEN not in str(error.value)
     assert SHORT_TOKEN not in repr(error.value)
     assert "ADMIN_TOKEN must be at least 32 characters" in str(error.value)
+    assert "openssl rand -hex 32" in str(error.value)
 
 
-@pytest.mark.parametrize("command", [["api"], ["sync"], ["extract"]])
-def test_commands_never_print_a_short_admin_token(
-    command: list[str],
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+@pytest.mark.parametrize("app_env", ["local", "test", "production"])
+def test_short_admin_token_stops_the_api_in_every_app_env(
+    app_env: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Fail fast (Tomislav, via the manager): a bad token stops startup, but quietly.
+    monkeypatch.setenv("APP_ENV", app_env)
     monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
-    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
 
-    assert cli.main(command) == 1
+    with pytest.raises(AdminTokenTooShortError, match="at least 32 characters"):
+        create_app(Settings(), health_checks={})
 
+
+def test_martom_api_exits_cleanly_with_a_short_admin_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append(args))
+
+    assert cli.main(["api"]) == 1
+
+    assert calls == []
     captured = capsys.readouterr()
     assert SHORT_TOKEN not in captured.out + captured.err
     assert "ADMIN_TOKEN must be at least 32 characters" in captured.err
 
 
 @pytest.mark.parametrize("app_env", ["local", "test", "production"])
-def test_short_admin_token_fails_in_every_app_env(
+def test_short_admin_token_does_not_stop_settings(
     app_env: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # sync, extract and the scripts load Settings() too: they don't serve /admin, so a
+    # short token must not stop them (#108). Only the API checks the length.
     monkeypatch.setenv("APP_ENV", app_env)
     monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
 
-    with pytest.raises(ValidationError, match="at least 32 characters"):
-        Settings()
+    token = Settings().admin_token
+
+    assert token is not None and token.get_secret_value() == SHORT_TOKEN
+
+
+def test_short_admin_token_does_not_stop_a_non_api_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Without ANTHROPIC_API_KEY, `martom extract` gets past Settings() and stops at the
+    # missing-key hint, before any network call. Before #108 it stopped on ADMIN_TOKEN.
+    monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    assert cli.main(["extract"]) == 1
+
+    captured = capsys.readouterr()
+    assert "ANTHROPIC_API_KEY" in captured.err
+    assert "ADMIN_TOKEN" not in captured.out + captured.err
+    assert SHORT_TOKEN not in captured.out + captured.err
+
+
+def test_env_example_admin_token_is_empty_or_long_enough() -> None:
+    # A .env copied from .env.example must never break the API (#108).
+    env_example = Path(__file__).resolve().parents[1] / ".env.example"
+    values = [
+        line.partition("=")[2].strip()
+        for line in env_example.read_text().splitlines()
+        if line.startswith("ADMIN_TOKEN=")
+    ]
+
+    assert len(values) == 1
+    assert values[0] == "" or len(values[0]) >= ADMIN_TOKEN_MIN_LENGTH
 
 
 def test_unset_admin_token_does_not_stop_other_commands_in_production(
