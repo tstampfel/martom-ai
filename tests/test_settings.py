@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from martom.olx import job
 from martom.settings import Settings
 
 ENV_VARS = [
@@ -16,6 +17,8 @@ ENV_VARS = [
     "OLX_API_BASE_URL",
     "OLX_SHOP_USERNAME",
     "OLX_REQUEST_INTERVAL",
+    "OLX_NIGHTLY_REQUEST_BUDGET",
+    "OLX_ROLLING_REFRESH_DAYS",
 ]
 
 
@@ -44,6 +47,25 @@ def test_olx_defaults_match_the_politeness_rule() -> None:
     assert settings.olx_api_base_url == "https://api.olx.ba"
     assert settings.olx_shop_username == "martom"
     assert settings.olx_request_interval == 2.0
+
+
+def test_rolling_refresh_defaults_match_the_sync_job() -> None:
+    settings = Settings()
+
+    assert settings.olx_nightly_request_budget == job.NIGHTLY_REQUEST_BUDGET == 950
+    assert settings.olx_rolling_refresh_days == job.ROLLING_REFRESH_DAYS == 7
+
+
+@pytest.mark.parametrize(
+    ("name", "value"), [("OLX_NIGHTLY_REQUEST_BUDGET", "-1"), ("OLX_ROLLING_REFRESH_DAYS", "0")]
+)
+def test_rejects_a_negative_cap_or_zero_refresh_days(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValidationError):
+        Settings()
 
 
 def test_rejects_an_olx_interval_below_1_3_seconds(monkeypatch: pytest.MonkeyPatch) -> None:

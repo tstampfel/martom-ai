@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     # configured below 1.3 s; after a 429 the client raises it for the rest of the run.
     olx_request_interval: float = Field(default=2.0, ge=1.3)
 
+    # Rolling refresh of the nightly `martom sync` (#135). Each night it re-fetches the
+    # details of ceil(active / OLX_ROLLING_REFRESH_DAYS) listings, oldest fetch first, so
+    # every active listing is refreshed within that many nights. OLX_NIGHTLY_REQUEST_BUDGET
+    # caps the night's OLX requests of every kind (OLX allows 1,000 per fixed hourly
+    # window, #105); everything else is always sent, the slice gets what is left.
+    # Defaults match NIGHTLY_REQUEST_BUDGET and ROLLING_REFRESH_DAYS in
+    # src/martom/olx/job.py. `--full` ignores both.
+    olx_nightly_request_budget: int = Field(default=950, ge=0)
+    olx_rolling_refresh_days: int = Field(default=7, ge=1)
+
     # Claude, read by `martom extract` (M2-1). SecretStr keeps the key out of logs and
     # reprs (it prints as '**********'); None means "not configured".
     anthropic_api_key: SecretStr | None = None

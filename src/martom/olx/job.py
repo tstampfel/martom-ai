@@ -1,12 +1,13 @@
 """The sync job behind `martom sync` (M1-4): OLX -> `olx_listing`, one `sync_run` per run.
 
-One run (kind `nightly`, or `full` for the weekly pass), in order:
+One run (kind `nightly`, or `full`, a manual pass that re-fetches everything), in order:
 
 1. Insert a `sync_run` row ('running').
 2. Category sync (`olx.sync.sync_shop`): every listing-page row of the shop, plus coverage.
 3. Detail fetch (`olx.detail.fetch_changed_details`): GET /listings/{id} for listings whose
-   summary hash is new or changed. A `full` run fetches every listing instead, so an edit
-   to only the description is picked up too.
+   summary hash is new or changed, plus last run's failed or carried-over ids (never
+   deferred). A `full` run fetches every listing instead, so an edit to only the
+   description is picked up too.
 4. Save every seen row, then the fetched details in batches of `DETAIL_BATCH_SIZE` as
    they arrive. A seen listing that was inactive is reactivated. A failed detail keeps
    the old summary hash, so it is retried next run.
@@ -23,12 +24,31 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
    that wasn't gets one GET /listings/{id}. Each problem is logged as a warning and
    recorded in `sync_run.allowlist_warnings`; it never changes the status and
    deactivates nothing.
-7. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
+7. Rolling refresh (#135, nightly runs only, `_rolling_refresh`), last on purpose: an
+   OLX stop inside it can't skip steps 5 and 6. GET /listings/{id} for the seen listings
+   whose detail was fetched longest ago (never fetched first), about 1/7 of the active
+   ones (`rolling_slice_size`: ceil(active / ROLLING_REFRESH_DAYS)), so every listing is
+   re-fetched within 7 nights and a description-only edit is caught without a weekly
+   full run. A nightly run sends at most NIGHTLY_REQUEST_BUDGET (950) OLX requests in
+   all (OLX allows 1,000 per fixed hourly window, #105): list pages, profile, allowlist
+   and re-check GETs and the details of step 3 always go through, even past the budget
+   (logged as `request_budget_exceeded`); the slice gets only what is left and is
+   trimmed or deferred (`rolling_deferred`; it doesn't change the status). Its GETs
+   follow the same rules as step 3 (failures go to `failed_listing_ids`; a detail GET
+   never deactivates). The budget is checked before each slice GET, so only the retries
+   of the one GET in flight (at most 4) can push past it. An active listing that isn't
+   on the listing pages can't be in the slice; the step 5 re-check saves its detail when
+   OLX says it is still active, so it stays fresh too.
+8. Write the stats and the outcome to the `sync_run` row: 'succeeded' for a clean run,
    'partial' below 100% coverage or when a GET still failed after its retries (those ids
    go in `failed_listing_ids`, and the next run fetches and re-checks them first),
    'skipped_guard' when a guard skipped deactivation (`run_outcome`), 'failed' when the
    run broke. GETs that succeeded on a retry only add to `retried_count`; the request
-   interval the run ended with goes in `final_request_interval`.
+   interval the run ended with goes in `final_request_interval`. The age of the oldest
+   detail among the active listings goes in `oldest_detail_age_days`; over
+   MAX_DETAIL_AGE_DAYS (8) it logs a WARNING and sets `detail_refresh_overdue` for the
+   alert (M6-3), without changing the status. Also recorded when OLX stopped or failed
+   the run, since that is when the refresh falls behind.
 
 Getting a real large removal past the 10% guard:
 
@@ -57,6 +77,7 @@ run tries again.
 
 import itertools
 import logging
+import math
 from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -71,10 +92,11 @@ from martom.olx.client import OlxApiError, OlxClient, OlxCounters, OlxRateLimitA
 from martom.olx.detail import (
     DetailFetchAbortedError,
     DetailFetchResult,
+    ListingDetail,
     fetch_changed_details,
     needs_detail_fetch,
 )
-from martom.olx.sync import OlxResponseError, deactivation_candidates, sync_shop
+from martom.olx.sync import OlxResponseError, SyncResult, deactivation_candidates, sync_shop
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +110,17 @@ MAX_DEACTIVATION_PERCENT = 10
 MAX_RECHECK_FAILURE_PERCENT = 20
 # Fetched details are saved every this many listings (about 7 minutes at 2.0 s each).
 DETAIL_BATCH_SIZE = 200
+# Rolling refresh (#135, Tomislav 27 Nov): a nightly run sends at most this many OLX
+# requests of every kind (OLX allows 1,000 per fixed hourly window, #105; ~44 min at
+# 2.8 s), and every active listing is re-fetched within this many nights. Only the
+# rolling slice gives way to the budget. `martom sync` reads both from Settings
+# (OLX_NIGHTLY_REQUEST_BUDGET, OLX_ROLLING_REFRESH_DAYS), whose defaults are these.
+NIGHTLY_REQUEST_BUDGET = 950
+ROLLING_REFRESH_DAYS = 7
+# A detail older than this (days) means the rolling refresh fell behind: alert (M6-3).
+MAX_DETAIL_AGE_DAYS = 8
+# The overdue WARNING names at most this many listing ids, oldest first.
+OVERDUE_IDS_LOGGED = 20
 
 
 @dataclass
@@ -117,6 +150,10 @@ class RunStats:
     recheck_skipped: bool = False
     # None: the guard didn't run; []: it ran and found nothing (see migration 008).
     allowlist_warnings: list[dict[str, Any]] | None = None
+    rolling_refreshed: int = 0  # rolling-slice detail GETs that succeeded
+    rolling_deferred: int = 0  # rolling-slice listings the request budget left for later
+    oldest_detail_age_days: float | None = None
+    detail_refresh_overdue: bool = False
     error: str | None = None
     run_id: int | None = field(default=None, compare=False)
 
@@ -125,6 +162,14 @@ class RunStats:
         values = asdict(self)  # dataclass -> dict, like `{...stats}` in JS
         del values["kind"], values["scheduled"], values["run_id"]
         return values
+
+
+def rolling_slice_size(active_count: int, *, refresh_days: int) -> int:
+    """How many listings the rolling refresh re-fetches per night: ceil(active / days).
+
+    Rounded up, so `refresh_days` nights always cover every active listing.
+    """
+    return math.ceil(active_count / refresh_days)
 
 
 def deactivation_allowed(would_deactivate: int, active_count: int) -> bool:
@@ -189,6 +234,8 @@ class Recheck:
     gone: dict[int, GoneReason] = field(default_factory=dict)
     still_active: set[int] = field(default_factory=set)
     errors: dict[int, str] = field(default_factory=dict)  # id -> error type
+    # The parsed GET body of each still-active listing, saved as its fresh detail (R1-2).
+    details: dict[int, ListingDetail] = field(default_factory=dict)
 
 
 def _error_type(exc: OlxApiError) -> str:
@@ -272,6 +319,10 @@ async def recheck_listings(
         elif status == "active":
             result.still_active.add(listing_id)
             logger.info("listing %d: not on the listing pages but still active on OLX", listing_id)
+            try:
+                result.details[listing_id] = ListingDetail.from_api(body)
+            except OlxResponseError as exc:  # still active; its detail just isn't saved
+                logger.warning("listing %d: re-check body not saved as detail: %s", listing_id, exc)
         else:
             result.errors[listing_id] = "unexpected_body"
             logger.warning("listing %d: re-check got no status, stays active", listing_id)
@@ -331,12 +382,17 @@ async def run_sync(
     scheduled: bool = False,
     now: Callable[[], datetime] | None = None,
     allowlist: Allowlist | None = None,
+    request_budget: int = NIGHTLY_REQUEST_BUDGET,
+    refresh_days: int | None = ROLLING_REFRESH_DAYS,
 ) -> RunStats:
     """Run one sync (`nightly` or `full`) and record it in `sync_run`; return its stats.
 
     `scheduled`: started by the scheduler, so it may auto-apply (module docstring).
     `now` stamps `sync_run.started_at` (default: the database's now()); tests pass a fake.
     `allowlist`: the listings the guard checks (default: the committed `allowlist.toml`).
+    `request_budget` and `refresh_days`: the nightly rolling refresh (step 7);
+    `refresh_days` None turns it off. A `full` run ignores both: it fetches every
+    listing, with no budget.
 
     OLX failures don't raise: they end the run as 'partial' (OLX stopped it early) or
     'failed' (see the module docstring). Anything else (a database error, a bug) is
@@ -350,7 +406,9 @@ async def run_sync(
         conn,
         olx,
         kind,
-        lambda stats: _sync(conn, olx, stats, checked),
+        lambda stats: _sync(
+            conn, olx, stats, checked, request_budget=request_budget, refresh_days=refresh_days
+        ),
         scheduled=scheduled,
         started_at=None if now is None else now(),
     )
@@ -441,12 +499,20 @@ async def _recorded(
 
 
 async def _sync(
-    conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats, allowlist: Allowlist
+    conn: psycopg.AsyncConnection,
+    olx: OlxClient,
+    stats: RunStats,
+    allowlist: Allowlist,
+    *,
+    request_budget: int,
+    refresh_days: int | None,
 ) -> None:
     """One nightly/full run; when it stops early, carry over the ids still to do.
 
     That holds for every way it can stop (OLX stopping it -> 'partial', or any other
-    error -> 'failed'), so the run after it still takes those ids first.
+    error -> 'failed'), so the run after it still takes those ids first. The oldest
+    detail age is recorded after a run that finished and after one OLX stopped or failed
+    (the database still works then); not after a database error or a bug.
     """
     assert stats.run_id is not None  # set by `_recorded` before the run starts
     # Listings whose GET still failed last run go first, so a short run retries them.
@@ -454,11 +520,53 @@ async def _sync(
     # Ids that still need a GET this run (detail fetch or re-check), kept up to date as
     # the run goes, for the case that it stops early: those go to the next run.
     todo = set(failed_last_run)
+    rolling = (request_budget, refresh_days) if stats.kind == "nightly" and refresh_days else None
     try:
-        await _sync_steps(conn, olx, stats, failed_last_run, todo, allowlist)
+        await _sync_steps(conn, olx, stats, failed_last_run, todo, allowlist, rolling)
+    except (OlxApiError, _RunFailedError):  # OLX stopped or failed the run
+        _carry_over(stats, todo)
+        await _record_detail_age(conn, stats)
+        raise
     except Exception:
         _carry_over(stats, todo)
         raise
+    await _record_detail_age(conn, stats)
+
+
+async def _record_detail_age(conn: psycopg.AsyncConnection, stats: RunStats) -> None:
+    """Record the oldest detail age among the active listings; WARNING when overdue.
+
+    The WARNING names the overdue listings by id (at most `OVERDUE_IDS_LOGGED`). A
+    database error here is logged and swallowed: a metric never changes the run's
+    status, and never hides the error a failing run is ending with.
+    """
+    try:
+        age = await store.oldest_detail_age_days(conn)
+        overdue = age is not None and age > MAX_DETAIL_AGE_DAYS
+        ids = (
+            await store.overdue_detail_ids(conn, MAX_DETAIL_AGE_DAYS, limit=OVERDUE_IDS_LOGGED)
+            if overdue
+            else []
+        )
+    except psycopg.Error:
+        logger.exception("could not record the oldest detail age of run %s", stats.run_id)
+        return
+    stats.oldest_detail_age_days = age
+    stats.detail_refresh_overdue = overdue
+    if overdue:
+        logger.warning(
+            "rolling refresh behind: the oldest active listing detail is %.1f days old "
+            "(over %d); oldest listings: %s",
+            age,
+            MAX_DETAIL_AGE_DAYS,
+            ", ".join(str(i) for i in ids),
+            extra={
+                "event": "detail_refresh_overdue",
+                "run_id": stats.run_id,
+                "oldest_detail_age_days": age,
+                "overdue_listing_ids": ids,
+            },
+        )
 
 
 async def _sync_steps(
@@ -468,28 +576,39 @@ async def _sync_steps(
     failed_last_run: set[int],
     todo: set[int],
     allowlist: Allowlist,
+    rolling: tuple[int, int] | None,
 ) -> None:
+    """The steps of one run. `rolling`: (request budget, refresh days), None for no slice."""
     assert stats.run_id is not None
+    # The client's counter is a running total (it may be reused); count from here.
+    sent_at_start = olx.requests_sent
     result = await sync_shop(olx)
     stats.shop_total = result.shop_total
     stats.coverage = result.coverage
     stats.seen = result.unique_count
 
     stored = await store.load_listings(conn)
-    # A full run pretends no hash is stored, so every listing is fetched again.
+    # A full run pretends no hash is stored, so every listing is fetched again. A nightly
+    # run leaves out the hashes of last run's failed or carried-over ids too, so they are
+    # fetched first whatever their summary says (a failed rolling GET has an unchanged
+    # summary); they are never deferred by the request budget.
     stored_hashes = (
         {}
         if stats.kind == "full"
-        else {i: s.summary_hash for i, s in stored.items() if s.summary_hash is not None}
+        else {
+            i: s.summary_hash
+            for i, s in stored.items()
+            if s.summary_hash is not None and i not in failed_last_run
+        }
     )
     # Summaries first, then details batch by batch, so a crash or a dropped connection
     # an hour into a full run loses one batch, not every detail fetched so far.
     await store.save_summaries(conn, result.listings)
     stats.new = sum(1 for i in result.listings if i not in stored)
     stats.reactivated = sum(1 for i in result.listings if i in stored and not stored[i].active)
-    todo.update(
-        i for i, row in result.listings.items() if needs_detail_fetch(row, stored_hashes.get(i))
-    )
+    # New, changed, or failed last run: always fetched, never trimmed by the request budget.
+    due = {i for i, row in result.listings.items() if needs_detail_fetch(row, stored_hashes.get(i))}
+    todo.update(due)
     for batch in itertools.batched(
         _failed_first(result.listings, failed_last_run), DETAIL_BATCH_SIZE
     ):
@@ -504,6 +623,42 @@ async def _sync_steps(
     warnings = await guard_allowlist(olx, allowlist, result.listings)
     stats.allowlist_warnings = [warning.as_json() for warning in warnings]
 
+    await _deactivation_step(conn, olx, stats, stored, result, failed_last_run, todo)
+
+    # Last (R1-1): the rolling slice is upkeep, so an OLX stop inside it (up to ~1,000
+    # GETs) must not cost the allowlist guard or the deactivation re-check above.
+    if rolling is not None:
+        request_budget, refresh_days = rolling
+        await _rolling_refresh(
+            conn,
+            olx,
+            stats,
+            result.listings,
+            due,
+            stored,
+            todo,
+            sent_this_run=lambda: olx.requests_sent - sent_at_start,
+            request_budget=request_budget,
+            refresh_days=refresh_days,
+        )
+
+
+async def _deactivation_step(
+    conn: psycopg.AsyncConnection,
+    olx: OlxClient,
+    stats: RunStats,
+    stored: Mapping[int, store.StoredListing],
+    result: SyncResult,
+    failed_last_run: set[int],
+    todo: set[int],
+) -> None:
+    """Step 5: re-check the active listings the run didn't see; deactivate the gone ones.
+
+    A candidate OLX says is still active gets its detail saved from the re-check body
+    (`store.save_rechecked_details`): that GET is a real detail fetch, and without it a
+    listing that left every synced category would never be refreshed (R1-2).
+    """
+    assert stats.run_id is not None
     candidates = deactivation_candidates((i for i, s in stored.items() if s.active), result)
     stats.deactivation_candidates = len(candidates)
     if not candidates:
@@ -513,6 +668,7 @@ async def _sync_steps(
     recheck = await recheck_listings(olx, candidates, await shop_id(olx), first=failed_last_run)
     todo.difference_update(candidates)
     _record_failures(stats, recheck.errors)
+    await store.save_rechecked_details(conn, recheck.details)
     active_count = await store.count_active(conn)  # before any deactivation below
     gone: dict[int, GoneReason] = dict(recheck.gone)
     if not gone:
@@ -563,6 +719,88 @@ async def _sync_steps(
     # on purpose: the guard tripped and a mass deactivation went past it, which
     # someone should look at.
     stats.skipped_listing_ids = sorted(gone) or None
+
+
+async def _rolling_refresh(
+    conn: psycopg.AsyncConnection,
+    olx: OlxClient,
+    stats: RunStats,
+    seen: Mapping[int, Mapping[str, Any]],
+    due: Collection[int],
+    stored: Mapping[int, store.StoredListing],
+    todo: set[int],
+    *,
+    sent_this_run: Callable[[], int],
+    request_budget: int,
+    refresh_days: int,
+) -> None:
+    """Step 7, the run's last: re-fetch the details fetched longest ago (#135).
+
+    Only listings seen this run (a detail is saved with the summary hash of the row it
+    belongs to) and not already fetched in step 3 (`due`). The slice is
+    ceil(active / days), trimmed to what the run's earlier requests of every kind left of
+    `request_budget`. The budget is checked again before each slice GET: once the run has
+    sent `request_budget` requests no new GET starts, so a retry or a 429 inside the slice
+    shrinks the rest of it, and the run ends at most `budget + (max_attempts - 1)` (4 by
+    default: the retries of the one GET in flight) when the slice starts under the
+    budget. The listings left out are `rolling_deferred` (never more than the pool had)
+    and are not carried over as failed.
+    """
+    wanted = rolling_slice_size(await store.count_active(conn), refresh_days=refresh_days)
+    pool = set(seen) - set(due)
+    must_do = sent_this_run()
+    if must_do > request_budget:
+        logger.warning(
+            "request budget exceeded before the rolling refresh: %d requests sent, budget "
+            "%d; nothing was deferred but the rolling slice",
+            must_do,
+            request_budget,
+            extra={
+                "event": "request_budget_exceeded",
+                "run_id": stats.run_id,
+                "requests_sent": must_do,
+                "request_budget": request_budget,
+            },
+        )
+    ids = await store.oldest_detail_ids(
+        conn, pool, limit=min(wanted, max(0, request_budget - must_do))
+    )
+    attempted = 0  # slice GETs started (fetched or failed)
+    for batch in itertools.batched(ids, DETAIL_BATCH_SIZE):
+        todo.update(batch)
+        rows = {i: seen[i] for i in batch}  # oldest first: dicts keep insertion order
+        try:
+            # No stored hashes: every listing in `rows` is fetched, unchanged or not. No new
+            # GET starts once the run has sent `request_budget` requests.
+            details = await fetch_changed_details(
+                olx, rows, {}, stop=lambda: sent_this_run() >= request_budget
+            )
+        except DetailFetchAbortedError as exc:
+            stats.rolling_refreshed += len(exc.partial.fetched)
+            await _save_details(conn, exc.partial, stored, stats, todo)
+            raise
+        stats.rolling_refreshed += len(details.fetched)
+        attempted += len(details.fetched) + len(details.failed)
+        await _save_details(conn, details, stored, stats, todo)
+        if details.not_started:
+            todo.difference_update(details.not_started)  # deferred, not carried over
+            break
+    stats.rolling_deferred = min(wanted, len(pool)) - attempted
+    logger.info(
+        "rolling refresh: %d listings re-fetched, %d deferred (%d requests before it, budget %d)",
+        attempted,
+        stats.rolling_deferred,
+        must_do,
+        request_budget,
+        extra={
+            "event": "rolling_refresh",
+            "run_id": stats.run_id,
+            "rolling": attempted,
+            "rolling_deferred": stats.rolling_deferred,
+            "requests_before": must_do,
+            "request_budget": request_budget,
+        },
+    )
 
 
 async def guard_allowlist(
@@ -725,6 +963,7 @@ __all__ = [
     "guard_allowlist",
     "recheck_allowed",
     "recheck_listings",
+    "rolling_slice_size",
     "run_outcome",
     "run_sync",
     "shop_id",

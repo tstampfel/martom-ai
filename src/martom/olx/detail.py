@@ -21,15 +21,16 @@ Known gap: the summary row doesn't carry the description, so an edit that change
 the description (not the title, price, images, ...) is not noticed until something in the
 summary changes too. The OLX `date` field can't help: OLX bumps it whenever the shop
 refreshes a listing (every recorded row was dated the day it was recorded), so hashing it
-would re-fetch the whole shop every night. The weekly `martom sync --full` (M1-4)
-re-fetches every detail to close that gap.
+would re-fetch the whole shop every night. The nightly sync's rolling refresh (#135)
+closes that gap: it re-fetches the oldest 1/7 of the details every night, so such an
+edit is picked up within 7 nights (`martom sync --full` re-fetches all of them by hand).
 """
 
 import hashlib
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any, Self
@@ -379,6 +380,8 @@ class DetailFetchResult:
     unchanged: tuple[int, ...] = ()  # summary hash matched: not requested
     # Failed listings keep their old stored hash, so the next run tries them again.
     failed: dict[int, OlxApiError] = field(default_factory=dict)
+    # Never requested because `stop` said so (the rolling refresh's request budget).
+    not_started: tuple[int, ...] = ()
 
 
 class DetailFetchAbortedError(OlxRateLimitAbortError):
@@ -398,11 +401,16 @@ async def fetch_changed_details(
     olx: OlxClient,
     rows: Mapping[int, Mapping[str, Any]],
     stored_summary_hashes: Mapping[int, str],
+    *,
+    stop: Callable[[], bool] | None = None,
 ) -> DetailFetchResult:
     """Fetch details for listings that are new or whose summary hash changed.
 
     `rows` is listing id -> listing-page row (`SyncResult.listings` from M1-2);
     `stored_summary_hashes` is listing id -> the summary hash saved at the last fetch.
+    `stop`, when given, is asked before each new GET: once it says True no further GET
+    starts, and the listings left are returned in `not_started` (a GET already started
+    still finishes, with its retries).
 
     One failed listing (a 404 because it sold meanwhile, a malformed body) is recorded in
     `failed` and the rest continue. When OLX stops the run (`OlxRateLimitAbortError`, see
@@ -412,10 +420,14 @@ async def fetch_changed_details(
     fetched: dict[int, FetchedDetail] = {}
     unchanged: list[int] = []
     failed: dict[int, OlxApiError] = {}
+    not_started: list[int] = []
     for listing_id, row in rows.items():
         new_hash = summary_hash(row)
         if new_hash == stored_summary_hashes.get(listing_id):
             unchanged.append(listing_id)
+            continue
+        if not_started or (stop is not None and stop()):
+            not_started.append(listing_id)
             continue
         try:
             detail = ListingDetail.from_api(await olx.get_listing(listing_id))
@@ -438,12 +450,15 @@ async def fetch_changed_details(
         fetched[listing_id] = FetchedDetail(detail=detail, summary_hash=new_hash)
 
     logger.info(
-        "detail fetch: %d fetched, %d unchanged, %d failed",
+        "detail fetch: %d fetched, %d unchanged, %d failed, %d not started",
         len(fetched),
         len(unchanged),
         len(failed),
+        len(not_started),
     )
-    return DetailFetchResult(fetched=fetched, unchanged=tuple(unchanged), failed=failed)
+    return DetailFetchResult(
+        fetched=fetched, unchanged=tuple(unchanged), failed=failed, not_started=tuple(not_started)
+    )
 
 
 __all__ = [

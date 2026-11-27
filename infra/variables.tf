@@ -89,30 +89,23 @@ variable "schedule_timezone" {
 }
 
 variable "nightly_sync_cron" {
-  description = "Nightly sync, every night except the one from Sunday to Monday (EventBridge Scheduler cron: minutes hours day-of-month month day-of-week year). Default: 01:00, Tuesday to Sunday."
+  description = "Nightly sync, every night (EventBridge Scheduler cron: minutes hours day-of-month month day-of-week year). Default: 01:00."
   type        = string
-  default     = "cron(0 1 ? * TUE-SUN *)"
+  default     = "cron(0 1 * * ? *)"
 }
 
-# The night from Sunday to Monday runs the nightly chain and then the weekly full chain in
-# one task (ecs.tf), so the full run can't start while the nightly one is still running.
-# Keep the two crons on different days at the same time of night.
-variable "sunday_night_sync_cron" {
-  description = "Sunday-night run: the nightly sync, then the weekly full re-fetch, in one task. Default: Monday 01:00, the night from Sunday to Monday."
-  type        = string
-  default     = "cron(0 1 ? * MON *)"
-}
-
-# OLX allows roughly 1,400 requests before a ~1,600 s 429 penalty (#105). The weekly full
-# run fetches every listing (~2,570-2,620 requests), so it goes slower than the nightly
-# run's 2.0 s to stay under that quota: ~2,600 x 2.8 s is about 2 h, inside the 3 h deadline.
-variable "full_sync_request_interval" {
-  description = "OLX_REQUEST_INTERVAL (seconds between OLX requests) for the weekly full sync only. The nightly sync keeps 2.0."
+# OLX allows 1,000 requests per fixed hourly window (#105); past that it answers 429 with
+# a long Retry-After. The nightly sync sends at most OLX_NIGHTLY_REQUEST_BUDGET (950)
+# requests of every kind (#135), at 2.8 s (Tomislav, #135): 950 x 2.8 s is ~44 min,
+# well inside the 3 h deadline. Manual runs outside this task keep the Settings default
+# of 2.0 s unless OLX_REQUEST_INTERVAL says otherwise.
+variable "sync_request_interval" {
+  description = "OLX_REQUEST_INTERVAL (seconds between OLX requests) for every sync in the job task: the nightly sync and one-off `martom sync --full` runs."
   type        = number
   default     = 2.8
 
   validation {
-    condition     = var.full_sync_request_interval >= 1.3
+    condition     = var.sync_request_interval >= 1.3
     error_message = "The OLX politeness rule never allows an interval below 1.3 seconds."
   }
 }

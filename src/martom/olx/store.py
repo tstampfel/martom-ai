@@ -18,7 +18,7 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from martom.olx.detail import FetchedDetail
+from martom.olx.detail import FetchedDetail, ListingDetail
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,8 @@ ON CONFLICT (id) DO UPDATE SET
     deactivated_at = NULL
 """
 
-# The summary hash is written only here, together with the detail it belongs to.
+# The summary hash is written only here, together with the detail it belongs to. A detail
+# saved from a re-check (no listing-page row this run) passes NULL and keeps the old one.
 _UPDATE_DETAIL = """
 UPDATE olx_listing SET
     slug = %(slug)s,
@@ -80,7 +81,7 @@ UPDATE olx_listing SET
     available = %(available)s,
     brand = %(brand)s,
     attributes = %(attributes)s,
-    summary_hash = %(summary_hash)s,
+    summary_hash = coalesce(%(summary_hash)s, summary_hash),
     detail_hash = %(detail_hash)s,
     detail_fetched_at = now()
 WHERE id = %(id)s
@@ -128,32 +129,51 @@ async def save_details(conn: psycopg.AsyncConnection, details: Mapping[int, Fetc
         await cursor.executemany(
             _UPDATE_DETAIL,
             [
-                {
-                    "id": listing_id,
-                    "slug": fetched.detail.slug,
-                    "title": fetched.detail.title,
-                    "short_description": fetched.detail.short_description,
-                    "description_html": fetched.detail.description_html,
-                    "description_text": fetched.detail.description_text,
-                    "price": fetched.detail.price,
-                    "display_price": fetched.detail.display_price,
-                    "price_by_agreement": fetched.detail.price_by_agreement,
-                    "state": fetched.detail.state,
-                    "status": fetched.detail.status,
-                    "available": fetched.detail.available,
-                    "brand": fetched.detail.brand,
-                    "attributes": Jsonb(
-                        [
-                            {"name": name, "value": value}
-                            for name, value in fetched.detail.attributes
-                        ]
-                    ),
-                    "summary_hash": fetched.summary_hash,
-                    "detail_hash": fetched.detail.detail_hash,
-                }
+                _detail_params(listing_id, fetched.detail, fetched.summary_hash)
                 for listing_id, fetched in details.items()
             ],
         )
+
+
+async def save_rechecked_details(
+    conn: psycopg.AsyncConnection, details: Mapping[int, ListingDetail]
+) -> None:
+    """Store details read by a deactivation re-check (#135, R1-2), in one transaction.
+
+    These listings weren't on the listing pages, so there is no summary row: the stored
+    summary hash stays as it was. Stamping `detail_fetched_at` keeps a still-active
+    listing that left every synced category from looking overdue for good.
+    """
+    if not details:
+        return
+    async with conn.transaction(), conn.cursor() as cursor:
+        await cursor.executemany(
+            _UPDATE_DETAIL,
+            [_detail_params(listing_id, detail, None) for listing_id, detail in details.items()],
+        )
+
+
+def _detail_params(
+    listing_id: int, detail: ListingDetail, summary_hash: str | None
+) -> dict[str, Any]:
+    return {
+        "id": listing_id,
+        "slug": detail.slug,
+        "title": detail.title,
+        "short_description": detail.short_description,
+        "description_html": detail.description_html,
+        "description_text": detail.description_text,
+        "price": detail.price,
+        "display_price": detail.display_price,
+        "price_by_agreement": detail.price_by_agreement,
+        "state": detail.state,
+        "status": detail.status,
+        "available": detail.available,
+        "brand": detail.brand,
+        "attributes": Jsonb([{"name": name, "value": value} for name, value in detail.attributes]),
+        "summary_hash": summary_hash,
+        "detail_hash": detail.detail_hash,
+    }
 
 
 async def count_active(conn: psycopg.AsyncConnection) -> int:
@@ -161,6 +181,51 @@ async def count_active(conn: psycopg.AsyncConnection) -> int:
     row = await cursor.fetchone()
     assert row is not None  # count(*) always returns one row
     return int(row[0])
+
+
+async def oldest_detail_ids(
+    conn: psycopg.AsyncConnection, among: Collection[int], limit: int
+) -> list[int]:
+    """Up to `limit` active listings of `among` whose detail was fetched longest ago.
+
+    Never fetched (NULL) first, then oldest `detail_fetched_at` first; ties by id, so the
+    order is the same every time. The rolling refresh (#135) re-fetches these.
+    """
+    if limit <= 0 or not among:
+        return []
+    cursor = await conn.execute(
+        "SELECT id FROM olx_listing WHERE active AND id = ANY(%s) "
+        "ORDER BY detail_fetched_at ASC NULLS FIRST, id LIMIT %s",
+        (sorted(among), limit),
+    )
+    return [row[0] for row in await cursor.fetchall()]
+
+
+async def oldest_detail_age_days(conn: psycopg.AsyncConnection) -> float | None:
+    """Days since the oldest detail fetch among the active listings; None if none is active.
+
+    A listing whose detail was never fetched counts from `first_seen_at`.
+    """
+    cursor = await conn.execute(
+        "SELECT extract(epoch FROM now() - min(coalesce(detail_fetched_at, first_seen_at)))"
+        " / 86400 FROM olx_listing WHERE active"
+    )
+    row = await cursor.fetchone()
+    return None if row is None or row[0] is None else round(float(row[0]), 2)
+
+
+async def overdue_detail_ids(
+    conn: psycopg.AsyncConnection, older_than_days: int, *, limit: int
+) -> list[int]:
+    """Active listings whose detail (or, never fetched, first sighting) is older than
+    `older_than_days`, oldest first: the ids the overdue WARNING names."""
+    cursor = await conn.execute(
+        "SELECT id FROM olx_listing WHERE active "
+        "AND coalesce(detail_fetched_at, first_seen_at) < now() - make_interval(days => %s) "
+        "ORDER BY coalesce(detail_fetched_at, first_seen_at), id LIMIT %s",
+        (older_than_days, limit),
+    )
+    return [row[0] for row in await cursor.fetchall()]
 
 
 async def deactivate(conn: psycopg.AsyncConnection, listing_ids: Collection[int]) -> list[int]:
@@ -209,6 +274,8 @@ RUN_COLUMNS = frozenset(
         "deactivation_skipped", "would_deactivate", "skipped_listing_ids",
         "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
         "final_request_interval", "error", "extracted", "allowlist_warnings",
+        "rolling_refreshed", "rolling_deferred", "oldest_detail_age_days",
+        "detail_refresh_overdue",
     }
 )  # fmt: skip
 
@@ -268,7 +335,7 @@ async def previous_skipped_run(
     `apply_skipped`) neither makes nor breaks a streak. Any other scheduled run in
     between (succeeded, partial, failed or crashed) breaks it, so the two scheduled trips
     must be consecutive. If the previous scheduled run started less than 12 h earlier
-    (say, the weekly full run two hours after the nightly), there is no auto-apply.
+    (say, a full run two hours after the nightly), there is no auto-apply.
     """
     cursor = await conn.execute(
         _PREVIOUS_SCHEDULED_RUN,
