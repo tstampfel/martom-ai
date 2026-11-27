@@ -17,6 +17,13 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from martom.api.admin import (
+    ReviewIssueSource,
+    check_admin_token,
+    load_from_database,
+    warn_if_admin_disabled,
+)
+from martom.api.admin import router as admin_router
 from martom.api.health import HealthCheck, check_postgres, check_redis
 from martom.api.health import router as health_router
 from martom.log import request_id_var
@@ -36,8 +43,12 @@ def create_app(
     settings: Settings | None = None,
     health_checks: Mapping[str, HealthCheck] | None = None,
     check_timeout: float = HEALTH_CHECK_TIMEOUT_SECONDS,
+    review_issue_source: ReviewIssueSource | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
+    # Raises in production without ADMIN_TOKEN, so the server doesn't start (#11).
+    check_admin_token(settings)
+    warn_if_admin_disabled(settings)
     if health_checks is None:
         # partial(f, x) is a new function that calls f(x), like `() => f(x)` in JS.
         health_checks = {
@@ -50,6 +61,9 @@ def create_app(
     app.state.settings = settings
     app.state.health_checks = dict(health_checks)
     app.state.health_check_timeout = check_timeout
+    app.state.review_issue_source = review_issue_source or partial(
+        load_from_database, settings.database_url
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -90,4 +104,5 @@ def create_app(
         return response
 
     app.include_router(health_router)
+    app.include_router(admin_router)
     return app

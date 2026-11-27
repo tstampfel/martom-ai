@@ -15,13 +15,19 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # CORS may only ever allow the public customer site and local development servers.
 PAGES_DEV_ORIGIN = "https://martom-savjetnik.pages.dev"
+ADMIN_TOKEN_MIN_LENGTH = 32
 LOCAL_ORIGIN = re.compile(r"http://(localhost|127\.0\.0\.1)(:\d{1,5})?")
 
 
 class Settings(BaseSettings):
     # env_file=None: never read a .env file, only real environment variables.
     # env_ignore_empty: VAR="" counts as unset (default used), like `martom migrate` does.
-    model_config = SettingsConfigDict(env_file=None, env_ignore_empty=True, extra="ignore")
+    # hide_input_in_errors: a validation error names the field and the rule but never the
+    # value, so a mis-set secret (ADMIN_TOKEN, ANTHROPIC_API_KEY) can't end up on stderr or
+    # in CloudWatch through the "invalid settings" message.
+    model_config = SettingsConfigDict(
+        env_file=None, env_ignore_empty=True, extra="ignore", hide_input_in_errors=True
+    )
 
     app_env: Literal["local", "test", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
@@ -50,11 +56,28 @@ class Settings(BaseSettings):
     # Listings extracted at the same time (one Claude call each).
     extraction_concurrency: int = Field(default=4, ge=1, le=16)
 
+    # Bearer token for the /admin endpoints (M2-3), e.g. GET /admin/review-issues.
+    # Unset (the default) turns them off: they answer 404, never open. At least 32
+    # characters, so a short guessable token is rejected at startup (every command fails
+    # fast, without printing the value).
+    admin_token: SecretStr | None = None
+
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_case_log_level(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
+
+    @field_validator("admin_token")
+    @classmethod
+    def _long_admin_token(cls, token: SecretStr | None) -> SecretStr | None:
+        if token is not None and len(token.get_secret_value()) < ADMIN_TOKEN_MIN_LENGTH:
+            # The message must never include the value (see hide_input_in_errors).
+            raise ValueError(
+                f"ADMIN_TOKEN must be at least {ADMIN_TOKEN_MIN_LENGTH} characters "
+                "(generate one with `openssl rand -hex 32`)"
+            )
+        return token
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod

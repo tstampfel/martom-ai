@@ -6,12 +6,14 @@ import logging
 import os
 import sys
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 import psycopg
 import uvicorn
 from pydantic import ValidationError
 
+from martom.api.admin import AdminTokenMissingError, check_admin_token
 from martom.extract.extractor import Extractor, make_structured_model
 from martom.extract.job import ExtractionStats, run_extraction
 from martom.knowledge import KnowledgeError, run_load_knowledge
@@ -19,6 +21,7 @@ from martom.log import configure_logging, logging_config
 from martom.migrate import MigrationError, run_migrations
 from martom.olx.client import OlxClient
 from martom.olx.job import RunKind, RunStats, apply_skipped_run, run_sync
+from martom.review.report import ReportIssue, format_report, load_open_issues
 from martom.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -98,7 +101,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--limit", type=int, metavar="N", help="extract at most N listings (for a trial run)"
     )
 
+    commands.add_parser(
+        "report",
+        help="print Toni's open review issues in Bosnian, by priority, with OLX links",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "report":
+        return run_report_command()
 
     if args.command == "load-knowledge":
         return run_load_knowledge_command(args.dir)
@@ -148,6 +159,27 @@ def run_load_knowledge_command(directory: Path) -> int:
         f"knowledge_chunk: inserted {stats.inserted}, updated {stats.updated}, "
         f"unchanged {stats.unchanged}, deleted {stats.deleted}"
     )
+    return 0
+
+
+def run_report_command() -> int:
+    """`martom report`: exit 0 after printing the report, 1 when the database fails.
+
+    The report goes to stdout only; it is derived data and is never written into the repo.
+    """
+    database_url = os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
+
+    async def load() -> list[ReportIssue]:
+        async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as conn:
+            return await load_open_issues(conn)
+
+    try:
+        issues = asyncio.run(load())
+    except psycopg.Error as exc:
+        # libpq errors span several lines; keep the reason on one.
+        print(f"report failed: database error: {' '.join(str(exc).split())}", file=sys.stderr)
+        return 1
+    print(format_report(issues, today=date.today()), end="")
     return 0
 
 
@@ -240,7 +272,8 @@ def run_api(host: str, port: int, *, reload: bool) -> int:
     # traceback from inside uvicorn. create_app() reads them again in the server process.
     try:
         settings = Settings()
-    except ValidationError as exc:
+        check_admin_token(settings)
+    except (ValidationError, AdminTokenMissingError) as exc:
         print(f"invalid settings: {exc}", file=sys.stderr)
         return 1
     # The app is passed as an import string with factory=True: uvicorn imports
