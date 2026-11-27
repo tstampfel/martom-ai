@@ -588,6 +588,71 @@ def check_manual_products(
     ]
 
 
+# --- allowlisted listings (#45) ------------------------------------------------------------------
+
+# The sync's reasons that mean OLX no longer shows the listing (src/martom/olx/allowlist.py).
+_GONE_REASONS = {
+    "404": "OLX javlja da oglas ne postoji (404)",
+    "inactive": "oglas više nije aktivan",
+    "not_martom": "oglas više nije na Martomovom profilu",
+}
+
+
+def check_allowlist_warnings(warnings: Iterable[Mapping[str, Any]]) -> list[ReviewIssue]:
+    """Issues from the latest sync's allowlist warnings (`sync_run.allowlist_warnings`).
+
+    A fence listing outside "Ograde" that OLX no longer shows is high: the BOM needs it.
+    One that moved to a category the sync doesn't cover for the fence is medium. The
+    sync-side warnings ("not_seen", "recheck_failed") are for Tomislav, not Toni: they stay
+    in the sync log and raise nothing here. `name` comes from our own allowlist file.
+    """
+    issues: list[ReviewIssue] = []
+    for warning in warnings:
+        if not isinstance(warning, Mapping):
+            continue
+        listing_id, reason = warning.get("listing_id"), warning.get("reason")
+        if not isinstance(listing_id, int) or isinstance(listing_id, bool):
+            continue
+        name = str(warning.get("name") or "")
+        expected, category = warning.get("expected_category_id"), warning.get("category_id")
+        details = {
+            "allowlisted_listing_id": listing_id,
+            "reason": reason,
+            "expected_category_id": expected,
+            "category_id": category,
+        }
+        if reason in _GONE_REASONS:
+            issues.append(
+                ReviewIssue(
+                    "allowlist_listing_gone",
+                    # Not the listing's row: it may never have been stored (the FK), and an
+                    # inactive listing would hide the issue from the report.
+                    None,
+                    "high",
+                    f"Oglas {listing_id} ({name}) treba za ogradu, ali {_GONE_REASONS[reason]}. "
+                    "Provjerite oglas na OLX-u; ako je namjerno uklonjen, javite Tomislavu da "
+                    "ga makne s liste oglasa koje sinkronizacija posebno prati.",
+                    details,
+                    # Not the reason: 404 today and "inactive" tomorrow is the same problem.
+                    key=f"{listing_id}:gone",
+                )
+            )
+        elif reason == "moved":
+            issues.append(
+                ReviewIssue(
+                    "allowlist_listing_moved",
+                    listing_id,
+                    "medium",
+                    f"Oglas {listing_id} ({name}) premješten je iz kategorije {expected} u "
+                    f"kategoriju {category}, koja nije „Ograde“. Ako je to namjerno, javite "
+                    "Tomislavu da ažurira listu oglasa koje sinkronizacija posebno prati.",
+                    details,
+                    key=f"moved:{category}",
+                )
+            )
+    return issues
+
+
 # --- all checks ----------------------------------------------------------------------------------
 
 LISTING_CHECKS: tuple[Callable[[CheckListing], list[ReviewIssue]], ...] = (
@@ -614,9 +679,12 @@ def run_all_checks(
     manual_products: Mapping[str, ManualProduct],
     *,
     today: date,
+    allowlist_warnings: Iterable[Mapping[str, Any]] = (),
 ) -> list[ReviewIssue]:
-    """Every check over the whole catalogue, plus the manual-product dates."""
+    """Every check over the whole catalogue, the manual-product dates and the latest
+    sync's allowlist warnings."""
     issues = [issue for listing in listings for issue in check_listing(listing)]
     issues += check_duplicate_listings(listings)
     issues += check_manual_products(manual_products, today=today)
+    issues += check_allowlist_warnings(allowlist_warnings)
     return issues

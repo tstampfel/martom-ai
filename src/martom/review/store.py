@@ -7,6 +7,7 @@ its open issues are resolved on the next run. Plain SQL through psycopg 3's asyn
 import hashlib
 from collections import defaultdict
 from collections.abc import Sequence
+from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -80,6 +81,23 @@ async def load_check_listings(conn: psycopg.AsyncConnection) -> list[CheckListin
             )
         )
     return listings
+
+
+# The allowlist warnings of the latest nightly/full sync that ran the guard (#45). NULL
+# means the guard didn't run (migration 008), so such a run is skipped: it says nothing.
+_ALLOWLIST_WARNINGS = """
+SELECT allowlist_warnings FROM sync_run
+WHERE kind IN ('nightly', 'full') AND allowlist_warnings IS NOT NULL
+ORDER BY id DESC
+LIMIT 1
+"""
+
+
+async def load_allowlist_warnings(conn: psycopg.AsyncConnection) -> list[Any]:
+    """The latest sync's allowlist warnings; empty when no sync has checked yet."""
+    cursor = await conn.execute(_ALLOWLIST_WARNINGS)
+    row = await cursor.fetchone()
+    return list(row[0]) if row is not None and isinstance(row[0], list) else []
 
 
 # A problem found again: refresh the text and last_seen_at. A resolved issue that is back

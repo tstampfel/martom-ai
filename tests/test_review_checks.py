@@ -14,6 +14,7 @@ from martom.review.checks import (
     CheckListing,
     CheckProduct,
     ReviewIssue,
+    check_allowlist_warnings,
     check_duplicate_listings,
     check_implausible_dimensions,
     check_listing,
@@ -707,3 +708,78 @@ def test_variant_fingerprint_without_a_collision_ignores_the_label() -> None:
         }
 
     assert fingerprints("Panel") == fingerprints("3D panelna ograda")
+
+
+# --- allowlist warnings from the sync (#45) --------------------------------------------------
+
+
+def allowlist_warning(reason: str, **overrides: object) -> dict[str, object]:
+    warning: dict[str, object] = {
+        "listing_id": 18129143,
+        "name": "Španer (zatezač za žicu)",
+        "reason": reason,
+        "expected_category_id": 1126,
+        "category_id": None,
+        "error": None,
+    }
+    return warning | overrides
+
+
+def test_allowlisted_listing_gone_from_olx_is_a_high_issue_without_a_listing_row() -> None:
+    [issue] = check_allowlist_warnings([allowlist_warning("404")])
+
+    assert issue.kind == "allowlist_listing_gone"
+    assert issue.priority == "high"
+    # No listing_id: the listing may never have been stored (FK) or be inactive, which
+    # would hide the issue from Toni's report.
+    assert issue.listing_id is None
+    assert issue.details["allowlisted_listing_id"] == 18129143
+    assert issue.details["reason"] == "404"
+    assert "18129143" in issue.message and "Španer" in issue.message
+
+
+def test_a_new_gone_reason_keeps_the_same_issue() -> None:
+    [first] = check_allowlist_warnings([allowlist_warning("404")])
+    [second] = check_allowlist_warnings([allowlist_warning("inactive")])
+
+    assert first.fingerprint == second.fingerprint
+    assert first.message != second.message
+
+
+def test_allowlisted_listing_of_another_owner_is_gone_too() -> None:
+    [issue] = check_allowlist_warnings([allowlist_warning("not_martom")])
+
+    assert issue.kind == "allowlist_listing_gone"
+
+
+def test_allowlisted_listing_moved_is_a_medium_issue_on_the_listing() -> None:
+    [issue] = check_allowlist_warnings([allowlist_warning("moved", category_id=2091)])
+
+    assert issue.kind == "allowlist_listing_moved"
+    assert issue.priority == "medium"
+    assert issue.listing_id == 18129143  # seen this run, so stored and linkable
+    assert "1126" in issue.message and "2091" in issue.message
+    assert issue.details == {
+        "allowlisted_listing_id": 18129143,
+        "reason": "moved",
+        "expected_category_id": 1126,
+        "category_id": 2091,
+    }
+
+
+def test_a_move_to_yet_another_category_is_a_new_issue() -> None:
+    [first] = check_allowlist_warnings([allowlist_warning("moved", category_id=2091)])
+    [second] = check_allowlist_warnings([allowlist_warning("moved", category_id=2092)])
+
+    assert first.fingerprint != second.fingerprint
+
+
+def test_sync_side_warnings_raise_no_issue_for_toni() -> None:
+    # Toni can't fix a category sync that missed a listing, or a failed GET.
+    warnings = [allowlist_warning("not_seen"), allowlist_warning("recheck_failed", error="5xx")]
+
+    assert check_allowlist_warnings(warnings) == []
+
+
+def test_malformed_allowlist_warning_is_skipped() -> None:
+    assert check_allowlist_warnings([{"reason": "404"}, "junk"]) == []  # type: ignore[list-item]

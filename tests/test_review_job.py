@@ -308,3 +308,69 @@ async def test_duplicate_resolved_because_a_higher_copy_went_inactive(
         " WHERE kind = 'duplicate_listing'"
     )
     assert await cursor.fetchone() == ("resolved", "listing_inactive")
+
+
+# --- allowlist warnings from the sync (#45) --------------------------------------------------
+
+
+async def add_sync_run(conn: psycopg.AsyncConnection, warnings: list[dict] | None) -> None:
+    """A finished nightly run with `allowlist_warnings` (None: the guard didn't run)."""
+    await conn.execute(
+        "INSERT INTO sync_run (kind, status, finished_at, allowlist_warnings)"
+        " VALUES ('nightly', 'succeeded', now(), %s)",
+        (None if warnings is None else json.dumps(warnings),),
+    )
+
+
+GONE = {
+    "listing_id": 18129143,
+    "name": "Španer (zatezač za žicu)",
+    "reason": "404",
+    "expected_category_id": 1126,
+    "category_id": None,
+    "error": None,
+}
+
+
+async def test_allowlist_warning_of_the_latest_sync_raises_an_issue_for_toni(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_sync_run(conn, [GONE])
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_gone", None, "high", "open")]
+
+
+async def test_allowlist_issue_is_resolved_when_a_later_sync_finds_nothing(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_sync_run(conn, [GONE])
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+    await add_sync_run(conn, [])
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_gone", None, "high", "resolved")]
+
+
+async def test_a_sync_run_that_never_checked_the_allowlist_keeps_the_issue_open(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_sync_run(conn, [GONE])
+    await add_sync_run(conn, None)  # say, a run that broke before the guard
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert await issues(conn) == [("allowlist_listing_gone", None, "high", "open")]
+
+
+async def test_allowlist_moved_issue_points_at_the_stored_listing(
+    conn: psycopg.AsyncConnection, manual_toml: Path
+) -> None:
+    await add_listing(conn, 18129143, title="ŠPANER")
+    await add_sync_run(conn, [GONE | {"reason": "moved", "category_id": 2091}])
+
+    await run_review_checks(conn, today=TODAY, manual_products_path=manual_toml)
+
+    assert ("allowlist_listing_moved", 18129143, "medium", "open") in await issues(conn)

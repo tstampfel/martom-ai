@@ -15,7 +15,7 @@ import psycopg
 
 from martom.bom.manual_products import DEFAULT_PATH, load_manual_products
 from martom.review.checks import run_all_checks
-from martom.review.store import load_check_listings, save_issues
+from martom.review.store import load_allowlist_warnings, load_check_listings, save_issues
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +34,16 @@ async def run_review_checks(
     today: date | None = None,
     manual_products_path: Path = DEFAULT_PATH,
 ) -> ReviewStats:
-    """Check every active listing and manual_products.toml; upsert by fingerprint."""
+    """Check every active listing, manual_products.toml and the latest sync's allowlist
+    warnings; upsert by fingerprint."""
     manual_products = load_manual_products(manual_products_path)
     listings = await load_check_listings(conn)
-    issues = run_all_checks(listings, manual_products, today=today or date.today())
+    issues = run_all_checks(
+        listings,
+        manual_products,
+        today=today or date.today(),
+        allowlist_warnings=await load_allowlist_warnings(conn),
+    )
     raised, new, resolved = await save_issues(conn, issues)
     stats = ReviewStats(checked=len(listings), raised=raised, new=new, resolved=resolved)
     logger.info(
