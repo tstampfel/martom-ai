@@ -334,7 +334,8 @@ async def test_a_price_on_request_listing_never_passes_a_price_filter(
     async def kolica(filters: SearchFilters | None = None) -> set[int]:
         # Only the synthetic listings: this test is about price filters. The golden grinder
         # (52889522) also comes back for "kolica", a known trigram false positive:
-        # word_similarity matches across the word gap in its "brusilica kutna" (0.57).
+        # word_similarity matches across the word gap in its "brusilica kutna" (0.57, over
+        # MIN_TRIGRAM_SIMILARITY 0.55). Tracked in #102 (eval case "kolica", no grinder).
         hits = ids(await search_keyword(conn, "kolica", filters, limit=50))
         return set(hits) & set(range(900101, 900108))
 
