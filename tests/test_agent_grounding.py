@@ -3,8 +3,8 @@ from decimal import Decimal
 import pytest
 
 # ruff: noqa: RUF001
+from martom.agent import copy
 from martom.agent.grounding import (
-    _COPY_NUMBERS,
     Facts,
     check_grounding,
     facts_from_output,
@@ -222,9 +222,32 @@ def test_numbered_list_passes() -> None:
     assert check_grounding(text, found).ok, check_grounding(text, found).problems
 
 
-def test_copy_numbers_come_from_the_copy_texts_only() -> None:
-    # R3-1: the module path (worktree digits, cpython-312) and docstring ("#20") add nothing.
-    assert {int(n) for n in _COPY_NUMBERS} == {0, 10, 15, 36, 427, 651, 6005, 7016}
+def test_every_copy_text_passes() -> None:
+    # The fixed copy may be quoted; its numbers are known only inside their phrases.
+    texts = [
+        value
+        for name, value in vars(copy).items()
+        if name.isupper() and isinstance(value, str) and "{" not in value
+    ]
+    for text in texts:
+        assert check_grounding(text, Facts()).ok, (text, check_grounding(text, Facts()).problems)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Trebate 10 stubova.",
+        "Trebate deset stubova.",
+        "Trebate 15 panela.",
+        "Trebate petnaest panela.",
+        "Za 10 m trebate 15 panela.",
+        "Trebate 36 panela.",
+        "Trebate 7016 kopči.",
+    ],
+)
+def test_copy_numbers_are_not_free_counts(text: str) -> None:
+    # R3a-1: "10-15 dana" and "RAL 7016" don't make 10, 15 or 7016 a known quantity.
+    assert not check_grounding(text, Facts()).ok
 
 
 @pytest.mark.parametrize(
@@ -240,6 +263,9 @@ def test_path_and_docstring_numbers_are_not_allowed(text: str) -> None:
     [
         "Panel košta sto KM.",
         "Panel košta sto pedeset KM.",
+        "Panel košta sto i pedeset KM.",
+        "Panel košta sto i pet KM.",
+        "Panel košta sto i jedan KM.",
         "Panel košta pedesetak KM.",
         "Cijena je oko stotinjak maraka.",
         "Košta pola KM po komadu.",
@@ -263,6 +289,8 @@ def test_currency_or_sto_without_a_price_passes(text: str) -> None:
 def test_sto_with_a_tool_price_passes() -> None:
     found = facts().merge(Facts(prices=["150"]))
     assert check_grounding("Ukupno sto pedeset KM.", found).ok
+    assert check_grounding("Ukupno sto i pedeset KM.", found).ok
+    assert check_grounding("Sto i to je sve.", Facts()).ok
 
 
 def test_numbered_list_still_checks_the_numbers_inside() -> None:

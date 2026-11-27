@@ -125,6 +125,10 @@ _THOUSAND_WORDS = frozenset(
     ["hiljadu", "hiljade", "hiljada", "tisuću", "tisucu", "tisuće", "tisuce", "tisuća", "tisuca"]
 )
 _WORD = re.compile(r"\w+")
+# The number phrases of agent/copy.py; `test_every_copy_text_passes` keeps them in step.
+_COPY_PHRASES = re.compile(
+    r"\b10\s*[\u2013-]\s*15\s+dan\w*|\bRAL\s*(?:7016|6005)\b|\bod\s+0\s*m\b", re.IGNORECASE
+)
 # A currency after a vague amount ("pedesetak KM", "stotinjak maraka", "pola KM", "par
 # maraka", "nekoliko KM"): a price no tool gave (R3-2). A currency after any other word,
 # as in "Sve cijene su u KM.", is not a price.
@@ -240,6 +244,9 @@ def check_grounding(
     """
     problems: list[str] = []
     text = text.replace(copy.MARTOM_PHONE, " ")
+    # The numbers of the fixed copy count only inside their own phrase ("10–15 dana",
+    # "RAL 7016"), never as a free count: "Trebate 10 stubova" must fail (R3a-1).
+    text = _COPY_PHRASES.sub(" ", text)
     text = _PER_ONE.sub(" ", text)
     text = _LIST_MARKER.sub(r"\1", text)
     text = _strip_suggestion_counts(text)
@@ -263,12 +270,7 @@ def check_grounding(
             problems.append(f"listing id {match.group(0)} is not in any tool result")
     rest = _LISTING_ID.sub(" ", rest)
 
-    allowed = (
-        {Decimal(number) for number in facts.numbers}
-        | known_prices
-        | set(known_numbers)
-        | _COPY_NUMBERS
-    )
+    allowed = {Decimal(number) for number in facts.numbers} | known_prices | set(known_numbers)
     for match in _NUMBER.finditer(rest):
         number = parse_km(match.group(0))
         if number is None or number not in allowed:
@@ -299,6 +301,9 @@ def _sto_is_number(
     rest = text[token.end() :]
     if re.match(rf"\s+{_CURRENCY}", rest, re.IGNORECASE):
         return True
+    if re.match(r"\s+i\s", rest) and index + 2 < len(tokens):
+        index += 1  # "sto i pedeset": the joiner the parser allows elsewhere (R3a-2)
+        token = tokens[index]
     following = tokens[index + 1] if index + 1 < len(tokens) else None
     return (
         following is not None
@@ -422,14 +427,3 @@ def _is_int(value: Any) -> bool:
 def _unique[T](items: list[T]) -> list[T]:
     # dict keeps insertion order (like a JS Map), so this dedupes without reordering.
     return list(dict.fromkeys(items))
-
-
-# Numbers in the advisor's own fixed texts (phone groups, "10–15 dana", RAL 7016 ...).
-# Only the public text constants: never __file__, __cached__ or __doc__, whose numbers
-# depend on where the app is installed (R3-1).
-_COPY_NUMBERS: frozenset[Decimal] = frozenset(
-    number
-    for name, value in vars(copy).items()
-    if name.isupper() and isinstance(value, str)
-    for number in numbers_in(value)
-)
