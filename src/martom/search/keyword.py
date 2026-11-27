@@ -12,7 +12,8 @@ How a query runs (all in one SQL statement):
    listing ("panelna ograda za dvorište" has no listing that says "dvorište"). Ranking
    then puts the listings that match more words, closer together, first.
 4. Trigram similarity (pg_trgm `word_similarity`, per query word) adds typo tolerance:
-   "brusilca za metal" finds "brusilica" even though the stems differ.
+   "brusilca za metal" finds "brusilica" even though the stems differ. Both halves find
+   their candidates through GIN indexes (migration 006); only candidates are ranked.
 5. Filters (type, height, colour, price) narrow the candidates; they never add any.
 
 Only listings in `active_olx_listing` are returned, never sold ones (CLAUDE.md).
@@ -108,11 +109,13 @@ TRIGRAM_WEIGHT = 0.3
 # The height filter accepts heights this close to the one asked for: a customer's
 # "1,5 m" fence should find the 153 cm panels.
 HEIGHT_TOLERANCE_CM = Decimal(5)
-# A listing that matches no word by full text still counts when one query word is at
-# least this similar (pg_trgm word_similarity, 0..1) to some part of it: "brusilca" vs
-# "brusilica" is 0.67. Only words of TRIGRAM_MIN_WORD_LENGTH letters or more can do this,
-# so a short number ("80" is 0.67 similar to "800") never makes a match on its own.
-MIN_TRIGRAM_SIMILARITY = 0.5
+# A listing that matches no word by full text still counts when one query word is more
+# than this similar (pg_trgm word_similarity, 0..1) to some part of it: "brusilca" vs
+# "brusilica" is 0.67, "panelan" vs "panelna" 0.625. 0.55, not 0.5: the off-topic
+# "radno" is exactly 0.5 similar to the grinder's text. Only words of
+# TRIGRAM_MIN_WORD_LENGTH characters or more that contain a letter can do this, so a
+# number never makes a match on its own ("1000" is 0.8 similar to "100", "80" to "800").
+MIN_TRIGRAM_SIMILARITY = 0.55
 TRIGRAM_MIN_WORD_LENGTH = 4
 
 _WORD = re.compile(r"\S+")
@@ -162,23 +165,54 @@ def strip_filler_words(query: str) -> str:
 
 
 # %(...)s are psycopg parameters (values are sent separately, never pasted into the SQL).
+#
 # `query` turns the words into an OR tsquery: plainto_tsquery gives 'a' & 'b', and
 # replacing the & with | gives 'a' | 'b' (lexemes are quoted, so that is safe). It also
-# keeps the normalised words as an array for trigram matching, one word at a time: a whole
-# multi-word query is never similar enough to a listing (review R1-3).
-# The LATERAL subquery runs once per product row (like a correlated subquery): `trigram`
-# is the mean similarity of all query words, for ranking; `best_word` the best similarity
-# of a long word, for deciding whether a typo-only listing counts at all. At ~2,600
-# products this is a sequential scan by design; no trigram index would be used for it.
+# keeps the normalised words for trigram matching, one word at a time (a whole multi-word
+# query is never similar enough to a listing, review R1-3), and `typo_words`: the words
+# allowed to make a match by trigram alone.
+#
+# `candidates` collects the matching listings: full text (`search_tsv @@ tsq`) and trigram
+# (`typo_word <% search_norm`, written <%% because % starts a psycopg parameter). `<%` is
+# true when the word similarity is at least pg_trgm.word_similarity_threshold, which
+# search_keyword sets to MIN_TRIGRAM_SIMILARITY for this query. UNION drops duplicates.
+# Both conditions can be answered from a GIN index (migration 006). On 2,600 products
+# Postgres still chose a sequential scan for the trigram half (~50-100 ms per query): it
+# prices the similarity check at almost nothing per row, so reading every row looks
+# cheaper than the index. With sequential scans switched off the same query took
+# ~6-23 ms. It may switch to the index on a bigger catalogue (not measured); forcing it
+# is not worth it for the baseline.
+#
+# `scored` ranks only the candidates. Its LATERAL subquery runs once per candidate row
+# (like a correlated subquery): `trigram` is the mean similarity of all query words, for
+# ranking; `best_word` the best similarity of a typo word, checked again at the end so the
+# threshold holds even if the setting differs.
 _SEARCH = """
 WITH query AS (
     SELECT
         replace(
             plainto_tsquery('martom', martom_search_normalize(%(text)s))::text, ' & ', ' | '
         )::tsquery AS tsq,
-        array_remove(
+        words,
+        ARRAY(
+            SELECT word FROM unnest(words) AS word
+            WHERE word ~ '[a-z]' AND length(word) >= %(min_len)s
+        ) AS typo_words
+    FROM (
+        SELECT array_remove(
             regexp_split_to_array(martom_search_normalize(%(text)s), '[^a-z0-9]+'), ''
         ) AS words
+    ) AS split
+),
+candidates AS (
+    SELECT p.listing_id
+    FROM product AS p CROSS JOIN query
+    WHERE p.search_tsv @@ query.tsq
+    UNION
+    SELECT p.listing_id
+    FROM query
+    CROSS JOIN unnest(query.typo_words) AS typo(word)
+    JOIN product AS p ON typo.word <%% p.search_norm
 ),
 scored AS (
     SELECT
@@ -190,18 +224,18 @@ scored AS (
         similarity.trigram,
         similarity.best_word,
         p.search_tsv @@ query.tsq AS text_match
-    FROM product AS p
+    FROM candidates AS c
+    JOIN product AS p ON p.listing_id = c.listing_id
     JOIN active_olx_listing AS l ON l.id = p.listing_id
     CROSS JOIN query
     CROSS JOIN LATERAL (
         SELECT
-            coalesce(avg(per_word.sim), 0) AS trigram,
-            coalesce(max(per_word.sim) FILTER (WHERE length(per_word.word) >= %(min_len)s), 0)
-                AS best_word
-        FROM (
-            SELECT word, word_similarity(word, martom_search_normalize(p.search_text)) AS sim
-            FROM unnest(query.words) AS word
-        ) AS per_word
+            coalesce(avg(word_similarity(word, p.search_norm)), 0) AS trigram,
+            coalesce(
+                (SELECT max(word_similarity(typo_word, p.search_norm))
+                 FROM unnest(query.typo_words) AS typo_word), 0
+            ) AS best_word
+        FROM unnest(query.words) AS word
     ) AS similarity
     WHERE
         (%(product_type)s::text IS NULL
@@ -227,6 +261,16 @@ scored AS (
                   AND (%(min_price)s::numeric IS NULL OR v.price >= %(min_price)s::numeric)
                   AND (%(max_price)s::numeric IS NULL OR v.price <= %(max_price)s::numeric)
             )
+            -- A listing that sells one thing has no variants; its price is on the listing
+            -- (R2-1). A height filter can't match it: there is no height to read.
+            OR (
+                %(height_cm)s::numeric IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM product_variant AS v WHERE v.listing_id = p.listing_id
+                )
+                AND (%(min_price)s::numeric IS NULL OR l.price >= %(min_price)s::numeric)
+                AND (%(max_price)s::numeric IS NULL OR l.price <= %(max_price)s::numeric)
+            )
         )
 )
 SELECT listing_id, title, slug, product_type, text_rank + %(trigram_weight)s * trigram AS score
@@ -249,6 +293,31 @@ async def search_keyword(
     text = strip_filler_words(query)
     if not text:
         return []
+    # The typo threshold for `<%` is a setting, so it is set for this query only: in a
+    # transaction (a savepoint, if the caller already has one open), with is_local=true,
+    # which Postgres undoes when that transaction ends. Inside a caller's own transaction
+    # it lasts until that transaction ends.
+    async with conn.transaction():
+        await conn.execute(
+            "SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)",
+            (str(MIN_TRIGRAM_SIMILARITY),),
+        )
+        rows = await _run_search(conn, text, filters, limit)
+    return [
+        KeywordHit(
+            listing_id=row[0],
+            title=row[1] or "",
+            slug=row[2],
+            product_type=row[3],
+            score=float(row[4]),
+        )
+        for row in rows
+    ]
+
+
+async def _run_search(
+    conn: psycopg.AsyncConnection, text: str, filters: SearchFilters, limit: int
+) -> list[tuple]:
     cursor = await conn.execute(
         _SEARCH,
         {
@@ -265,13 +334,4 @@ async def search_keyword(
             "limit": limit,
         },
     )
-    return [
-        KeywordHit(
-            listing_id=row[0],
-            title=row[1] or "",
-            slug=row[2],
-            product_type=row[3],
-            score=float(row[4]),
-        )
-        for row in await cursor.fetchall()
-    ]
+    return await cursor.fetchall()

@@ -78,12 +78,17 @@ def _synthetic(listing_id: int, product_type: str, search_text: str) -> ProductR
 
 
 async def _add_listing(
-    conn: psycopg.AsyncConnection, listing_id: int, title: str, slug: str, active: bool = True
+    conn: psycopg.AsyncConnection,
+    listing_id: int,
+    title: str,
+    slug: str,
+    active: bool = True,
+    price: float | None = None,
 ) -> None:
     await conn.execute(
-        "INSERT INTO olx_listing (id, slug, title, summary, detail_hash, active)"
-        " VALUES (%s, %s, %s, '{}', 'h', %s)",
-        (listing_id, slug, title, active),
+        "INSERT INTO olx_listing (id, slug, title, summary, detail_hash, active, price)"
+        " VALUES (%s, %s, %s, '{}', 'h', %s, %s)",
+        (listing_id, slug, title, active, price),
     )
 
 
@@ -93,7 +98,9 @@ async def conn(database_url: str) -> AsyncIterator[psycopg.AsyncConnection]:
     async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as c:
         listings = _load("listings.json")["listings"]
         for listing_id, body in listings.items():
-            await _add_listing(c, int(listing_id), body["title"], body["slug"])
+            await _add_listing(
+                c, int(listing_id), body["title"], body["slug"], price=body.get("price")
+            )
         await _add_listing(c, VEZNA_ZICA, "VEZNA ŽICA/POCINČANA 1,2MM", "vezna-zica-900001")
         await _add_listing(
             c, INACTIVE_PANEL, "PANELNA OGRADA PANEL", "panelna-ograda-900002", active=False
@@ -209,6 +216,26 @@ def test_strip_filler_words_splits_glued_units_and_drops_punctuation() -> None:
     assert strip_filler_words("treba mi ?") == ""
 
 
+async def test_an_off_topic_question_returns_nothing(conn: psycopg.AsyncConnection) -> None:
+    # "radno" is exactly 0.5 similar to the grinder's text: below the typo threshold.
+    assert await search_keyword(conn, "Koje je radno vrijeme apoteke u Mostaru?") == []
+
+
+async def test_a_number_alone_never_matches_by_trigram(conn: psycopg.AsyncConnection) -> None:
+    # "1000" is 0.8 similar to "100"; only words with a letter may match by trigram.
+    assert await search_keyword(conn, "1000") == []
+
+
+async def test_the_typo_threshold_does_not_leak_into_the_session(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    await search_keyword(conn, "brusilca")
+    cursor = await conn.execute("SHOW pg_trgm.word_similarity_threshold")
+    row = await cursor.fetchone()
+    assert row is not None
+    assert row[0] == "0.6"  # pg_trgm's default
+
+
 async def test_a_query_of_only_filler_words_returns_nothing(
     conn: psycopg.AsyncConnection,
 ) -> None:
@@ -250,9 +277,26 @@ async def test_colour_filter_reads_product_colours(conn: psycopg.AsyncConnection
 async def test_price_filter_needs_a_variant_in_range(conn: psycopg.AsyncConnection) -> None:
     filters = SearchFilters(max_price=Decimal("10"))
     hits = await search_keyword(conn, "katanac brusilica", filters, limit=50)
-    # The padlock has a 6,75 KM variant; the grinder has no priced variant, so it can't
-    # pass a price filter.
+    # The padlock has a 6,75 KM variant; the grinder (89 KM) is above the limit.
     assert ids(hits) == [KATANAC]
+
+
+async def test_price_filter_uses_the_listing_price_when_there_are_no_variants(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    # The grinder sells one thing: no variants, price 89 KM on the listing (R2-1).
+    assert BRUSILICA in ids(await search_keyword(conn, "brusilica", SearchFilters(max_price=150)))
+    assert BRUSILICA not in ids(
+        await search_keyword(conn, "brusilica", SearchFilters(max_price=50))
+    )
+    assert BRUSILICA in ids(await search_keyword(conn, "brusilica", SearchFilters(min_price=50)))
+
+
+async def test_a_height_filter_never_matches_a_listing_without_variants(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    filters = SearchFilters(height_cm=125, max_price=Decimal("150"))
+    assert BRUSILICA not in ids(await search_keyword(conn, "brusilica", filters))
 
 
 async def test_height_and_price_must_hold_for_the_same_variant(
@@ -291,6 +335,11 @@ async def test_min_price_filter(conn: psycopg.AsyncConnection) -> None:
         ("1,5", Decimal("150")),  # no unit and below 10: metres
         ("20 METARA", Decimal("2000")),
         ("153 X 2500CM", Decimal("153")),
+        ("153X2500CM", Decimal("153")),  # A x B: the first number is the height
+        ("153x2500", Decimal("153")),
+        ("83x200 cm", Decimal("83")),
+        ("1,5x25m", Decimal("150")),
+        ("1,5 x 25 m", Decimal("150")),
         ("H-", None),
         (None, None),
     ],

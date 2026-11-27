@@ -3,7 +3,9 @@
 -- 1. martom_search_normalize(text): one normaliser for both sides of full-text and trigram
 --    search, so documents and queries are cut into words the same way.
 -- 2. product.search_tsv is re-created on the normalised search_text, with its GIN index.
--- 3. martom_height_cm(text): reads a height as written ("830 mm", "H-100CM", "1,5 m") as
+-- 3. product.search_norm stores the normalised search_text once, with a trigram GIN index,
+--    for typo matching (pg_trgm's `<%` word-similarity operator can use that index).
+-- 4. martom_height_cm(text): reads a height as written ("830 mm", "H-100CM", "1,5 m") as
 --    centimetres, for the height filter. The stored text is never changed (CLAUDE.md:
 --    extraction copies, never fixes); this only reads it.
 
@@ -56,13 +58,22 @@ $$;
 
 CREATE INDEX IF NOT EXISTS product_search_tsv_idx ON product USING gin (search_tsv);
 
--- No trigram index: keyword search scores trigram similarity per query word in a LATERAL
--- subquery, which no index serves; at ~2,600 products a sequential scan is fast enough.
+-- The normalised text, stored, so search doesn't re-normalise every row for every query
+-- word, and so a trigram index can serve typo matching: `word <% search_norm` ("is this
+-- query word similar enough to some part of the listing?") is answered from the index.
+ALTER TABLE product ADD COLUMN IF NOT EXISTS search_norm text
+    GENERATED ALWAYS AS (martom_search_normalize(search_text)) STORED;
+
+CREATE INDEX IF NOT EXISTS product_search_norm_trgm_idx
+    ON product USING gin (search_norm gin_trgm_ops);
 
 -- A height as written -> centimetres, or NULL when there is no number. The first number
--- counts ("153 X 2500CM" -> 153). Its unit: "mm" divides by 10; "m", "met", "metra" or
--- "metara" (as a word of their own, so "1,5 metara" is 150) multiply by 100; "cm" is cm.
--- No unit: below 10 it can only be metres ("1,5" -> 150), otherwise cm ("153").
+-- counts: in a size "A x B" (with or without spaces) the first number is the height and
+-- the second the length ("153X2500CM" -> 153, "1,5x25m" -> 150). Its unit: "mm" divides
+-- by 10; "m", "met", "metra" or "metara" multiply by 100; "cm" is cm. A unit counts only
+-- as a whole word ("1,5 metara", not the "m" of "mreza"), and only a unit has to end a
+-- word: "153X2500" still reads 153. No unit: below 10 it can only be metres ("1,5" ->
+-- 150), otherwise cm ("153").
 CREATE OR REPLACE FUNCTION martom_height_cm(raw text)
 RETURNS numeric
 LANGUAGE plpgsql
@@ -73,7 +84,7 @@ DECLARE
     amount numeric;
 BEGIN
     parts := regexp_match(
-        lower(raw), '([0-9]+(?:[.,][0-9]+)?)\s*(mm|cm|metara|metra|met|m)?\M');
+        lower(raw), '([0-9]+(?:[.,][0-9]+)?)\s*(?:(mm|cm|metara|metra|met|m)\M)?');
     IF parts IS NULL THEN
         RETURN NULL;
     END IF;
