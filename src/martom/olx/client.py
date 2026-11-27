@@ -27,6 +27,7 @@ import logging
 import math
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any, NoReturn, Self
@@ -90,6 +91,32 @@ class OlxRunDeadlineError(OlxRateLimitAbortError):
     A subclass of `OlxRateLimitAbortError`: the limiter is stopped the same way, and the
     sync job treats both as "end this run as partial, pick up the rest next time".
     """
+
+
+@dataclass(frozen=True)
+class OlxCounters:
+    """A snapshot of a client's running totals, from `OlxClient.counters()`.
+
+    Subtract an earlier snapshot to get the numbers for what happened in between:
+    `olx.counters() - at_start` gives one run's numbers even when the client is reused.
+    `frozen=True` makes it immutable (like a `readonly` TS type) and gives it `==`.
+    """
+
+    requests_sent: int
+    rate_limited: int  # 429 answers
+    requested_wait_seconds: float  # the waits OLX asked for with those 429s
+    recovered_requests: int  # calls that succeeded only after a retry
+    elapsed_seconds: float
+
+    def __sub__(self, earlier: "OlxCounters") -> "OlxCounters":
+        """`later - earlier`: Python calls this for the `-` operator."""
+        return OlxCounters(
+            requests_sent=self.requests_sent - earlier.requests_sent,
+            rate_limited=self.rate_limited - earlier.rate_limited,
+            requested_wait_seconds=self.requested_wait_seconds - earlier.requested_wait_seconds,
+            recovered_requests=self.recovered_requests - earlier.recovered_requests,
+            elapsed_seconds=self.elapsed_seconds - earlier.elapsed_seconds,
+        )
 
 
 class RateLimiter:
@@ -219,6 +246,19 @@ def parse_retry_after(value: str | None, *, now: datetime) -> float | None:
     return max(0.0, (retry_at - now).total_seconds())
 
 
+@dataclass(frozen=True)
+class _RetryAfter:
+    """One response's Retry-After header, parsed once.
+
+    `seconds` is None when the header is absent or couldn't be parsed; `error` says why
+    it couldn't (the client aborts on it).
+    """
+
+    raw: str | None
+    seconds: float | None
+    error: str | None = None
+
+
 class OlxClient:
     """Async client for the OLX endpoints we use.
 
@@ -321,6 +361,16 @@ class OlxClient:
         """Seconds since this client's limiter was created (the run's start)."""
         return self._limiter.elapsed_seconds
 
+    def counters(self) -> OlxCounters:
+        """The running totals right now; subtract an earlier snapshot for one run's numbers."""
+        return OlxCounters(
+            requests_sent=self.requests_sent,
+            rate_limited=self.rate_limited_count,
+            requested_wait_seconds=self.rate_limit_requested_wait_seconds,
+            recovered_requests=self.recovered_requests,
+            elapsed_seconds=self.elapsed_seconds,
+        )
+
     async def get_shop(self) -> Any:
         """GET /users/{shop}: the shop's public profile (its numeric id is `data.id`)."""
         return await self._get(f"/users/{self._shop_username}")
@@ -366,10 +416,12 @@ class OlxClient:
                 failure = OlxApiError(f"GET {path} returned HTTP {status}", status_code=status)
                 if status != 429 and status < 500:
                     raise failure  # other 4xx: retrying won't help
+                # Parsed once (one `now()`), so the 429 log and the wait below agree (R1-4).
+                header = self._read_retry_after(response)
                 if status == 429:
-                    self._on_429(path, response)
+                    self._on_429(path, header)  # logged before a possible abort
                 # Raises OlxRateLimitAbortError for an absurd or unparseable header.
-                retry_after = self._checked_retry_after(response, failure)
+                retry_after = self._checked_retry_after(header, failure)
 
             delay = retry_after if retry_after is not None else self._backoff_delay(attempt)
             if failure.status_code == 429:
@@ -397,7 +449,15 @@ class OlxClient:
 
         raise AssertionError("unreachable: the loop always returns or raises")
 
-    def _on_429(self, path: str, response: httpx.Response) -> None:
+    def _read_retry_after(self, response: httpx.Response) -> _RetryAfter:
+        """Parse the response's Retry-After once; a parse error is kept, not raised."""
+        raw = response.headers.get("Retry-After")
+        try:
+            return _RetryAfter(raw, parse_retry_after(raw, now=self._now()))
+        except ValueError as exc:
+            return _RetryAfter(raw, None, error=str(exc))
+
+    def _on_429(self, path: str, header: _RetryAfter) -> None:
         """Raise the interval and log one `olx_429` line with the numbers #105 measures.
 
         Logged before the Retry-After is checked, so a 429 that aborts the run is logged too.
@@ -405,11 +465,8 @@ class OlxClient:
         self.rate_limited_count += 1
         interval_before = self._limiter.interval
         interval_after = self._limiter.slow_down()
-        raw = response.headers.get("Retry-After")
-        try:
-            retry_after = parse_retry_after(raw, now=self._now())
-        except ValueError:
-            retry_after = None  # `_checked_retry_after` aborts on it right after this
+        raw = header.raw
+        retry_after = header.seconds  # None when absent or unparseable
         if retry_after is not None and not math.isfinite(retry_after):
             # json.dumps would write `Infinity`, which jq and CloudWatch can't parse.
             retry_after = None
@@ -434,22 +491,20 @@ class OlxClient:
             },
         )
 
-    def _checked_retry_after(self, response: httpx.Response, failure: OlxApiError) -> float | None:
-        """Return the response's Retry-After in seconds (None if absent), or abort.
+    def _checked_retry_after(self, header: _RetryAfter, failure: OlxApiError) -> float | None:
+        """Return the parsed Retry-After in seconds (None if absent), or abort.
 
-        Aborts (see `OlxRateLimitAbortError`) when the header can't be parsed, or asks for more
-        than `max_limiter_pause_seconds`; `inf` is caught by the same comparison.
+        Aborts (see `OlxRateLimitAbortError`) when the header couldn't be parsed, or asks for
+        more than `max_limiter_pause_seconds`; `inf` is caught by the same comparison.
         """
-        raw = response.headers.get("Retry-After")
-        try:
-            seconds = parse_retry_after(raw, now=self._now())
-        except ValueError as exc:
-            self._abort(failure, str(exc))
+        if header.error is not None:
+            self._abort(failure, header.error)
+        seconds = header.seconds
         if seconds is not None and seconds > self._max_limiter_pause:
-            assert raw is not None  # a parsed value means the header was there
+            assert header.raw is not None  # a parsed value means the header was there
             self._abort(
                 failure,
-                f"Retry-After {raw[:50]!r} is longer than the "
+                f"Retry-After {header.raw[:50]!r} is longer than the "
                 f"{self._max_limiter_pause:.0f} s limiter ceiling",
             )
         return seconds
