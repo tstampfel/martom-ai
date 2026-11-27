@@ -268,11 +268,11 @@ Nothing reaches production without a measured eval, and no secret or customer da
 
 ## Running costs (approximate)
 
-Expect roughly **$45–80 per month** at launch traffic (a few hundred conversations). AWS is the biggest line; the AI parts cost little at this volume. AWS and Claude figures are estimates and need checking against current pricing in M6-1. Set an AWS Budgets alert at ~$50 on day one.
+Expect roughly **$65–90 per month** at launch traffic (a few hundred conversations). AWS is the biggest line; the AI parts cost little at this volume. M6-1 checked the AWS line against eu-central-1 prices (~$55–60; the breakdown is in `infra/README.md`); Claude figures are still estimates. Tomislav sets the AWS Budgets alerts by hand in the console on day one: a warning at $65 and an alert at $80 (not in Terraform, and no email in the repo).
 
 | Item | Per month | Note |
 | --- | --- | --- |
-| AWS: Fargate (API + nightly job, Redis as a sidecar container), load balancer, RDS Postgres small | ~$35–45 | Kept on purpose as a learning investment: ECS + load balancer + RDS + Terraform is the standard AWS pattern in job ads. ElastiCache only if traffic needs it. |
+| AWS: Fargate (API + nightly job, Redis as a sidecar container), load balancer, CloudFront, RDS Postgres small, public IPv4 addresses | ~$55–60 | Kept on purpose as a learning investment: ECS + load balancer + RDS + Terraform is the standard AWS pattern in job ads. ElastiCache only if traffic needs it. |
 | Claude: agent (Sonnet) + extraction/grading (Haiku) | ~$10–30 | Target < $0.10 per conversation; full catalogue extraction is a one-off of a few dollars |
 | Cohere Rerank 4 Fast | ~$1–2 | About $2 per 1,000 searches |
 | WhatsApp orders | $0 | Click-to-chat links sent from the customer's phone; no Meta fees |

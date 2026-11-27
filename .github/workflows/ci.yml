@@ -91,6 +91,26 @@ jobs:
       - name: Tests
         run: uv run pytest
 
+  repo-hygiene:
+    name: No Terraform plan or state files in git
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Plans and state map the whole AWS account (infra/README.md), so they must never be
+      # in this public repo, even if someone force-adds one past .gitignore.
+      - name: Fail if a plan or state file is tracked
+        run: |
+          tracked=$(git ls-files -- '*.tfplan' '**/tfplan' 'tfplan' '*.tfstate' '*.tfstate.*')
+          if [ -n "$tracked" ]; then
+            echo "::error::Terraform plan or state files are tracked in git:"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "No Terraform plan or state files tracked."
+
   changes:
     name: Detect web/ changes
     runs-on: ubuntu-latest

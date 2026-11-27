@@ -113,6 +113,8 @@ Public runtime settings (only `VITE_*` values that are safe in the bundle, e.g. 
 
 The `POST /api/chat` SSE events are defined once, in `src/martom/api/chat_events.py` (Pydantic, discriminated on `type`); `docs/api/chat-events.md` documents them. A change to any event means: regenerate `docs/api/chat-events.schema.json` with `uv run python -m martom.api.chat_events`, update `web/src/api/events.ts` (mirrored by hand) and the fixtures in `web/src/api/fixtures/`, in the same PR. Tests on both sides fail until all of them agree. The request body (`ChatRequest`) follows the same rule: defined once in `src/martom/api/chat_request.py`, schema `docs/api/chat-request.schema.json` (the same command writes both), mirrored in `web/src/api/chatClient.ts`. Fence side lengths travel as `answers.sides: number[]` (each 0 < x ≤ 300 m) plus `answers.closed: bool`, never as a string the agent parses; corners are derived (`len(sides) - 1` open, `len(sides)` closed).
 
+AWS infrastructure is Terraform in `infra/` (`infra/README.md`: steps, env var → secret mapping, costs). Agents may only run `terraform fmt -check`, `terraform init -backend=false` and `terraform validate` there (never a backend init, plan or apply, never AWS credentials); a new env var the app reads in production goes into `ecs.tf` (plain value) or `secrets.tf` (secret key) as well as `.env.example`.
+
 ## Git
 
 - Commits use the GitHub noreply email (set in this repo's git config; pushes with a private email are rejected).

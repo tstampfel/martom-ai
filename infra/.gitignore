@@ -1,0 +1,13 @@
+# Holds the state bucket name; kept out of the repo with the rest of the account details.
+backend.hcl
+# Local state of the one-time bootstrap (the repo root .gitignore also drops *.tfstate).
+bootstrap/terraform.tfstate*
+# Saved plans hold the full state, secrets included (the RDS password), in plain text.
+tfplan
+*.tfplan
+# Also covered by the repo root .gitignore; repeated here so infra/ is safe on its own.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
