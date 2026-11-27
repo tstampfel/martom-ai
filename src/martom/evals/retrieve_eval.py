@@ -10,7 +10,7 @@ from collections.abc import Sequence
 import psycopg
 
 from martom.embeddings import Embedder
-from martom.evals.retrieval import EvalQuestion, run_eval
+from martom.evals.retrieval import EvalId, EvalQuestion, eval_id, run_eval
 from martom.search.query_parser import QueryParser
 from martom.search.rerank import Reranker
 from martom.search.retrieve import Retrieval, retrieve
@@ -37,7 +37,7 @@ async def run_retrieve_eval(
     parser: QueryParser | None,
     reranker: Reranker | None,
     limit: int = 10,
-) -> tuple[dict[str, list[int]], dict[str, Retrieval]]:
+) -> tuple[dict[str, list[EvalId]], dict[str, Retrieval]]:
     """Every question through retrieve(fallback=False): (id -> ranked ids, id -> Retrieval).
 
     fallback=False: a failed parse, embedding or rerank stops the eval instead of quietly
@@ -46,7 +46,7 @@ async def run_retrieve_eval(
     details: dict[str, Retrieval] = {}
     by_text = {q.question: q.id for q in questions}
 
-    async def search(text: str) -> list[int]:
+    async def search(text: str) -> list[EvalId]:
         result = await retrieve(
             conn,
             text,
@@ -57,6 +57,6 @@ async def run_retrieve_eval(
             fallback=False,
         )
         details[by_text[text]] = result
-        return [hit.listing_id for hit in result.hits]
+        return [eval_id(hit) for hit in result.hits]
 
     return await run_eval(questions, search), details

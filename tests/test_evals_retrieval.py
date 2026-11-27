@@ -298,3 +298,68 @@ def test_the_issue_102_cases_are_in_the_repo_eval_set() -> None:
     # A renamed case would otherwise show "-" in compare_embeddings.py and eval_retrieve.py.
     ids = {q.id for q in load_questions(REPO_EVAL_SET)}
     assert set(ISSUE_102_CASES) <= ids
+
+
+# --- manual products (#112) ------------------------------------------------------------
+
+
+def test_load_questions_reads_expected_manual_keys(tmp_path: Path) -> None:
+    path = tmp_path / "set.jsonl"
+    row = {
+        "id": "q1",
+        "question": "Anker M8x70 za stup sa stopom",
+        "expected_listing_ids": [],
+        "expected_manual_keys": ["anchor_m8x70"],
+        "source": "seed",
+    }
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    (question,) = load_questions(path)
+
+    assert question.expected_manual_keys == ("anchor_m8x70",)
+    assert question.expected_ids == ("anchor_m8x70",)
+
+
+@pytest.mark.parametrize("bad", ["[]", '[""]', "[1]", '"anchor_m8x70"'])
+def test_load_questions_needs_a_non_empty_list_of_manual_keys(tmp_path: Path, bad: str) -> None:
+    path = tmp_path / "set.jsonl"
+    path.write_text(
+        '{"id": "q1", "question": "x", "expected_listing_ids": [],'
+        f' "expected_manual_keys": {bad}, "source": "seed"}}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="expected_manual_keys"):
+        load_questions(path)
+
+
+def test_score_run_counts_a_manual_key_in_the_ranked_results() -> None:
+    questions = [EvalQuestion("q1", "anker", (40021189,), "seed", expected_manual_keys=("a",))]
+    # A manual product shows up in the ranked results as its key (a string); a listing as
+    # its id (an int), so the two can never be confused.
+    scores = score_run(questions, {"q1": ["a", 1, 2, 3, 4, 40021189]})
+    assert scores.per_question["q1"].recall_at_5 == 0.5
+    assert scores.per_question["q1"].recall_at_10 == 1.0
+    assert scores.mrr == 1.0
+
+
+def test_eval_id_is_the_listing_id_or_the_manual_key() -> None:
+    from martom.evals.retrieval import eval_id
+    from martom.search.hybrid import HybridHit
+
+    olx = HybridHit(63996799, "PANEL", "panel-63996799", "panel", 0.1, 1, 1)
+    manual = HybridHit(
+        None, "Anker", None, "Anker", 0.1, 1, 1, source="manual", manual_key="anchor_m8x70"
+    )
+    assert eval_id(olx) == 63996799
+    assert eval_id(manual) == "anchor_m8x70"
+
+
+def test_the_repo_eval_set_asks_for_the_manual_m8x70_anchor() -> None:
+    from martom.bom.manual_products import load_manual_products
+
+    questions = load_questions(REPO_EVAL_SET)
+    manual = [q for q in questions if q.expected_manual_keys]
+    assert any("anchor_m8x70" in q.expected_manual_keys for q in manual)
+    # Every manual key in the set is a real manual_products.toml entry.
+    known = set(load_manual_products())
+    assert all(set(q.expected_manual_keys) <= known for q in manual)

@@ -46,6 +46,7 @@ import psycopg
 from martom.embeddings import make_embedder
 from martom.evals.retrieval import (
     ISSUE_102_CASES,
+    EvalId,
     EvalQuestion,
     RunScores,
     case_status,
@@ -81,7 +82,9 @@ class PausingReranker:
         return await self.inner.rerank(query, documents)
 
 
-def print_run(name: str, questions: list[EvalQuestion], results: dict[str, list[int]]) -> RunScores:
+def print_run(
+    name: str, questions: list[EvalQuestion], results: dict[str, list[EvalId]]
+) -> RunScores:
     scores = score_run(questions, results)
     print(f"\n== {name}")
     print(f"{'question':<32} {'R@5':>5} {'R@10':>5} {'RR':>5}  top 5 ids")

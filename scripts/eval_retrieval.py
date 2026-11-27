@@ -22,6 +22,7 @@ import psycopg
 
 from martom.embeddings import Embedder, make_embedder
 from martom.evals.retrieval import (
+    EvalId,
     EvalQuestion,
     RunScores,
     load_questions,
@@ -35,7 +36,7 @@ MODES = ("keyword", "vector", "hybrid")
 
 
 def print_scores(
-    questions: list[EvalQuestion], results: dict[str, list[int]], scores: RunScores
+    questions: list[EvalQuestion], results: dict[str, list[EvalId]], scores: RunScores
 ) -> None:
     print(f"{'question':<32} {'R@5':>5} {'R@10':>5} {'RR':>5}  top 3 ids")
     for question in questions:
