@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from martom.extract.extractor import Extractor, make_structured_model
 from martom.extract.job import ExtractionStats, run_extraction
+from martom.knowledge import KnowledgeError, run_load_knowledge
 from martom.log import configure_logging, logging_config
 from martom.migrate import MigrationError, run_migrations
 from martom.olx.client import OlxClient
@@ -74,6 +75,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="set by the scheduler (M6-1): only scheduled runs count toward auto-apply",
     )
 
+    load_knowledge = commands.add_parser(
+        "load-knowledge", help="load the Markdown chunks in knowledge/ into knowledge_chunk"
+    )
+    load_knowledge.add_argument(
+        "--dir",
+        type=Path,
+        default=Path("knowledge"),
+        help="folder with the chunk files (default: ./knowledge, so run from the repo root)",
+    )
+
     extract = commands.add_parser(
         "extract",
         help="extract products and variants with Claude Haiku from listings whose detail changed",
@@ -88,6 +99,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    if args.command == "load-knowledge":
+        return run_load_knowledge_command(args.dir)
 
     if args.command == "extract":
         if args.limit is not None and args.limit < 1:
@@ -116,6 +130,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"applied {name}")
         if not applied:
             print("nothing to apply")
+    return 0
+
+
+def run_load_knowledge_command(directory: Path) -> int:
+    """`martom load-knowledge [--dir DIR]`: exit 0 when loaded, 1 when nothing was loaded."""
+    database_url = os.environ.get("DATABASE_URL") or LOCAL_DATABASE_URL
+    try:
+        stats = run_load_knowledge(database_url, directory)
+    except KnowledgeError as exc:
+        print(f"load-knowledge failed: {exc}", file=sys.stderr)
+        return 1
+    except psycopg.Error as exc:
+        print(f"load-knowledge failed: database error: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"knowledge_chunk: inserted {stats.inserted}, updated {stats.updated}, "
+        f"unchanged {stats.unchanged}, deleted {stats.deleted}"
+    )
     return 0
 
 
