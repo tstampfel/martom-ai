@@ -15,8 +15,8 @@ recall and MRR.
 
 | Date | Commit | Catalogue | Search mode | Eval set | Scored | recall@5 | recall@10 | MRR | Forbidden hit rate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-11-27 | b3b1dcf | 2,570 active listings, extraction run 4 | keyword | 11 lines (seed-01 … seed-11) | 10 | 0.850 | 0.900 | 0.694 | n/a |
-| 2026-11-27 | b3b1dcf + #102 cases | 2,570 active listings, extraction run 4 | keyword | 13 lines (+ seed-12 kolica, seed-13 panelan) | 12 | 0.771 | 0.854 | 0.672 | 0.000 (0 of 1) |
+| 2026-11-27 | b3b1dcf (Tomislav's run) | 2,570 active listings, extraction run 4 | keyword | 11 lines (seed-01 … seed-11) | 10 | 0.850 | 0.900 | 0.694 | n/a |
+| 2026-11-27 | branch m3-2b-eval-cases @ 07e2164 (on top of b3b1dcf) | 2,570 active listings, extraction run 4 | keyword | 13 lines (+ seed-12 kolica, seed-13 panelan) | 12 | 0.771 | 0.854 | 0.672 | 0.000 (0 of 1) |
 
 ## Weak cases
 
