@@ -386,13 +386,12 @@ async def test_the_hybrid_eval_fails_loudly_instead_of_scoring_keyword_results(
         )
 
 
-async def test_the_hybrid_eval_scores_the_102_cases_and_fails_loudly(
+async def test_the_hybrid_eval_finds_the_102_cases_at_default_candidates(
     conn: psycopg.AsyncConnection, embedder: Embedder
 ) -> None:
     # compare_embeddings.py's seed-12/seed-13 columns (R3-1 of #15): at the default
-    # candidates "kolica" finds the wheelbarrows and "panelan" the panels. A failing
-    # embedding raises instead of falling back to keyword results, where "kolica" would
-    # show the grinder because the embedding failed, not because the rule did.
+    # candidates "kolica" finds the wheelbarrows and "panelan" the panels. (A failing
+    # embedding raises instead of using keyword results: see the test above.)
     questions = [
         EvalQuestion("kolica", "kolica", tuple(KOLICA), "seed"),
         EvalQuestion("panelan", "panelan", tuple(PANELS), "seed"),
@@ -403,7 +402,3 @@ async def test_the_hybrid_eval_scores_the_102_cases_and_fails_loudly(
         "kolica": 1.0,
         "panelan": 1.0,
     }
-    with pytest.raises(RuntimeError, match="provider down"):
-        await run_search_eval(
-            conn, questions, "hybrid", embedder=Embedder(MODEL, FailingEmbeddings())
-        )
