@@ -95,7 +95,13 @@ async def open_agent_graph(
     `{"configurable": {"thread_id": ...}}`: each thread's messages and fence spec are
     loaded from Postgres, so a new process continues the same conversation. It never
     creates the checkpointer tables; `martom migrate` does (CLAUDE.md, "The one
-    exception"), and a database without them fails on the first turn.
+    exception"), and opening on a database without them raises
+    `CheckpointerNotReadyError`.
+
+    For the chat endpoint (#21): a thread holds a customer's chat text, so its id must
+    be an unguessable token the server issues (e.g. `secrets.token_urlsafe(32)`), never
+    a value the client picks. Two turns on one thread at the same time are
+    last-writer-wins (a double tap can lose a turn), so serialise turns per thread.
     """
     async with open_checkpointer(database_url) as checkpointer:
         yield build_graph(deps, checkpointer=checkpointer)

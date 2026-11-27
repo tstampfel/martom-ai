@@ -8,7 +8,7 @@ import pytest
 from langgraph.checkpoint.base import empty_checkpoint
 from langgraph.checkpoint.postgres import PostgresSaver
 
-from martom.checkpointer import open_checkpointer, setup_checkpointer
+from martom.checkpointer import CheckpointerNotReadyError, open_checkpointer, setup_checkpointer
 from martom.cli import main
 
 pytestmark = pytest.mark.anyio
@@ -105,3 +105,16 @@ async def test_checkpoint_survives_a_new_checkpointer(database_url: str) -> None
     assert loaded.checkpoint["id"] == checkpoint["id"]
     assert loaded.checkpoint["channel_values"] == {"messages": ["Trebam ogradu"]}
     assert other is None
+
+
+async def test_open_checkpointer_refuses_an_outdated_library_schema(database_url: str) -> None:
+    # A library bump whose migrations were never run fails at startup, not mid-chat.
+    setup_checkpointer(database_url)
+    with psycopg.connect(database_url) as conn:
+        conn.execute(
+            "DELETE FROM checkpoint_migrations WHERE v = (SELECT max(v) FROM checkpoint_migrations)"
+        )
+
+    with pytest.raises(CheckpointerNotReadyError, match="martom migrate"):
+        async with open_checkpointer(database_url):
+            pytest.fail("the checkpointer must not open on an outdated schema")

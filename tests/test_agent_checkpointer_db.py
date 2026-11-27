@@ -10,7 +10,7 @@ import psycopg
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
-from tests.test_agent_graph import (
+from tests.agent_fakes import (
     EUROFENCE,
     PANEL,
     FakeCatalogue,
@@ -24,7 +24,7 @@ from tests.test_agent_graph import (
 from martom.agent.factory import open_agent_graph
 from martom.agent.graph import AgentDeps, AgentModels
 from martom.agent.prompts import Grade, Rewrite
-from martom.checkpointer import setup_checkpointer
+from martom.checkpointer import CheckpointerNotReadyError, setup_checkpointer
 
 pytestmark = pytest.mark.anyio
 
@@ -95,13 +95,13 @@ async def test_thread_resumes_after_a_restart(database_url: str) -> None:
     assert other.values == {}
 
 
-async def test_open_agent_graph_never_creates_the_checkpointer_tables(database_url: str) -> None:
-    # No `martom migrate`: the graph opens, but the first turn fails instead of creating
-    # the tables at API startup (CLAUDE.md, "The one exception").
+async def test_open_agent_graph_refuses_a_database_without_the_tables(database_url: str) -> None:
+    # No `martom migrate`: opening fails at startup instead of creating the tables there
+    # or failing every chat turn later (CLAUDE.md, "The one exception").
     guard = Recorder(understanding(height="153", lengths=["25 m"], layout="around"))
-    async with open_agent_graph(fresh_deps(guard), database_url) as graph:
-        with pytest.raises(psycopg.errors.UndefinedTable):
-            await graph.ainvoke(turn("Ograda 25 m"), config("yard"))
+    with pytest.raises(CheckpointerNotReadyError, match="martom migrate"):
+        async with open_agent_graph(fresh_deps(guard), database_url):
+            pytest.fail("the graph must not open without the checkpointer tables")
 
     with psycopg.connect(database_url) as conn:
         row = conn.execute("SELECT to_regclass('checkpoints')").fetchone()
