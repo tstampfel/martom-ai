@@ -2,6 +2,8 @@
 
 from datetime import UTC, date, datetime
 
+import pytest
+
 from martom.review.report import (
     ReportIssue,
     ReportListing,
@@ -142,6 +144,25 @@ def test_listing_text_cannot_inject_terminal_control_characters() -> None:
     assert "\x1b" not in text
     assert "\r" not in text
     assert "VISOK PRIORITET (99)" not in text.splitlines()
+
+
+@pytest.mark.parametrize(
+    "char",
+    ["\u2028", "\u2029", "\u202e", "\u2066", "\u200f", "\u0085"],
+    ids=["line-sep", "para-sep", "rtl-override", "lri-isolate", "rlm", "nel"],
+)
+def test_unicode_line_breaks_and_bidi_controls_are_stripped(char: str) -> None:
+    # Pasted into WhatsApp or mail, these would break lines or reorder the text.
+    evil = issue(
+        1,
+        "high",
+        f"Oglas 1: tekst{char}VISOK PRIORITET (99)",
+        (ReportListing(id=1, title=f"NASLOV{char}x", url=listing_url("n-1")),),
+    )
+
+    text = format_report([evil], today=TODAY)
+
+    assert char not in text
 
 
 def test_report_json_groups_issues_by_priority() -> None:

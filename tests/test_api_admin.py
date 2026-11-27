@@ -9,9 +9,11 @@ from pathlib import Path
 
 import psycopg
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from martom import cli
 from martom.api.app import create_app
 from martom.migrate import run_migrations
 from martom.review.report import ReportIssue, ReportListing
@@ -61,11 +63,38 @@ def test_admin_token_is_read_from_the_environment(monkeypatch: pytest.MonkeyPatc
     assert TOKEN not in repr(Settings())
 
 
-def test_rejects_a_short_admin_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ADMIN_TOKEN", "short")
+SHORT_TOKEN = "shortsecretvalue123"
 
-    with pytest.raises(ValidationError):
+
+def test_rejects_a_short_admin_token_without_showing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
+
+    with pytest.raises(ValidationError) as error:
         Settings()
+
+    # The error ends up on stderr and in CloudWatch: it names the rule, never the value.
+    assert SHORT_TOKEN not in str(error.value)
+    assert SHORT_TOKEN not in repr(error.value)
+    assert "ADMIN_TOKEN must be at least 32 characters" in str(error.value)
+
+
+@pytest.mark.parametrize("command", [["api"], ["sync"], ["extract"]])
+def test_commands_never_print_a_short_admin_token(
+    command: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Fail fast (Tomislav, via the manager): a bad token stops startup, but quietly.
+    monkeypatch.setenv("ADMIN_TOKEN", SHORT_TOKEN)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+
+    assert cli.main(command) == 1
+
+    captured = capsys.readouterr()
+    assert SHORT_TOKEN not in captured.out + captured.err
+    assert "ADMIN_TOKEN must be at least 32 characters" in captured.err
 
 
 def test_endpoint_is_404_when_no_token_is_configured() -> None:

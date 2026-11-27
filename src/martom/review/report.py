@@ -13,6 +13,7 @@ and the JSON is escaped by the JSON encoder.
 # ruff: noqa: RUF001
 
 import re
+import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -34,8 +35,10 @@ _HEADINGS: dict[Priority, str] = {
 }
 _COUNT_NAMES: dict[Priority, str] = {"high": "visok", "medium": "srednji", "low": "nizak"}
 
-# C0 and C1 control characters (newline, carriage return, ESC, ...).
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]+")
+# Characters that could change how the report looks rather than what it says: control
+# characters (Cc: newline, carriage return, ESC, ...), format characters (Cf: bidi
+# overrides and isolates, zero-width marks) and Unicode line/paragraph separators (Zl, Zp).
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
 def listing_url(slug: str | None) -> str | None:
@@ -124,8 +127,9 @@ def group_by_priority(issues: Iterable[ReportIssue]) -> dict[Priority, list[Repo
 
 
 def _clean(text: str) -> str:
-    """One line of plain text: control characters become a single space."""
-    return _CONTROL.sub(" ", text).strip()
+    """One line of plain text: each run of unsafe characters becomes a single space."""
+    safe = "".join(" " if unicodedata.category(c) in _UNSAFE_CATEGORIES else c for c in text)
+    return re.sub(r" {2,}", " ", safe).strip()
 
 
 def _listing_line(listing: ReportListing) -> str:
