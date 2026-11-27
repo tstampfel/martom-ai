@@ -28,6 +28,10 @@ KNOWN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "kokoši": ("koke",),
 }
 
+# The prompt asks Haiku for at most 6 regional synonyms; only the first 6 are indexed, so a
+# runaway or prompt-injected reply can't stuff search_text and inflate its rank (#121).
+MAX_REGIONAL_SYNONYMS = 6
+
 _WORD = re.compile(r"\w+")
 SEPARATOR = " | "
 
@@ -39,7 +43,7 @@ def _words(text: str) -> list[str]:
 def _synonyms(title: str, product: ExtractedProduct) -> list[str]:
     """The listing's own synonyms, Haiku's regional synonyms (#121), then known partners
     of words they use."""
-    terms = [*product.synonyms, *product.regional_synonyms]
+    terms = [*product.synonyms, *product.regional_synonyms[:MAX_REGIONAL_SYNONYMS]]
     source_words = _words(" ".join([title, product.product_type, *terms]))
     for word in source_words:
         terms.extend(KNOWN_SYNONYMS.get(word, ()))

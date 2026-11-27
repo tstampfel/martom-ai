@@ -96,3 +96,12 @@ def test_known_partners_of_regional_synonyms_are_added_too() -> None:
     )
 
     assert text.endswith("| stup stub")
+
+
+def test_only_the_first_six_regional_synonyms_are_indexed() -> None:
+    # #121 review R1-4: the prompt asks for at most 6; a runaway (or prompt-injected) reply
+    # must not stuff search_text with words that inflate its rank.
+    many = [f"ime{n}" for n in range(1, 10)]
+    text = build_search_text("KARIOLA", product(product_type="kariola", regional_synonyms=many))
+
+    assert text.endswith("| ime1 ime2 ime3 ime4 ime5 ime6")

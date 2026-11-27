@@ -27,6 +27,7 @@ from martom.api.admin import router as admin_router
 from martom.api.health import HealthCheck, check_postgres, check_redis
 from martom.api.health import router as health_router
 from martom.log import request_id_var
+from martom.search.synonyms import default_query_synonyms
 from martom.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ def create_app(
     # Raises for a short ADMIN_TOKEN, or none in production: the server doesn't start.
     check_admin_token(settings)
     warn_if_admin_disabled(settings)
+    # Read the search synonym list now, so a missing or broken file logs its warning at
+    # startup instead of on the first customer search (#121; search runs without it).
+    default_query_synonyms()
     if health_checks is None:
         # partial(f, x) is a new function that calls f(x), like `() => f(x)` in JS.
         health_checks = {

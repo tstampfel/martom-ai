@@ -15,7 +15,7 @@ How a query runs (all in one SQL statement):
    "brusilca za metal" finds "brusilica" even though the stems differ. Both halves find
    their candidates through GIN indexes (migration 006); only candidates are ranked.
 5. Filters (type, height, colour, price) narrow the candidates; they never add any.
-6. Regional synonyms from the reviewed list (docs/domain/synonyms.md, #121) widen the
+6. Regional synonyms from the reviewed list (search/synonyms.md, #121) widen the
    full-text query: "kolica" also matches listings that only say "kariola" or "tačke".
 
 Only listings in `active_olx_listing` are returned, never sold ones (CLAUDE.md). Manual
@@ -302,8 +302,8 @@ MANUAL_FILTERS_SQL = """
 # query is never similar enough to a listing, review R1-3), and `typo_words`: the words
 # allowed to make a match by trigram alone.
 #
-# `expansion` and `query` add the reviewed regional synonyms (#121, docs/domain/
-# synonyms.md, passed as the parallel arrays syn_from / syn_to): a rule applies when its
+# `expansion` and `query` add the reviewed regional synonyms (#121, search/synonyms.md,
+# passed as the parallel arrays syn_from / syn_to): a rule applies when its
 # word, normalised and stemmed like the query, matches one of the query's words, so
 # "kolicima" or "tacke" trigger the "kolica" / "tačke" rules. Its synonyms are OR-ed into
 # the full-text query only. `words` and `typo_words` keep the customer's own words, so a
@@ -467,7 +467,7 @@ async def search_keyword(
     """Active products matching `query` and `filters`, best first (at most `limit`).
 
     `synonyms` are the query expansion rules; None reads the reviewed list
-    (docs/domain/synonyms.md), `QuerySynonyms()` searches without expansion.
+    (search/synonyms.md), `QuerySynonyms()` searches without expansion.
     """
     filters = filters or SearchFilters()
     synonyms = default_query_synonyms() if synonyms is None else synonyms
