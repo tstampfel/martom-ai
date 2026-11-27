@@ -260,9 +260,10 @@ scored AS (
                           <= %(tolerance)s::numeric)
                   AND (
                       (%(min_price)s::numeric IS NULL AND %(max_price)s::numeric IS NULL)
-                      -- A price filter needs a real price: never 0 (how OLX stores
-                      -- "Na upit") and never a listing sold by agreement (R3-1).
-                      OR (v.price > 0 AND NOT coalesce(l.price_by_agreement, false)
+                      -- A price filter needs a real price: a 0 KM variant never
+                      -- matches (R3-1). A variant price comes from the description, so
+                      -- it counts even when the listing itself is "Na upit".
+                      OR (v.price > 0
                           AND (%(min_price)s::numeric IS NULL
                                OR v.price >= %(min_price)s::numeric)
                           AND (%(max_price)s::numeric IS NULL
@@ -270,8 +271,9 @@ scored AS (
                   )
             )
             -- A listing that sells one thing has no variants; its price is on the listing
-            -- (R2-1). A height filter can't match it: there is no height to read. Same
-            -- real-price rule as above (R3-1).
+            -- (R2-1). A height filter can't match it: there is no height to read. A
+            -- listing price of 0 (how OLX stores "Na upit") or a listing sold by
+            -- agreement is not a real price, so it never matches (R3-1).
             OR (
                 %(height_cm)s::numeric IS NULL
                 AND NOT EXISTS (

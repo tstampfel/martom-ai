@@ -318,20 +318,27 @@ def _variant(price: str | None) -> VariantRow:
 async def test_a_price_on_request_listing_never_passes_a_price_filter(
     conn: psycopg.AsyncConnection,
 ) -> None:
-    # OLX stores "Na upit" as price 0.0 with price_by_agreement (R3-1); 0 is not a price.
+    # OLX stores "Na upit" as price 0.0 with price_by_agreement (R3-1): a listing price of
+    # 0 or by agreement never matches, a 0 KM variant never matches, but a variant with a
+    # real price is filtered on it whatever the listing says.
     await _add_kolica(conn, 900101, price=0.0, by_agreement=True, variants=[])
     await _add_kolica(conn, 900102, price=0.0, by_agreement=False, variants=[])
     await _add_kolica(conn, 900103, price=0.0, by_agreement=True, variants=[_variant("10.00")])
     await _add_kolica(conn, 900104, price=0.0, by_agreement=False, variants=[_variant("0")])
     await _add_kolica(conn, 900105, price=120.0, by_agreement=False, variants=[])
     await _add_kolica(conn, 900106, price=0.0, by_agreement=False, variants=[_variant("10.00")])
+    # A by-agreement listing (like 1199211) whose variant has a real price from the
+    # description: the variant price counts.
+    await _add_kolica(conn, 900107, price=0.0, by_agreement=True, variants=[_variant("120.00")])
 
     unfiltered = ids(await search_keyword(conn, "kolica", limit=50))
-    assert set(unfiltered) == {900101, 900102, 900103, 900104, 900105, 900106}
+    assert set(unfiltered) == {900101, 900102, 900103, 900104, 900105, 900106, 900107}
     under_150 = ids(await search_keyword(conn, "kolica", SearchFilters(max_price=Decimal(150))))
-    assert set(under_150) == {900105, 900106}
+    assert set(under_150) == {900103, 900105, 900106, 900107}
     over_1 = ids(await search_keyword(conn, "kolica", SearchFilters(min_price=Decimal(1))))
-    assert set(over_1) == {900105, 900106}
+    assert set(over_1) == {900103, 900105, 900106, 900107}
+    under_50 = ids(await search_keyword(conn, "kolica", SearchFilters(max_price=Decimal(50))))
+    assert set(under_50) == {900103, 900106}
 
 
 async def test_a_height_filter_never_matches_a_listing_without_variants(
