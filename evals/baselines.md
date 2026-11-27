@@ -26,6 +26,8 @@ recall and MRR.
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full: Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16, branch m3-4-query-rerank @ dcd5ae4 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, live parser (1.5 s), 1/11 parse fallbacks | 11 lines (seed-01 … seed-11) | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run), scored on the original 11 lines only | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, batch parser (no time limit), 0 parse fallbacks | 11 lines (seed-01 … seed-11), same ids and expected listings as the dcd5ae4 rows | 10 | 0.950 | 0.950 | 0.900 | n/a |
+| 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run), scored on the original 11 lines only | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | full, rerank-v5.0-fast, live parser (2.5 s), 0 parse fallbacks | 11 lines (seed-01 … seed-11), same ids and expected listings as the dcd5ae4 rows | 10 | 0.950 | 0.950 | 0.900 | n/a |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid (same run, baseline) | 14 lines (seed-01 … seed-14) | 13 | 0.814 | 0.917 | 0.910 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | hybrid → rerank-v5.0-fast, no parser | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
@@ -113,6 +115,15 @@ parse. **14 questions (13 scored) against 10 scored before, so the numbers are n
   seed-14 come from listing wording.
 - #102, full pipeline: "kolica" top 5 has no grinder 52889522; "panelan" puts the panels 63996799
   and 1199211 first (relevance 0.30 and 0.27, low for v5.0 on a one-word typo).
+
+- **Apples-to-apples check on the original 10 scored questions** (Tomislav asked for it): taken
+  from the per-question rows of the final run, no new calls. The 11 lines and their expected ids are
+  unchanged since the dcd5ae4 run (#102 only added seed-12 … seed-14). Batch and live 2.5 s parser
+  both give recall@5 0.950, recall@10 0.950, MRR 0.900, with the same top 5 for every question as
+  the earlier rerank-v5.0-fast run, so the final changes (2.5 s limit, parallel unfiltered search,
+  TaskGroup) regressed nothing. Against the 0.95/0.95/0.95 row (rerank-v4.0-fast), the only
+  difference is `seed-09-no-height-kokosi`, RR 0.50: v5.0 ranks the PVC chicken mesh 73950900
+  before the expected 68378185. That's the model choice, not the final changes.
 
 ### Misses (full pipeline, rerank-v5.0-fast)
 
