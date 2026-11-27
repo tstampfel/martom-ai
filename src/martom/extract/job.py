@@ -5,10 +5,13 @@
    hash (`store.load_pending`); `--all` takes every active listing instead.
 3. Extract them in batches (4 Claude calls at a time) and save each batch as it finishes,
    so a crash halfway keeps what was already done.
-4. Finish the run: 'succeeded', 'partial' (some listings still failed after their
+4. Run the review checks over the whole catalogue (`martom.review.job`), which upsert
+   Toni's `review_issue` rows. Skipped when the run failed.
+5. Finish the run: 'succeeded', 'partial' (some listings still failed after their
    retries; they keep their old product row and are tried again next run, because their
-   hashes still differ) or 'failed' (the run broke: a database error, a non-retryable
-   API error such as a bad key, 20 listings in a row failing, or nothing extracted).
+   hashes still differ; or the review checks broke, so the queue is out of date) or
+   'failed' (the run broke: a database error, a non-retryable API error such as a bad
+   key, 20 listings in a row failing, or nothing extracted).
 """
 
 import logging
@@ -25,6 +28,7 @@ from martom.extract.schema import ExtractedProduct
 from martom.extract.search_text import build_search_text
 from martom.extract.store import ProductRecord, VariantRow, load_pending, save_products
 from martom.olx.store import finish_run, start_run
+from martom.review.job import ReviewStats, run_review_checks
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,7 @@ class ExtractionStats:
     errors: int = 0
     failed_listing_ids: list[int] = field(default_factory=list)
     error: str | None = None
+    review: ReviewStats | None = None  # None when the checks didn't run or broke
 
 
 def build_record(listing: ListingInput, product: ExtractedProduct, *, model: str) -> ProductRecord:
@@ -143,6 +148,14 @@ async def run_extraction(
         logger.exception("extraction run %s failed", stats.run_id)
         stats.status = "failed"
         stats.error = f"{type(exc).__name__}: {exc}"
+    if stats.status != "failed":
+        try:
+            stats.review = await run_review_checks(conn)
+        except Exception as exc:
+            # The products are saved; only Toni's queue is stale, so 'partial', not 'failed'.
+            logger.exception("review checks after extraction run %s failed", stats.run_id)
+            stats.status = "partial"
+            stats.error = f"review checks failed: {type(exc).__name__}: {exc}"
     await finish_run(
         conn,
         stats.run_id,
