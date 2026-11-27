@@ -38,8 +38,9 @@ class Settings(BaseSettings):
     # OLX.ba public API (no token). Read by `martom sync`.
     olx_api_base_url: str = "https://api.olx.ba"
     olx_shop_username: str = "martom"
-    # Politeness rule: at most 1 request per 1.3 s; never configure it faster.
-    olx_min_request_interval_seconds: float = Field(default=1.3, ge=1.3)
+    # Seconds between OLX request starts. Politeness rule: 2.0 s by default, never
+    # configured below 1.3 s; after a 429 the client raises it for the rest of the run.
+    olx_request_interval: float = Field(default=2.0, ge=1.3)
 
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")

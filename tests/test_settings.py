@@ -15,7 +15,7 @@ ENV_VARS = [
     "REDIS_URL",
     "OLX_API_BASE_URL",
     "OLX_SHOP_USERNAME",
-    "OLX_MIN_REQUEST_INTERVAL_SECONDS",
+    "OLX_REQUEST_INTERVAL",
 ]
 
 
@@ -43,14 +43,20 @@ def test_olx_defaults_match_the_politeness_rule() -> None:
 
     assert settings.olx_api_base_url == "https://api.olx.ba"
     assert settings.olx_shop_username == "martom"
-    assert settings.olx_min_request_interval_seconds == 1.3
+    assert settings.olx_request_interval == 2.0
 
 
-def test_rejects_an_olx_interval_faster_than_1_3_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OLX_MIN_REQUEST_INTERVAL_SECONDS", "0.5")
+def test_rejects_an_olx_interval_below_1_3_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLX_REQUEST_INTERVAL", "1.2")
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_olx_interval_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLX_REQUEST_INTERVAL", "3.5")
+
+    assert Settings().olx_request_interval == 3.5
 
 
 def test_reads_values_from_environment_variables(monkeypatch: pytest.MonkeyPatch) -> None:

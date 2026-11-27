@@ -274,6 +274,8 @@ async def test_each_429_raises_the_interval_by_half_up_to_6_seconds(
 
     assert intervals == [3.0, 4.5, 6.0, 6.0]
     assert "request interval raised to 3.0 s" in caplog.text
+    # Each retry and each next request already waits the raised interval.
+    assert gaps(server.starts) == [3.0, 3.0, 4.5, 4.5, 6.0, 6.0, 6.0]
 
 
 async def test_5xx_does_not_raise_the_interval() -> None:
@@ -358,7 +360,8 @@ async def test_429_without_retry_after_uses_exponential_backoff() -> None:
     async with make_client(clock, server, backoff_base_seconds=2.0) as client:
         await client.get_listing(1)
 
-    assert gaps(server.starts) == [2.0, 4.0, 8.0]
+    # Backoff 2, 4, 8 s, but never shorter than the interval each 429 raised (3.0, 4.5, 6.0).
+    assert gaps(server.starts) == [3.0, 4.5, 8.0]
 
 
 async def test_short_retry_after_never_breaks_the_minimum_interval() -> None:
@@ -368,7 +371,8 @@ async def test_short_retry_after_never_breaks_the_minimum_interval() -> None:
     async with make_client(clock, server) as client:
         await client.get_listing(1)
 
-    assert gaps(server.starts) == [2.0]
+    # Not 2.0: the 429 raised the interval to 3.0 s, and the retry already keeps it.
+    assert gaps(server.starts) == [3.0]
 
 
 async def test_429_pauses_other_concurrent_callers_too() -> None:

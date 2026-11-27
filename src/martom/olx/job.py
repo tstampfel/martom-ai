@@ -22,13 +22,16 @@ One run (kind `nightly`, or `full` for the weekly pass), in order:
    'partial' below 100% coverage or when a GET still failed after its retries (those ids
    go in `failed_listing_ids`, and the next run fetches and re-checks them first),
    'skipped_guard' when a guard skipped deactivation (`run_outcome`), 'failed' when the
-   run broke. GETs that succeeded on a retry only add to `retried_count`.
+   run broke. GETs that succeeded on a retry only add to `retried_count`; the request
+   interval the run ended with goes in `final_request_interval`.
 
 Getting a real large removal past the 10% guard:
 
-- **Automatic:** when a run trips the guard and the run before it (nightly or full)
-  tripped it too, this second run deactivates the ids flagged in both runs that its own
-  re-check confirms, without the 10% guard (Tomislav, 26 Nov). If the
+- **Automatic:** when a scheduled run (`--scheduled`) trips the guard and the scheduled
+  run before it (nightly or full) tripped it too, at least 12 h earlier, this second run
+  deactivates the ids flagged in both runs that its own re-check confirms, without the
+  10% guard (Tomislav, 26 Nov; R1-8). Runs started by hand never auto-apply and don't
+  break the streak (`store.previous_skipped_run`). If the
   re-check fails for more than 20% of those ids, it applies none of them and flags the
   run (`recheck_skipped`, status 'skipped_guard'). The other confirmed ids stay skipped
   and are stored in `skipped_listing_ids`, so the next run can match them.
@@ -37,16 +40,21 @@ Getting a real large removal past the 10% guard:
   per-listing rules and the same 20% re-check guard. It is its own `sync_run`
   (kind `apply_skipped`).
 
-`OlxRateLimitAbortError` (OLX asked for a pause over the 1-hour ceiling) ends the run at
-once: what was fetched before it is saved, nothing is deactivated, the run is recorded as
-'failed' and the CLI exits 1. Any other OLX failure that stops a step fails the run the
-same way; the next scheduled run tries again.
+When OLX stops the run early (`OlxRateLimitAbortError`: a Retry-After over the 1-hour
+ceiling, or `OlxRunDeadlineError`: waiting would pass the 3-hour run deadline), the run
+ends at once as 'partial' (CLI exit 2): what was fetched before it is saved, nothing is
+deactivated, and the ids it didn't get to (details still to fetch, candidates still to
+re-check, and last run's failed ids not yet retried) go in `failed_listing_ids`, so the
+next run takes them first. They don't count as `errors`: no GET failed for them. Any other
+OLX failure that stops a step ends the run as 'failed' (CLI exit 1); the next scheduled
+run tries again.
 """
 
 import itertools
 import logging
 from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Literal
 
 import httpx
@@ -54,7 +62,12 @@ import psycopg
 
 from martom.olx import store
 from martom.olx.client import OlxApiError, OlxClient, OlxRateLimitAbortError
-from martom.olx.detail import DetailFetchAbortedError, DetailFetchResult, fetch_changed_details
+from martom.olx.detail import (
+    DetailFetchAbortedError,
+    DetailFetchResult,
+    fetch_changed_details,
+    needs_detail_fetch,
+)
 from martom.olx.sync import OlxResponseError, deactivation_candidates, sync_shop
 
 logger = logging.getLogger(__name__)
@@ -67,7 +80,7 @@ GoneReason = Literal["404", "inactive", "not_martom"]
 MAX_DEACTIVATION_PERCENT = 10
 # Applying skipped ids is called off when the re-check fails for more than this share.
 MAX_RECHECK_FAILURE_PERCENT = 20
-# Fetched details are saved every this many listings (about 4 minutes at 1.3 s each).
+# Fetched details are saved every this many listings (about 7 minutes at 2.0 s each).
 DETAIL_BATCH_SIZE = 200
 
 
@@ -76,6 +89,7 @@ class RunStats:
     """What one run did; the fields match the `sync_run` columns of the same name."""
 
     kind: RunKind
+    scheduled: bool = False  # written by `store.start_run`
     status: RunStatus = "failed"
     shop_total: int | None = None
     coverage: float | None = None
@@ -89,6 +103,7 @@ class RunStats:
     errors: int = 0  # GETs that still failed after their retries
     retried_count: int = 0  # GETs that succeeded only after a retry
     failed_listing_ids: list[int] | None = None
+    final_request_interval: float | None = None
     deactivation_skipped: bool = False
     would_deactivate: int | None = None
     skipped_listing_ids: list[int] | None = None
@@ -98,9 +113,9 @@ class RunStats:
     run_id: int | None = field(default=None, compare=False)
 
     def columns(self) -> dict[str, object]:
-        """The values for `store.finish_run` (everything but `kind` and `run_id`)."""
+        """The values for `store.finish_run` (all but `kind`, `scheduled` and `run_id`)."""
         values = asdict(self)  # dataclass -> dict, like `{...stats}` in JS
-        del values["kind"], values["run_id"]
+        del values["kind"], values["scheduled"], values["run_id"]
         return values
 
 
@@ -142,6 +157,13 @@ def _record_failures(stats: "RunStats", listing_ids: Iterable[int]) -> None:
         return
     stats.errors += len(new)
     stats.failed_listing_ids = sorted(set(stats.failed_listing_ids or ()) | new)
+
+
+def _carry_over(stats: "RunStats", listing_ids: Iterable[int]) -> None:
+    """Add ids a run stopped early didn't get to; next run takes them first (not errors)."""
+    stats.failed_listing_ids = (
+        sorted(set(stats.failed_listing_ids or ()) | set(listing_ids)) or None
+    )
 
 
 def recheck_allowed(failures: int, total: int) -> bool:
@@ -293,16 +315,33 @@ def _flag_recheck_failure(stats: RunStats, recheck: Recheck, ids: Collection[int
 # --- The runs -----------------------------------------------------------------------------
 
 
-async def run_sync(conn: psycopg.AsyncConnection, olx: OlxClient, *, kind: RunKind) -> RunStats:
+async def run_sync(
+    conn: psycopg.AsyncConnection,
+    olx: OlxClient,
+    *,
+    kind: RunKind,
+    scheduled: bool = False,
+    now: Callable[[], datetime] | None = None,
+) -> RunStats:
     """Run one sync (`nightly` or `full`) and record it in `sync_run`; return its stats.
 
-    OLX failures don't raise: they end the run with status 'failed' (see the module
-    docstring). Anything else (a database error, a bug) is recorded as 'failed' when the
-    database still allows it, then re-raised.
+    `scheduled`: started by the scheduler, so it may auto-apply (module docstring).
+    `now` stamps `sync_run.started_at` (default: the database's now()); tests pass a fake.
+
+    OLX failures don't raise: they end the run as 'partial' (OLX stopped it early) or
+    'failed' (see the module docstring). Anything else (a database error, a bug) is
+    recorded as 'failed' when the database still allows it, then re-raised.
     """
     if kind == "apply_skipped":
         raise ValueError("use apply_skipped_run for kind 'apply_skipped'")
-    return await _recorded(conn, olx, kind, lambda stats: _sync(conn, olx, stats))
+    return await _recorded(
+        conn,
+        olx,
+        kind,
+        lambda stats: _sync(conn, olx, stats),
+        scheduled=scheduled,
+        started_at=None if now is None else now(),
+    )
 
 
 async def apply_skipped_run(
@@ -312,7 +351,8 @@ async def apply_skipped_run(
 
     Only those ids, never a fresh list. Each is re-checked with GET /listings/{id}; only
     the confirmed ones are deactivated. More than 20% re-check failures apply nothing and
-    end the run as 'skipped_guard', so it can be tried again later.
+    end the run as 'skipped_guard', so it can be tried again later. If OLX stops the run
+    during the re-check, nothing is applied and the run is 'partial'; run it again.
     """
 
     async def apply(stats: RunStats) -> None:
@@ -340,32 +380,72 @@ async def _recorded(
     olx: OlxClient,
     kind: RunKind,
     body: Callable[[RunStats], Awaitable[None]],
+    *,
+    scheduled: bool = False,
+    started_at: datetime | None = None,
 ) -> RunStats:
     """Open a `sync_run` row, run `body`, and record how it ended."""
-    stats = RunStats(kind=kind)
-    stats.run_id = await store.start_run(conn, kind)
+    stats = RunStats(kind=kind, scheduled=scheduled)
+    stats.run_id = await store.start_run(conn, kind, scheduled=scheduled, started_at=started_at)
     recovered_at_start = olx.recovered_requests
+
+    def take_client_counters() -> None:
+        stats.retried_count = olx.recovered_requests - recovered_at_start
+        stats.final_request_interval = olx.request_interval
+
     logger.info("sync run %d (%s) started", stats.run_id, kind)
     try:
         await body(stats)
         stats.status = run_outcome(stats)
-    except (OlxApiError, _RunFailedError) as exc:  # OLX errors include the rate-limit abort
+    except OlxRateLimitAbortError as exc:  # also OlxRunDeadlineError: OLX stopped us early
+        stats.status = "partial"
+        stats.error = str(exc)
+        logger.error(
+            "sync run %d (%s) stopped early: %s; %d listing ids left for the next run",
+            stats.run_id,
+            kind,
+            exc,
+            len(stats.failed_listing_ids or ()),
+        )
+    except (OlxApiError, _RunFailedError) as exc:
         stats.status = "failed"
         stats.error = str(exc)
         logger.error("sync run %d (%s) failed: %s", stats.run_id, kind, exc)
     except Exception as exc:
         stats.status = "failed"
         stats.error = f"{type(exc).__name__}: {exc}"
-        stats.retried_count = olx.recovered_requests - recovered_at_start
+        take_client_counters()
         await _finish_quietly(conn, stats)
         raise
-    stats.retried_count = olx.recovered_requests - recovered_at_start
+    take_client_counters()
     await store.finish_run(conn, stats.run_id, stats.columns())
     _log_summary(stats)
     return stats
 
 
 async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) -> None:
+    """One nightly/full run; when OLX stops it early, carry over the ids still to do."""
+    assert stats.run_id is not None  # set by `_recorded` before the run starts
+    # Listings whose GET still failed last run go first, so a short run retries them.
+    failed_last_run = await store.previous_failed_ids(conn, stats.run_id)
+    # Ids that still need a GET this run (detail fetch or re-check), kept up to date as
+    # the run goes, for the case that OLX stops it: those go to the next run.
+    todo = set(failed_last_run)
+    try:
+        await _sync_steps(conn, olx, stats, failed_last_run, todo)
+    except OlxRateLimitAbortError:
+        _carry_over(stats, todo)
+        raise
+
+
+async def _sync_steps(
+    conn: psycopg.AsyncConnection,
+    olx: OlxClient,
+    stats: RunStats,
+    failed_last_run: set[int],
+    todo: set[int],
+) -> None:
+    assert stats.run_id is not None
     result = await sync_shop(olx)
     stats.shop_total = result.shop_total
     stats.coverage = result.coverage
@@ -383,9 +463,9 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
     await store.save_summaries(conn, result.listings)
     stats.new = sum(1 for i in result.listings if i not in stored)
     stats.reactivated = sum(1 for i in result.listings if i in stored and not stored[i].active)
-    # Listings whose GET still failed last run go first, so a short run retries them.
-    assert stats.run_id is not None  # set by `_recorded` before the run starts
-    failed_last_run = await store.previous_failed_ids(conn, stats.run_id)
+    todo.update(
+        i for i, row in result.listings.items() if needs_detail_fetch(row, stored_hashes.get(i))
+    )
     for batch in itertools.batched(
         _failed_first(result.listings, failed_last_run), DETAIL_BATCH_SIZE
     ):
@@ -393,15 +473,18 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
         try:
             details = await fetch_changed_details(olx, rows, stored_hashes)
         except DetailFetchAbortedError as exc:
-            await _save_details(conn, exc.partial, stored, stats)
+            await _save_details(conn, exc.partial, stored, stats, todo)
             raise
-        await _save_details(conn, details, stored, stats)
+        await _save_details(conn, details, stored, stats, todo)
 
     candidates = deactivation_candidates((i for i, s in stored.items() if s.active), result)
     stats.deactivation_candidates = len(candidates)
     if not candidates:
         return
+    # All of them until the re-check is done: an abort midway loses its answers so far.
+    todo.update(candidates)
     recheck = await recheck_listings(olx, candidates, await shop_id(olx), first=failed_last_run)
+    todo.difference_update(candidates)
     _record_failures(stats, recheck.errors)
     active_count = await store.count_active(conn)  # before any deactivation below
     gone: dict[int, GoneReason] = dict(recheck.gone)
@@ -427,7 +510,8 @@ async def _sync(conn: psycopg.AsyncConnection, olx: OlxClient, stats: RunStats) 
             "active_listings": active_count,
         },
     )
-    previous = await store.previous_skipped_run(conn, stats.run_id)
+    # Only a scheduled run may auto-apply (R1-8); one started by hand uses --apply-skipped.
+    previous = await store.previous_skipped_run(conn, stats.run_id) if stats.scheduled else None
     if previous is not None:
         previous_id, flagged = previous
         # Flagged in both runs; re-check failures among them count against the 20% guard.
@@ -459,9 +543,14 @@ async def _save_details(
     details: DetailFetchResult,
     stored: Mapping[int, store.StoredListing],
     stats: RunStats,
+    todo: set[int],
 ) -> None:
-    """Save one batch of fetched details and add it to the fetched / changed / error counts."""
+    """Save one batch of fetched details and add it to the fetched / changed / error counts.
+
+    Every id the batch answered for (fetched, unchanged or failed) leaves `todo`.
+    """
     await store.save_details(conn, details.fetched)
+    todo.difference_update(details.fetched, details.unchanged, details.failed)
     stats.fetched += len(details.fetched)
     _record_failures(stats, details.failed)
     stats.changed += sum(

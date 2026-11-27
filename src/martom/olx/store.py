@@ -11,6 +11,7 @@ knows the tables.
 
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -177,13 +178,24 @@ async def deactivate(conn: psycopg.AsyncConnection, listing_ids: Collection[int]
     return sorted(row[0] for row in await cursor.fetchall())
 
 
-async def start_run(conn: psycopg.AsyncConnection, kind: str) -> int:
+async def start_run(
+    conn: psycopg.AsyncConnection,
+    kind: str,
+    *,
+    scheduled: bool = False,
+    started_at: datetime | None = None,
+) -> int:
     """Insert a `sync_run` row with status 'running' and return its id.
 
     Committed at once (autocommit), so a run that crashes hard still leaves a visible
-    'running' row with no `finished_at` for the freshness alert to find.
+    'running' row with no `finished_at` for the freshness alert to find. `started_at`
+    defaults to the database's now(); tests pass a fake clock's time.
     """
-    cursor = await conn.execute("INSERT INTO sync_run (kind) VALUES (%s) RETURNING id", (kind,))
+    cursor = await conn.execute(
+        "INSERT INTO sync_run (kind, scheduled, started_at) "
+        "VALUES (%s, %s, coalesce(%s, now())) RETURNING id",
+        (kind, scheduled, started_at),
+    )
     row = await cursor.fetchone()
     assert row is not None
     return int(row[0])
@@ -196,7 +208,7 @@ RUN_COLUMNS = frozenset(
         "deactivation_candidates", "deactivated", "reactivated", "errors",
         "deactivation_skipped", "would_deactivate", "skipped_listing_ids",
         "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
-        "error",
+        "final_request_interval", "error",
     }
 )  # fmt: skip
 
@@ -225,23 +237,41 @@ async def load_skipped_ids(conn: psycopg.AsyncConnection, run_id: int) -> list[i
     return list(row[0] or []) if row is not None else []
 
 
+# The scheduled nightly/full run right before run %(run_id)s, and whether it started at
+# least MIN_HOURS_BETWEEN_TRIPS before that run.
+_PREVIOUS_SCHEDULED_RUN = """
+SELECT prev.id, prev.deactivation_skipped, prev.skipped_listing_ids,
+       prev.started_at <= this.started_at - make_interval(hours => %(min_hours)s)
+FROM sync_run AS this
+JOIN sync_run AS prev
+  ON prev.id < this.id AND prev.kind IN ('nightly', 'full') AND prev.scheduled
+WHERE this.id = %(run_id)s
+ORDER BY prev.id DESC
+LIMIT 1
+"""
+
+# The two guard trips of an automatic apply must start at least this far apart.
+MIN_HOURS_BETWEEN_TRIPS = 12
+
+
 async def previous_skipped_run(
     conn: psycopg.AsyncConnection, before_run_id: int
 ) -> tuple[int, set[int]] | None:
-    """The sync run right before `before_run_id`, if it tripped the 10% guard: its id and
-    the listing ids it left skipped. None when that run didn't trip the guard.
+    """The scheduled sync run right before `before_run_id`, if it tripped the 10% guard
+    and started at least 12 h earlier: its id and the listing ids it left skipped.
 
-    Only `nightly` and `full` runs count: a manual `apply_skipped` run doesn't break or
-    make a streak. Any other sync run in between (succeeded, partial, failed or crashed)
-    does, so the two trips must be consecutive.
+    Only scheduled `nightly` and `full` runs count (R1-8): a manual run (by hand, or
+    `apply_skipped`) neither makes nor breaks a streak. Any other scheduled run in
+    between (succeeded, partial, failed or crashed) breaks it, so the two scheduled trips
+    must be consecutive. If the previous scheduled run started less than 12 h earlier
+    (say, the weekly full run two hours after the nightly), there is no auto-apply.
     """
     cursor = await conn.execute(
-        "SELECT id, deactivation_skipped, skipped_listing_ids FROM sync_run "
-        "WHERE kind IN ('nightly', 'full') AND id < %s ORDER BY id DESC LIMIT 1",
-        (before_run_id,),
+        _PREVIOUS_SCHEDULED_RUN,
+        {"run_id": before_run_id, "min_hours": MIN_HOURS_BETWEEN_TRIPS},
     )
     row = await cursor.fetchone()
-    if row is None or not row[1] or not row[2]:
+    if row is None or not row[1] or not row[2] or not row[3]:
         return None
     return int(row[0]), set(row[2])
 

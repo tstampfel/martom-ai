@@ -112,6 +112,7 @@ class RateLimiter:
         self._sleep = sleep
         self._lock = asyncio.Lock()
         self._next_start: float | None = None  # earliest moment the next request may start
+        self._last_start: float | None = None  # when the last request started
         self._abort_reason: str | None = None  # set by `abort()`; never cleared
         # Absolute clock time after which no request may start (None: no deadline).
         self._deadline = None if deadline_seconds is None else clock() + deadline_seconds
@@ -125,10 +126,13 @@ class RateLimiter:
         """After a 429: grow the interval by 50%, up to 6 s; return the new interval.
 
         It never shrinks again on this limiter (one limiter per run), and an interval
-        configured above 6 s is left as it is.
+        configured above 6 s is left as it is. The new interval already applies to the
+        next request (the retry of the request that got the 429), not only later ones.
         """
         grown = min(self._min_interval * INTERVAL_GROWTH_AFTER_429, MAX_ADAPTIVE_INTERVAL_SECONDS)
         self._min_interval = max(self._min_interval, grown)
+        if self._last_start is not None:
+            self.pause_until(self._last_start + self._min_interval)
         return self._min_interval
 
     async def wait(self) -> None:
@@ -144,7 +148,8 @@ class RateLimiter:
                 await self._sleep(self._next_start - now)
                 self._raise_if_aborted()
             self._check_deadline(self._clock())
-            self._next_start = self._clock() + self._min_interval
+            self._last_start = self._clock()
+            self._next_start = self._last_start + self._min_interval
 
     def _check_deadline(self, start_at: float) -> None:
         """Stop for good (`OlxRunDeadlineError`) if a request would start after the deadline."""
@@ -173,7 +178,10 @@ class RateLimiter:
         It only ever moves the next start later, never earlier, so a short Retry-After
         cannot break the minimum interval.
         """
-        resume_at = self._clock() + seconds
+        self.pause_until(self._clock() + seconds)
+
+    def pause_until(self, resume_at: float) -> None:
+        """Let no request start before clock time `resume_at` (never moves it earlier)."""
         if self._next_start is None or resume_at > self._next_start:
             self._next_start = resume_at
 

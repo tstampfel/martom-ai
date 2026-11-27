@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 # DATABASE_URL is unset so `uv run martom migrate` works without an env prefix.
 LOCAL_DATABASE_URL = "postgresql://martom:martom@localhost:5432/martom"
 
+# A sync run sends no OLX request that would start later than this after it began; it
+# ends as 'partial' instead and the next run picks up the rest (Tomislav, #8).
+SYNC_RUN_DEADLINE_SECONDS = 3 * 60 * 60
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="martom")
@@ -62,11 +66,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="RUN_ID",
         help="re-check and deactivate the listings a run skipped because of the 10%% guard",
     )
+    sync.add_argument(
+        "--scheduled",
+        action="store_true",
+        help="set by the scheduler (M6-1): only scheduled runs count toward auto-apply",
+    )
 
     args = parser.parse_args(argv)
 
     if args.command == "sync":
-        return run_sync_command(full=args.full, apply_skipped=args.apply_skipped)
+        if args.scheduled and args.apply_skipped is not None:
+            parser.error("--scheduled is for nightly and --full runs, not --apply-skipped")
+        return run_sync_command(
+            full=args.full, apply_skipped=args.apply_skipped, scheduled=args.scheduled
+        )
 
     if args.command == "api":
         return run_api(args.host, args.port, reload=args.reload)
@@ -91,16 +104,20 @@ def make_olx_client(settings: Settings) -> OlxClient:
     return OlxClient(
         base_url=settings.olx_api_base_url,
         shop_username=settings.olx_shop_username,
-        min_request_interval_seconds=settings.olx_min_request_interval_seconds,
+        min_request_interval_seconds=settings.olx_request_interval,
+        run_deadline_seconds=SYNC_RUN_DEADLINE_SECONDS,
     )
 
 
-def run_sync_command(*, full: bool = False, apply_skipped: int | None = None) -> int:
-    """`martom sync [--full | --apply-skipped RUN_ID]`.
+def run_sync_command(
+    *, full: bool = False, apply_skipped: int | None = None, scheduled: bool = False
+) -> int:
+    """`martom sync [--full | --apply-skipped RUN_ID] [--scheduled]`.
 
     Exit 0 for a clean run ('succeeded'), 1 when it broke ('failed'), 2 when it worked but
-    was 'partial' or 'skipped_guard'. Any non-zero exit makes the scheduled task (M6-1)
-    show as failed; `sync_run.status` says which case it was.
+    was 'partial' (including a run OLX stopped early) or 'skipped_guard'. Any non-zero
+    exit makes the scheduled task (M6-1) show as failed; `sync_run.status` says which
+    case it was.
     """
     try:
         settings = Settings()
@@ -117,7 +134,7 @@ def run_sync_command(*, full: bool = False, apply_skipped: int | None = None) ->
         ):
             if apply_skipped is not None:
                 return await apply_skipped_run(conn, olx, apply_skipped)
-            return await run_sync(conn, olx, kind=kind)
+            return await run_sync(conn, olx, kind=kind, scheduled=scheduled)
 
     try:
         stats = asyncio.run(sync())

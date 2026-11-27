@@ -7,9 +7,11 @@ container.
 """
 
 import asyncio
+import itertools
 import json
 import logging
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,14 @@ REPO_MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 DETAIL_FIXTURE = Path(__file__).parent / "fixtures" / "olx" / "listing_details.json"
 SHOP_ID = 17193
 LEAF, TOP = 881, 701
+# Fake start times for scheduled runs: one "night" per call, a day apart (R1-8 needs the
+# two guard trips of an auto-apply at least 12 h apart).
+FIRST_NIGHT = datetime(2026, 12, 1, 2, 0, tzinfo=UTC)
+_nights = itertools.count()
+
+
+def next_night() -> datetime:
+    return FIRST_NIGHT + timedelta(days=next(_nights))
 
 
 @pytest.fixture
@@ -71,6 +81,7 @@ class FakeShop:
     - `string_ids`: detail bodies carry `id` and `user.id` as strings ("17193"), the way
       OLX already sends `top_category_id`.
     - `abort_on`: path that answers 429 with `Retry-After: inf` (makes the client abort).
+    - `errors_on`: path -> HTTP status to answer that exact path with.
     """
 
     def __init__(self, listed: dict[int, str]) -> None:
@@ -83,6 +94,7 @@ class FakeShop:
         self.string_ids = False  # send `id` and `user.id` as strings in detail bodies
         self.flaky: dict[int, int] = {}  # id -> how many more GETs answer 500 first
         self.abort_on: str | None = None
+        self.errors_on: dict[str, int] = {}
         self.requests: list[httpx.Request] = []
 
     def summary_row(self, listing_id: int) -> dict[str, Any]:
@@ -125,6 +137,8 @@ class FakeShop:
         path = request.url.path
         if self.abort_on is not None and path.startswith(self.abort_on):
             return httpx.Response(429, headers={"Retry-After": "inf"})
+        if path in self.errors_on:
+            return httpx.Response(self.errors_on[path])
         total = len(self.listed) + self.hidden
         if path == "/users/martom":
             return httpx.Response(200, json={"data": {"id": SHOP_ID}})
@@ -190,10 +204,23 @@ async def conn(db: str) -> AsyncIterator[psycopg.AsyncConnection]:
 
 
 async def sync(
-    conn: psycopg.AsyncConnection, server: FakeShop, *, full: bool = False, max_attempts: int = 1
+    conn: psycopg.AsyncConnection,
+    server: FakeShop,
+    *,
+    full: bool = False,
+    max_attempts: int = 1,
+    scheduled: bool = False,
+    at: datetime | None = None,
 ) -> RunStats:
+    """One run; `at` fakes its `started_at` (default: the database's now())."""
     async with make_client(server, max_attempts=max_attempts) as olx:
-        return await run_sync(conn, olx, kind="full" if full else "nightly")
+        return await run_sync(
+            conn,
+            olx,
+            kind="full" if full else "nightly",
+            scheduled=scheduled,
+            now=None if at is None else (lambda: at),
+        )
 
 
 async def fetch_all(conn: psycopg.AsyncConnection, query: str, *params: Any) -> list[tuple]:
@@ -590,7 +617,7 @@ def test_run_outcome_and_its_precedence(
 # --- Rate-limit aborts ------------------------------------------------------------------
 
 
-async def test_abort_while_paging_fails_the_run_and_changes_nothing(
+async def test_abort_while_paging_ends_the_run_partial_and_changes_nothing(
     conn: psycopg.AsyncConnection,
 ) -> None:
     server = FakeShop(ten_listings())
@@ -601,12 +628,31 @@ async def test_abort_while_paging_fails_the_run_and_changes_nothing(
 
     stats = await sync(conn, server)
 
-    assert stats.status == "failed"
+    assert stats.status == "partial"
     assert await listings(conn) == before
     run = await last_run(conn)
-    assert run["status"] == "failed"
+    assert run["status"] == "partial"
     assert run["finished_at"] is not None
     assert "Retry-After" in run["error"]
+    assert run["failed_listing_ids"] is None  # nothing was left over from earlier runs
+    assert run["errors"] == 0
+
+
+async def test_abort_keeps_last_runs_failed_ids_it_did_not_get_to(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+    server.detail_errors = {3: 500}
+    await sync(conn, server)
+    server.detail_errors = {}
+    server.abort_on = "/users/martom/listings"
+
+    await sync(conn, server)
+
+    # Listing 3 was never retried, so the run after this one still takes it first.
+    run = await last_run(conn)
+    assert run["status"] == "partial"
+    assert run["failed_listing_ids"] == [3]
 
 
 async def test_abort_during_detail_fetch_saves_what_was_fetched(
@@ -637,10 +683,101 @@ async def test_abort_during_detail_fetch_saves_what_was_fetched(
     assert stored[1]["summary_hash"] is not None
     assert stored[2]["summary_hash"] is None
     assert stored[3]["summary_hash"] is None
-    assert stats.status == "failed"
+    assert stats.status == "partial"
     run = await last_run(conn)
-    assert run["status"] == "failed"
+    assert run["status"] == "partial"
     assert run["fetched"] == 1
+    # Not yet fetched, stored for the next run to take first; no GET failed for them.
+    assert run["failed_listing_ids"] == [2, 3]
+    assert run["errors"] == 0
+
+
+async def test_the_next_run_fetches_the_ids_an_aborted_run_did_not_get_to_first(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+    await sync(conn, server)
+    for listing_id in (1, 2, 3):
+        server.listed[listing_id] += " (novo)"  # all three changed
+    server.abort_on = "/listings/2"
+    await sync(conn, server)
+    assert (await last_run(conn))["failed_listing_ids"] == [2, 3]
+    server.listed[1] += " opet"  # changed again, but goes after the carried-over ids
+    server.abort_on = None
+    server.requests.clear()
+
+    await sync(conn, server)
+
+    assert server.detail_requests() == [2, 3, 1]
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    assert run["failed_listing_ids"] is None
+
+
+async def test_run_deadline_ends_the_run_partial_with_the_rest_for_the_next_run(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+    original = server.__call__
+
+    # Listing 2 asks for a 40-minute pause, which would pass the 30-minute deadline.
+    def slow_down_at_two(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/listings/2":
+            server.requests.append(request)
+            return httpx.Response(429, headers={"Retry-After": "2400"})
+        return original(request)
+
+    clock = FakeClock()
+    async with OlxClient(
+        transport=httpx.MockTransport(slow_down_at_two),
+        clock=clock.monotonic,
+        sleep=clock.sleep,
+        max_attempts=3,
+        run_deadline_seconds=1800,
+    ) as olx:
+        stats = await run_sync(conn, olx, kind="nightly")
+
+    assert stats.status == "partial"
+    run = await last_run(conn)
+    assert run["status"] == "partial"
+    assert "deadline" in run["error"]
+    assert run["fetched"] == 1
+    assert run["failed_listing_ids"] == [2, 3]
+    assert run["final_request_interval"] == 3  # raised once by the 429
+    assert clock.now < 1000.0 + 1800  # it stopped instead of waiting
+
+
+async def test_a_run_records_the_request_interval_it_ended_with(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    original = server.__call__
+    answered = set()
+
+    def one_429(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/listings/2" and 2 not in answered:
+            answered.add(2)
+            server.requests.append(request)
+            return httpx.Response(429, headers={"Retry-After": "5"})
+        return original(request)
+
+    await sync(conn, server)
+    assert (await last_run(conn))["final_request_interval"] == 2
+
+    server.listed[2] = "Stup 120"
+    clock = FakeClock()
+    async with OlxClient(
+        transport=httpx.MockTransport(one_429),
+        clock=clock.monotonic,
+        sleep=clock.sleep,
+        max_attempts=2,
+    ) as olx:
+        await run_sync(conn, olx, kind="nightly")
+
+    run = await last_run(conn)
+    assert run["status"] == "succeeded"
+    assert run["final_request_interval"] == 3
+    assert run["retried_count"] == 1
 
 
 async def test_abort_during_candidate_check_deactivates_nothing(
@@ -654,20 +791,33 @@ async def test_abort_during_candidate_check_deactivates_nothing(
     stats = await sync(conn, server)
 
     assert (await listings(conn))[10]["active"] is True
-    assert stats.status == "failed"
+    assert stats.status == "partial"
     run = await last_run(conn)
-    assert run["status"] == "failed"
+    assert run["status"] == "partial"
     assert run["deactivated"] == 0
+    assert run["failed_listing_ids"] == [10]  # re-checked first next run
 
 
 # --- Applying skipped deactivations --------------------------------------------------
 
 
-async def trip_guard(conn: psycopg.AsyncConnection, server: FakeShop, gone: set[int]) -> int:
-    """Run a sync where `gone` dropped off the listing pages; it must trip the 10% guard."""
+async def trip_guard(
+    conn: psycopg.AsyncConnection,
+    server: FakeShop,
+    gone: set[int],
+    *,
+    scheduled: bool = True,
+    at: datetime | None = None,
+) -> int:
+    """Run a sync where `gone` dropped off the listing pages; it must trip the 10% guard.
+
+    By default a scheduled run on the next fake night (a day after the previous one).
+    """
     for listing_id in gone:
         server.listed.pop(listing_id, None)
-    await sync(conn, server)
+    if at is None and scheduled:
+        at = next_night()
+    await sync(conn, server, scheduled=scheduled, at=at)
     run = await last_run(conn)
     assert run["deactivation_skipped"] is True, run
     assert run["status"] == "skipped_guard"
@@ -824,7 +974,7 @@ async def test_no_auto_apply_when_the_trips_are_not_consecutive(
     await trip_guard(conn, server, {9, 10})
     server.listed[9] = "Listing 9"
     server.listed[10] = "Listing 10"
-    await sync(conn, server)  # a normal run in between
+    await sync(conn, server, scheduled=True, at=next_night())  # a normal scheduled run
 
     await trip_guard(conn, server, {9, 10})
 
@@ -834,6 +984,60 @@ async def test_no_auto_apply_when_the_trips_are_not_consecutive(
     run = await last_run(conn)
     assert run["deactivated"] == 0
     assert run["applied_run_ids"] is None
+
+
+@pytest.mark.parametrize(("hours", "applied"), [(11, False), (12, True)])
+async def test_auto_apply_needs_the_previous_trip_at_least_12_hours_earlier(
+    conn: psycopg.AsyncConnection, hours: int, applied: bool
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    first_at = next_night()
+    await trip_guard(conn, server, {9, 10}, at=first_at)
+
+    await trip_guard(conn, server, {9, 10}, at=first_at + timedelta(hours=hours))
+
+    stored = await listings(conn)
+    assert (stored[9]["active"], stored[10]["active"]) == (not applied, not applied)
+    run = await last_run(conn)
+    assert run["deactivated"] == (2 if applied else 0)
+    assert run["skipped_listing_ids"] == (None if applied else [9, 10])
+
+
+async def test_a_manual_run_never_auto_applies(conn: psycopg.AsyncConnection) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    await trip_guard(conn, server, {9, 10})
+
+    await trip_guard(conn, server, {9, 10}, scheduled=False)  # by hand, the next morning
+
+    stored = await listings(conn)
+    assert stored[9]["active"] is True
+    assert stored[10]["active"] is True
+    run = await last_run(conn)
+    assert run["scheduled"] is False
+    assert run["applied_run_ids"] is None
+    assert run["skipped_listing_ids"] == [9, 10]  # still there for --apply-skipped
+
+
+async def test_a_manual_run_between_two_scheduled_trips_keeps_the_streak(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop(ten_listings())
+    await sync(conn, server)
+    first = await trip_guard(conn, server, {9, 10})
+    await trip_guard(conn, server, {9, 10}, scheduled=False)  # someone checks by hand
+    server.listed[9] = "Listing 9"
+    await sync(conn, server)  # and a clean manual run, too
+    del server.listed[9]
+
+    second = await trip_guard(conn, server, {9, 10})
+
+    stored = await listings(conn)
+    assert stored[9]["active"] is False
+    assert stored[10]["active"] is False
+    run = await last_run(conn)
+    assert run["applied_run_ids"] == [second, first]
 
 
 async def test_auto_apply_with_too_many_recheck_failures_applies_nothing(
@@ -1009,11 +1213,46 @@ def test_cli_sync_exits_zero_and_records_a_run(cli_env: FakeShop, db: str) -> No
     assert cli_runs(db) == [("nightly", "succeeded"), ("full", "succeeded")]
 
 
-def test_cli_sync_exits_non_zero_when_olx_aborts(cli_env: FakeShop, db: str) -> None:
+def test_cli_sync_exits_two_when_olx_stops_the_run_early(cli_env: FakeShop, db: str) -> None:
     cli_env.abort_on = "/users/martom"
+
+    assert cli.main(["sync"]) == 2
+    assert cli_runs(db) == [("nightly", "partial")]
+
+
+def test_cli_sync_exits_one_when_olx_fails(cli_env: FakeShop, db: str) -> None:
+    cli_env.errors_on = {"/search": 403}  # not retryable: the category sync can't go on
 
     assert cli.main(["sync"]) == 1
     assert cli_runs(db) == [("nightly", "failed")]
+
+
+def test_cli_scheduled_flag_is_recorded(cli_env: FakeShop, db: str) -> None:
+    assert cli.main(["sync", "--scheduled"]) == 0
+    assert cli.main(["sync"]) == 0
+
+    with psycopg.connect(db) as connection:
+        rows = connection.execute("SELECT scheduled FROM sync_run ORDER BY id").fetchall()
+    assert rows == [(True,), (False,)]
+
+
+def test_cli_scheduled_is_not_allowed_with_apply_skipped(cli_env: FakeShop) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["sync", "--scheduled", "--apply-skipped", "1"])
+    assert exit_info.value.code == 2
+
+
+def test_cli_passes_the_interval_setting_and_the_3_hour_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    passed: dict[str, Any] = {}
+    monkeypatch.setattr(cli, "OlxClient", lambda **kwargs: passed.update(kwargs))
+    monkeypatch.setenv("OLX_REQUEST_INTERVAL", "3.5")
+
+    cli.make_olx_client(cli.Settings())
+
+    assert passed["min_request_interval_seconds"] == 3.5
+    assert passed["run_deadline_seconds"] == 3 * 60 * 60
 
 
 def test_cli_apply_skipped_exits_non_zero_for_an_unknown_run(cli_env: FakeShop, db: str) -> None:

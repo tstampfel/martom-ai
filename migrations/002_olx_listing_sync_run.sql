@@ -48,13 +48,18 @@ CREATE TABLE IF NOT EXISTS sync_run (
     id                      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     kind                    text NOT NULL CONSTRAINT sync_run_kind_check
                                 CHECK (kind IN ('nightly', 'full', 'apply_skipped')),
+    -- Started by the scheduler (`martom sync --scheduled`, M6-1), not by hand. Only
+    -- scheduled nightly/full runs count toward the automatic apply of skipped ids.
+    scheduled               boolean NOT NULL DEFAULT false,
     -- How the run ended. The freshness alert (M6-3) fires on anything but 'succeeded'.
     --   running       the run is in progress (or crashed hard: no finished_at)
     --   succeeded     a clean run: 100% coverage, no guard tripped
-    --   partial       coverage < 100% (nothing was deactivated), or a detail fetch or
-    --                 GET re-check still failed after its retries (failed_listing_ids)
+    --   partial       coverage < 100% (nothing was deactivated), a detail fetch or GET
+    --                 re-check still failed after its retries, or OLX stopped the run
+    --                 early (a Retry-After over 1 h, or the 3 h run deadline); the ids
+    --                 still to do are in failed_listing_ids
     --   skipped_guard the 10% guard or the 20% re-check guard skipped deactivation
-    --   failed        the run broke (OLX rate-limit abort, OLX or database error)
+    --   failed        the run broke (an OLX or database error)
     -- Precedence when several apply: failed > skipped_guard > partial > succeeded.
     -- (A guard needs deactivation candidates, which need 100% coverage, so a sync run
     -- can't really be both partial and skipped_guard; the order is fixed anyway.)
@@ -77,9 +82,13 @@ CREATE TABLE IF NOT EXISTS sync_run (
     -- GETs that failed at first but succeeded on a retry: they don't change the status,
     -- but a rising count shows OLX getting less reliable.
     retried_count           integer NOT NULL DEFAULT 0,
-    -- Listing ids whose detail fetch or re-check still failed after its retries; the next
-    -- nightly/full run fetches and re-checks these first.
+    -- Listing ids whose detail fetch or re-check still failed after its retries, or that
+    -- a run OLX stopped early did not get to; the next nightly/full run fetches and
+    -- re-checks these first.
     failed_listing_ids      bigint[],
+    -- The gap between OLX requests (seconds) when the run ended: 2.0 by default (or
+    -- OLX_REQUEST_INTERVAL), raised by 50% after each 429, up to 6.0.
+    final_request_interval  numeric(5, 2),
     -- 10% guard: the run would have deactivated more than 10% of the active listings, so
     -- it deactivated none. The alert (M6-3) queries this flag.
     deactivation_skipped    boolean NOT NULL DEFAULT false,
