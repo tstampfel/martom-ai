@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # Claude, read by `martom extract` (M2-1). SecretStr keeps the key out of logs and
     # reprs (it prints as '**********'); None means "not configured".
     anthropic_api_key: SecretStr | None = None
+    # Sonnet for the advisor's answers and tool calls (M4-3, agent/factory.py).
+    agent_model: str = "claude-sonnet-5-5"
     # Haiku for extraction, query parsing and grading (CLAUDE.md, Stack).
     fast_model: str = "claude-haiku-5-5"
     # Listings extracted at the same time (one Claude call each).
