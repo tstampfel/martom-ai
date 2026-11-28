@@ -3,10 +3,11 @@
 Real customer chats are never committed to this public repo, even scrubbed (Tomislav,
 28 Nov 2026). `martom export-chats` reads the given chat threads from the checkpointer,
 passes every message through `scrub_personal_data` and writes one JSON file per thread
-to one of two targets:
+to one of two targets (production reads which threads from a request object, see
+`take_export_request`, so no id or name goes through a logged command line):
 
 - `S3Target`: the private export bucket (`CHAT_EXPORT_BUCKET`, `infra/chat_export.tf`):
-  EU region, no public access, encrypted, every object deleted after 90 days (the
+  EU region, no public access, encrypted, every object deleted within 90 days (the
   Privatnost page promises "Očišćeni primjeri razgovora: najduže 90 dana"). Production
   runs the command as a one-off ECS task, since the database is only reachable inside
   the VPC.
@@ -15,8 +16,11 @@ to one of two targets:
   by accident.
 
 A record holds the customer's and the advisor's text only (no system prompt, no tool
-calls or tool output), never the thread id: the id lets its holder continue the chat,
+calls or tool output) and never the thread id: the id lets its holder continue the chat,
 so the record and the object key carry only `thread_log_id`, the short hash the API logs.
+The advisor's text is the generate step's message: the fixed sentences the graph appends
+after grounding (gate, installation, cart notes) live only in the turn's `answer`, so an
+export lacks them.
 The scrub has known misses (see `scrub.py`), so a human still reads an export before it
 is used anywhere, and an eval case made from it is rewritten by hand and approved by
 Tomislav or Toni before it goes into `evals/` (`evals/README.md`).
@@ -93,9 +97,13 @@ class LocalDirTarget:
 
 
 class S3Client(Protocol):
-    """The one boto3 S3 client method the export uses (tests pass a fake)."""
+    """The boto3 S3 client methods the export uses (tests pass a fake)."""
 
     def put_object(self, **kwargs: Any) -> Any: ...
+
+    def get_object(self, **kwargs: Any) -> Any: ...
+
+    def delete_object(self, **kwargs: Any) -> Any: ...
 
 
 class S3Target:
@@ -113,6 +121,65 @@ class S3Target:
             ContentType="application/json",
             ServerSideEncryption="AES256",
         )
+
+
+REQUEST_PREFIX = "requests/"
+
+
+class ExportRequestError(ValueError):
+    """An export request object that is missing, misplaced or malformed."""
+
+
+@dataclass(frozen=True)
+class ExportRequest:
+    """What to export, read from a request object instead of the command line (R1-5).
+
+    Thread ids (session tokens) and the order form's names and addresses passed as an
+    ECS command override would sit in CloudTrail's RunTask events and in DescribeTasks
+    output. A request object's body is never logged (S3 data events are off), and the
+    task deletes it as soon as it has read it.
+    """
+
+    thread_ids: tuple[str, ...]
+    names: tuple[str, ...] = ()
+    addresses: tuple[str, ...] = ()
+
+
+def _strings(data: dict[str, Any], field: str) -> tuple[str, ...]:
+    value = data.get(field, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ExportRequestError(f"{field!r} must be a list of strings")
+    return tuple(value)
+
+
+def parse_export_request(body: bytes) -> ExportRequest:
+    """`{"thread_ids": [...], "names": [...], "addresses": [...]}`; the error never quotes it."""
+    try:
+        data = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ExportRequestError("the request is not JSON") from None
+    if not isinstance(data, dict):
+        raise ExportRequestError("the request must be a JSON object")
+    thread_ids = _strings(data, "thread_ids")
+    if not thread_ids:
+        raise ExportRequestError("'thread_ids' is empty")
+    return ExportRequest(thread_ids, _strings(data, "names"), _strings(data, "addresses"))
+
+
+def take_export_request(client: S3Client, bucket: str, key: str) -> ExportRequest:
+    """Read the request object at `key` (under requests/) and delete it at once.
+
+    It is deleted even when it doesn't parse, so raw ids and names never stay in the
+    bucket longer than this run (a lifecycle rule also expires requests/ after 1 day).
+    """
+    if not key.startswith(REQUEST_PREFIX) or ".." in key:
+        raise ExportRequestError(f"the request key must start with {REQUEST_PREFIX!r}")
+    response = client.get_object(Bucket=bucket, Key=key)
+    try:
+        body = response["Body"].read()
+    finally:
+        client.delete_object(Bucket=bucket, Key=key)
+    return parse_export_request(body)
 
 
 def export_key(thread_id: str, exported_at: datetime) -> str:

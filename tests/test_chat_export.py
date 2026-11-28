@@ -15,12 +15,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from martom.cli import main
 from martom.evals.export import (
+    ExportRequestError,
     LocalDirTarget,
     OutputInsideRepoError,
     S3Target,
     export_key,
     export_record,
     git_checkout_containing,
+    parse_export_request,
+    take_export_request,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -90,12 +93,28 @@ def test_local_target_refuses_a_key_that_climbs_out(tmp_path: Path) -> None:
 # --- S3 ----------------------------------------------------------------------------
 
 
+class FakeBody:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+    def read(self) -> bytes:
+        return self.data
+
+
 class FakeS3:
-    def __init__(self) -> None:
+    def __init__(self, objects: dict[str, bytes] | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.objects = dict(objects or {})
 
     def put_object(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
+        return {}
+
+    def get_object(self, **kwargs: Any) -> dict[str, Any]:
+        return {"Body": FakeBody(self.objects[kwargs["Key"]])}
+
+    def delete_object(self, **kwargs: Any) -> dict[str, Any]:
+        self.objects.pop(kwargs["Key"], None)
         return {}
 
 
@@ -195,3 +214,121 @@ def test_command_rejects_a_malformed_thread_id(
     assert "thread id" in err
     assert "not-a-thread" not in err  # never echo an id
     assert os.listdir(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("intro", "advisor", "expected"),
+    [
+        (
+            "Zovem se Ivan zanima me cijena za 20 metara ograde",
+            "Ivan, za 20 metara trebate 9 panela, mreža 1 metar.",
+            "[ime], za 20 metara trebate 9 panela, mreža 1 metar.",
+        ),
+        (
+            "Ime: Marko Marić trebam panel 153 cm",
+            "Marko, Panel 3D 153 cm je na stanju.",
+            "[ime], Panel 3D 153 cm je na stanju.",
+        ),
+    ],
+)
+def test_introduced_names_never_blank_product_words(
+    intro: str, advisor: str, expected: str
+) -> None:
+    # R1-2: only the name itself is scrubbed across the chat.
+    record = export_record(
+        [HumanMessage(intro), AIMessage(advisor)], thread_id=THREAD_ID, exported_at=EXPORTED_AT
+    )
+
+    assert record["messages"][1]["text"] == expected
+
+
+# --- request objects (R1-5): ids and names never on a logged command line ---------------
+
+
+def test_take_request_reads_and_deletes_the_object() -> None:
+    body = json.dumps({"thread_ids": [THREAD_ID], "names": ["Ana Anić"], "addresses": []})
+    client = FakeS3({"requests/r1.json": body.encode()})
+
+    request = take_export_request(client, "bucket", "requests/r1.json")
+
+    assert request.thread_ids == (THREAD_ID,)
+    assert request.names == ("Ana Anić",)
+    assert client.objects == {}
+
+
+def test_take_request_deletes_a_malformed_object_too() -> None:
+    client = FakeS3({"requests/bad.json": b"not json"})
+
+    with pytest.raises(ExportRequestError):
+        take_export_request(client, "bucket", "requests/bad.json")
+    assert client.objects == {}
+
+
+@pytest.mark.parametrize("key", ["chats/2026-11-28/x.json", "requests/../chats/x.json", "x.json"])
+def test_take_request_refuses_keys_outside_requests(key: str) -> None:
+    with pytest.raises(ExportRequestError):
+        take_export_request(FakeS3({key: b"{}"}), "bucket", key)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"[]",
+        b'{"thread_ids": []}',
+        b'{"thread_ids": "abc"}',
+        b'{"thread_ids": ["a"], "names": [1]}',
+    ],
+)
+def test_malformed_requests_are_refused_without_quoting_them(body: bytes) -> None:
+    with pytest.raises(ExportRequestError) as error:
+        parse_export_request(body)
+    assert "abc" not in str(error.value)
+
+
+def test_command_needs_ids_or_a_request_not_both(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["export-chats", "--request", "requests/r.json", "--", THREAD_ID]) == 1
+    assert main(["export-chats", "--out", str(tmp_path)]) == 1
+    assert "one of the two" in capsys.readouterr().err
+
+
+def test_command_reads_a_request_only_from_the_bucket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("CHAT_EXPORT_BUCKET", raising=False)
+
+    assert main(["export-chats", "--request", "requests/r.json", "--out", str(tmp_path)]) == 1
+    assert "CHAT_EXPORT_BUCKET" in capsys.readouterr().err
+
+
+def test_command_rejects_malformed_ids_from_a_request(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import boto3
+
+    client = FakeS3({"requests/r.json": b'{"thread_ids": ["not-a-thread"]}'})
+    monkeypatch.setenv("CHAT_EXPORT_BUCKET", "bucket")
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: client)
+
+    assert main(["export-chats", "--request", "requests/r.json"]) == 1
+    err = capsys.readouterr().err
+    assert "thread id" in err and "not-a-thread" not in err
+    assert client.objects == {}  # deleted even though nothing was exported
+
+
+def test_a_thread_id_starting_with_a_dash_parses_after_double_dash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R1-3: token_urlsafe ids start with "-" about 1 time in 64.
+    seen: dict[str, Any] = {}
+
+    def fake_run(thread_ids: Any, **kwargs: Any) -> int:
+        seen["ids"] = list(thread_ids)
+        return 0
+
+    monkeypatch.setattr("martom.cli.run_export_chats_command", fake_run)
+    dash_id = "-" + "a" * 42
+
+    assert main(["export-chats", "--out", str(tmp_path), "--name", "Ana", "--", dash_id]) == 0
+    assert seen["ids"] == [dash_id]

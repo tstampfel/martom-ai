@@ -45,7 +45,9 @@ ALLOWED_PHONES = {"+38736651427", "+38760000000"}
 ALLOWED_EMAIL_DOMAIN = "martom-bekaert.com"
 # Martom's own public shop address (Međugorje), which its listings print; compared without
 # case or accents. Any other street address fails (#158).
-ALLOWED_ADDRESSES = {"tromeda bb", "medugorje tromeda bb"}
+ALLOWED_ADDRESS_PARTS = (
+    "tromeda bb", "tromeda b.b.", "kruzni tok", "88266", "medugorje", "martom",
+)  # fmt: skip
 # Martom's own public OLX shop identity, which GET /listings/{id} sends as the owner.
 MARTOM_SHOP_VALUES = {"17193", "martom", "shop"}
 
@@ -104,6 +106,12 @@ def normalise_text(text: str) -> str:
     return re.sub(r"\s+", " ", text)  # in a str pattern, \s matches every Unicode space
 
 
+def normalise_keeping_lines(text: str) -> str:
+    """Like normalise_text, but line breaks stay, so line-anchored patterns still work."""
+    text = html.unescape(text).translate(_DASHES)
+    return re.sub(r"[^\S\n]+", " ", text)
+
+
 def normalise_phone(match: str) -> str:
     """A matched number in E.164 form: "036 651 427" → "+38736651427".
 
@@ -125,8 +133,12 @@ def normalise_phone(match: str) -> str:
     return "+" + number
 
 
-def contact_findings(text: str) -> dict[str, str]:
-    """Phone numbers and emails in a piece of text, except Martom's public ones.
+def contact_findings(text: str, *, addresses: bool = True) -> dict[str, str]:
+    """Phone numbers, emails and street addresses in a piece of text, except Martom's own.
+
+    `addresses=False` skips the address scan, for the raw text of a JSON/YAML/CSV file:
+    its parsed values are scanned instead, since escapes ("\\n") and quotes would bend the
+    line-based address patterns.
 
     Returns {dedup key: message}: the key is the number in E.164 form or the lowercased email,
     so the same contact found twice (in the raw text and in a parsed value, or in both copies
@@ -146,7 +158,12 @@ def contact_findings(text: str) -> dict[str, str]:
         # #158: a street with a house number (or "bb"), a delivery or living phrase with
         # one, an "Adresa:" label, a postal code with its town. The scrub's own patterns
         # (martom.evals.scrub.address_matches), so the guard and the scrub can't drift.
-        for address in address_matches(normalised):
+        # Run on the text with its line breaks (R1-4): the scrub's postal-code pattern is
+        # anchored at a line start and its label pattern stops at one, so the one-line
+        # `normalised` copy would miss what the scrub catches.
+        if not addresses:
+            continue
+        for address in address_matches(normalise_keeping_lines(copy)) + address_matches(normalised):
             if is_martom_address(address):
                 continue
             findings.setdefault(f"address:{address.lower()}", f"street address {address!r}")
@@ -154,8 +171,18 @@ def contact_findings(text: str) -> dict[str, str]:
 
 
 def is_martom_address(address: str) -> bool:
+    """True when a finding holds only Martom's shop address (R1-6).
+
+    "Tromeđa BB", "Međugorje Tromeđa BB", "Tromeđa bb (kružni tok), 88266 Međugorje" and
+    "88266 Međugorje" pass; anything left after removing those words (another street, a
+    house number) fails.
+    """
     plain = address.lower().replace("đ", "d").translate(str.maketrans("čćšž", "ccsz"))
-    return " ".join(plain.split()) in ALLOWED_ADDRESSES
+    if not any(part in plain for part in ("tromeda", "88266")):
+        return False
+    for part in ALLOWED_ADDRESS_PARTS:
+        plain = plain.replace(part, " ")
+    return re.sub(r"[\s,.;:()-]+", "", plain) == ""
 
 
 def is_seller_key(key: str) -> bool:
@@ -317,15 +344,16 @@ def scan_file(path: Path) -> list[str]:
     text = decode_text(path.read_bytes())
     if text is None:
         return [f"{name}: not UTF-8 or UTF-16 text, so it can't be checked"]
-    findings = contact_findings(text)
     try:
-        documents = parse_documents(path, text) or []
+        parsed = parse_documents(path, text)
     except json.JSONDecodeError as error:
         return [f"{name}: invalid JSON ({error}), so it can't be checked"]
     except yaml.YAMLError as error:
         return [f"{name}: invalid YAML ({error}), so it can't be checked"]
     except csv.Error as error:
         return [f"{name}: invalid CSV ({error}), so it can't be checked"]
+    documents = parsed or []
+    findings = contact_findings(text, addresses=parsed is None)
     structure_problems: list[str] = []
     ids: set[str] = set()
     for document in documents:
@@ -859,6 +887,10 @@ def write_eval_case(tmp_path: Path, question: str) -> Path:
         "pošaljite na Trg izmišljenih 3",
         "Adresa: Izmišljena 7, Čitluk",
         "Panel 153 cm, Izmišljena 1, 88000 Mostar",
+        # R1-4: a postal code and town on their own line.
+        "Kupac:\nIzmišljena 12\n88000 Mostar\n",
+        # R1-6: the shop's address next to a customer's street still fails.
+        "Adresa: Tromeđa bb i Izmišljena 5, Čitluk",
     ],
 )
 def test_planted_street_address_fails(tmp_path: Path, question: str) -> None:
@@ -894,6 +926,8 @@ def test_json_escaped_street_address_fails(tmp_path: Path) -> None:
         "prvi put kupujem 3 panela",
         "Stub 60/40 cm, 2000 mm",
         "Martom, Tromeđa BB, Međugorje",
+        "Adresa: Tromeđa bb, 88266 Međugorje",
+        "Martom\nTromeđa BB (kružni tok)\n88266 Međugorje",
     ],
 )
 def test_product_sizes_and_the_shop_address_pass(tmp_path: Path, question: str) -> None:

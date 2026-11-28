@@ -286,13 +286,26 @@ def introduced_names(text: str) -> list[str]:
 
     A whole chat is scrubbed with these as `names`, so the advisor's "Pero, ..." two
     turns later goes too, not only the intro itself (#158, the private chat export).
+
+    Every word returned is matched in every message, so only words that look like a name
+    are kept (R1-2): the intro's first word (customers type "zovem se pero" in lower
+    case), then the capitalised words right after it, each of 3+ letters. "Zovem se
+    Ivan zanima me cijena" gives "Ivan", never "zanima me", and "Ime: Marko Marić trebam
+    panel 153 cm" gives "Marko Marić", so "panel" and "153 cm" survive elsewhere.
     """
     found: list[str] = []
     for pattern in (_INTRO_RE, _JA_SAM_RE, _NAME_LABEL_RE):
         for match in pattern.finditer(text):
-            name = match.group(0)[len(match.group(1)) :].strip()
-            if name and name != NAME:
-                found.append(name)
+            words = match.group(0)[len(match.group(1)) :].split()
+            name: list[str] = []
+            for word in words[:3]:
+                word = word.strip(".,;:!?")
+                plain_word = re.fullmatch(r"[^\W\d_]{3,}", word) is not None
+                if not plain_word or (name and not word[0].isupper()):
+                    break
+                name.append(word)
+            if name:
+                found.append(" ".join(name))
     return found
 
 

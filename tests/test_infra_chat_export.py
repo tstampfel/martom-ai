@@ -12,6 +12,9 @@ from pathlib import Path
 
 INFRA = Path(__file__).resolve().parent.parent / "infra"
 PROMISED_MAX_DAYS = 90
+# S3 rounds an expiry up to the next midnight UTC and deletes asynchronously, so the rule
+# must say at most 89 for an object to be gone within the promised 90 days (review R1-7).
+MAX_RULE_DAYS = PROMISED_MAX_DAYS - 1
 
 
 def chat_export_tf() -> str:
@@ -36,21 +39,45 @@ def lifecycle() -> str:
     return block(chat_export_tf(), 'resource "aws_s3_bucket_lifecycle_configuration" "chat_export"')
 
 
-def test_objects_expire_within_the_promised_90_days() -> None:
-    rules = lifecycle()
-    expirations = re.findall(r"\bexpiration\s*\{([^}]*)\}", rules)
+def rule_blocks() -> list[str]:
+    rules: list[str] = []
+    text = lifecycle()
+    while (start := text.find("rule {")) != -1:
+        body = block(text[start:], "rule {")
+        rules.append(body)
+        text = text[start + len(body) :]
+    return rules
 
-    assert len(expirations) == 1, "exactly one expiration block"
+
+def expiry_days(rule: str) -> int:
+    expirations = re.findall(r"\bexpiration\s*\{([^}]*)\}", rule)
+    assert len(expirations) == 1, "exactly one expiration block per rule"
     days = re.fullmatch(r"\s*days\s*=\s*(\d+)\s*", expirations[0])
     assert days is not None, "the expiry must be a plain number of days, never a variable"
-    assert 1 <= int(days.group(1)) <= PROMISED_MAX_DAYS
+    return int(days.group(1))
 
 
-def test_the_expiry_rule_is_enabled_and_covers_the_whole_bucket() -> None:
-    rules = lifecycle()
+def test_objects_expire_within_the_promised_90_days() -> None:
+    rules = rule_blocks()
 
-    assert re.search(r'\bstatus\s*=\s*"Enabled"', rules)
-    assert re.search(r"\bfilter\s*\{\s*\}", rules), "an empty filter: every object"
+    assert rules
+    for rule in rules:
+        assert 1 <= expiry_days(rule) <= MAX_RULE_DAYS
+
+
+def test_the_whole_bucket_rule_is_enabled_and_covers_every_object() -> None:
+    whole_bucket = [rule for rule in rule_blocks() if re.search(r"\bfilter\s*\{\s*\}", rule)]
+
+    assert len(whole_bucket) == 1, "one rule with an empty filter: every object"
+    assert re.search(r'\bstatus\s*=\s*"Enabled"', whole_bucket[0])
+    assert expiry_days(whole_bucket[0]) <= MAX_RULE_DAYS
+
+
+def test_export_requests_expire_after_a_day() -> None:
+    requests = [rule for rule in rule_blocks() if 'prefix = "requests/"' in rule]
+
+    assert len(requests) == 1
+    assert expiry_days(requests[0]) == 1
 
 
 def test_noncurrent_versions_expire_after_one_day() -> None:

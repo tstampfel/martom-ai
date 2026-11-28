@@ -20,7 +20,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
         └── job task: `martom sync` → `martom extract` → `martom embed`
               started by EventBridge Scheduler at 01:00 Europe/Sarajevo, every night (the sync's rolling refresh replaced the weekly full run, #135)
         └── job task: `martom purge-chats` (chats idle > 90 days), at 00:15 Europe/Sarajevo, every night (#129)
-        └── chat export task (by hand only): `martom export-chats` → private S3 bucket, objects deleted after 90 days (#158)
+        └── chat export task (by hand only): `martom export-chats` → private S3 bucket, objects deleted within 90 days (#158)
 ```
 
 | File | What it holds |
@@ -34,7 +34,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
 | `secrets.tf` | Secrets Manager: the RDS-managed master password (Terraform knows only its ARN), `app` (JSON, set by hand) |
 | `ecr.tf`, `ecs.tf` | Image repository, cluster, API service, job task definition, env var mapping |
 | `scheduler.tf` | The nightly sync and chat clean-up schedules, their dead-letter queue |
-| `chat_export.tf` | The private bucket for scrubbed chat exports (EU, no public access, SSE-S3, 90-day expiry), the export task and its write-only role |
+| `chat_export.tf` | The private bucket for scrubbed chat exports (EU, no public access, SSE-S3, 89-day expiry so nothing outlives 90 days), the export task and its least-privilege role |
 
 Agents only write and validate this code (`terraform fmt -check`, `terraform init -backend=false`, `terraform validate`). Tomislav runs `init`, `plan` and `apply` with his own SSO profile; `terraform apply` is blocked for agents in `.claude/settings.json`.
 
@@ -130,12 +130,13 @@ Then start the pipeline once by hand instead of waiting for the night: `run_once
 ### 6. Start the API and turn on the schedules
 
 ```sh
-cp infra/terraform.tfvars.example infra/terraform.tfvars   # git-ignored; sets schedules_enabled = true
+# In infra/terraform.tfvars (made in step 2), change schedules_enabled to true.
+# Don't copy the example over it again: that would put back the fake chat_export_admin_arns.
 terraform -chdir=infra apply              # api_desired_count back to its default, 1; schedules ENABLED
 curl -s "$(terraform -chdir=infra output -raw api_url)/health"
 ```
 
-`/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}` (with Redis down: 200, `"status": "degraded"`, `"redis": "error"`; with Postgres down: 503). Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on.
+`/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}` (with Redis down: 200, `"status": "degraded"`, `"redis": "error"`; with Postgres down: 503). Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on and the export bucket keeps your real admin ARNs.
 
 Then do the LangSmith steps (EU organization and key, EU endpoint check, 14-day trace retention): see "Chat retention and LangSmith traces" below; they are launch steps (#33).
 
@@ -193,7 +194,7 @@ On-demand eu-central-1 list prices, checked 27 Nov 2026 from memory of the AWS p
 | CloudWatch Logs | ~1 GB ingested | ~$1 |
 | ECR | ≤ 10 images | ~$0.50 |
 | CloudFront | always-free tier: 1 TB and 10 M requests | $0 |
-| S3, chat export bucket | a few MB of JSON, deleted after 90 days | ~$0 |
+| S3, chat export bucket | a few MB of JSON, deleted within 90 days | ~$0 |
 | **Total** | | **~$56** |
 
 What isn't here: NAT gateway (~$35, avoided with public IPs on the tasks), Multi-AZ RDS (double the RDS line), Container Insights, WAF. Claude, Cohere and LangSmith are billed separately (see `docs/PLAN.md`, Running costs).
@@ -320,22 +321,30 @@ Real customer chats are never committed to the public repo, even scrubbed (Tomis
 
 - the bucket is in `eu-central-1` like the rest of the stack, so exports never leave the EU;
 - all public access is blocked, objects are encrypted (SSE-S3), and the bucket policy refuses any request that isn't HTTPS;
-- every object is deleted **90 days** after it was written. The Privatnost page promises "Očišćeni primjeri razgovora: najduže 90 dana", so the expiry is a literal in `chat_export.tf`, and `tests/test_infra_chat_export.py` fails if it is ever above 90. Versioning is off; if someone turns it on, old versions are deleted after 1 day;
+- every object is deleted **within 90 days** of being written. The Privatnost page promises "Očišćeni primjeri razgovora: najduže 90 dana"; S3 rounds an expiry up to the next midnight UTC and deletes asynchronously, so the rule says **89** days. It is a literal in `chat_export.tf`, and `tests/test_infra_chat_export.py` fails if it is ever above 89. Versioning is off; if someone turns it on, old versions are deleted after 1 day;
 - only the principals in `chat_export_admin_arns` (terraform.tfvars) and the export task role may use the bucket; the bucket policy denies everyone else, whatever their IAM policies say. List your IAM user ARN and, if you sign in with SSO, the permission set's role ARN (`aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/`), because `aws:PrincipalArn` is the role, not the session. **The principal that runs `terraform apply` must be in the list**, or Terraform itself is refused on the bucket. If you lock yourself out, sign in as the account root user and delete the bucket policy (S3 always allows the root user to do that), then fix the list and apply again;
-- the export task role may only `PutObject` under `chats/`: it can't list, read or delete earlier exports.
+- the export task role may only `PutObject` under `chats/` and read and delete export requests under `requests/`: it can't list, read or delete earlier exports.
 
-The database is reachable only inside the VPC, so the export runs as a one-off task. Each run takes the thread ids to export (from the chat's LangSmith trace metadata, for example); a thread id lets its holder continue that chat, so keep them out of tickets and chats:
+The database is reachable only inside the VPC, so the export runs as a one-off task. **Never pass thread ids, names or addresses on the task's command line:** a command override is stored in CloudTrail's RunTask event (and shown by `DescribeTasks`), outside the scrub and outside the 90-day promise, and a thread id lets its holder continue that chat. Put them in a request file instead, upload it under `requests/`, and give the task only the object's key; the task reads it, deletes it at once (even if it is malformed), and a lifecycle rule removes any request it never read after a day:
 
 ```sh
+# Write the request outside every git checkout. Find thread ids in the chat's LangSmith trace metadata.
+cat > "$HOME/export-request.json" <<'JSON'
+{"thread_ids": ["<thread id 1>", "<thread id 2>"], "names": ["<order form name>"], "addresses": ["<order form address>"]}
+JSON
+bucket="$(terraform -chdir=infra output -raw chat_export_bucket)"
+key="requests/$(date -u +%Y%m%dT%H%M%S).json"
+aws s3 cp "$HOME/export-request.json" "s3://$bucket/$key" && rm "$HOME/export-request.json"
+
 aws ecs run-task \
   --cluster "$(terraform -chdir=infra output -raw ecs_cluster)" \
   --task-definition "$(terraform -chdir=infra output -raw chat_export_task_definition)" \
   --launch-type FARGATE \
   --network-configuration "$(terraform -chdir=infra output -raw job_network_configuration)" \
-  --overrides "$(jq -nc --args '{containerOverrides: [{name: "chat-export", command: (["martom", "export-chats"] + $ARGS.positional)}]}' THREAD_ID_1 THREAD_ID_2)"
+  --overrides "$(jq -nc --arg key "$key" '{containerOverrides: [{name: "chat-export", command: ["martom", "export-chats", "--request", $key]}]}')"
 ```
 
-Add `--name "<name>"` / `--address "<address>"` after the ids when the chat has an order form, so those values are scrubbed too. The task prints only counts (`exported 2 chats to s3://... (0 not found)`), never ids or chat text; its log is in `/ecs/martom-production/job` under the `chat-export` prefix. Each chat lands in `s3://<chat_export_bucket>/chats/<date>/<thread hash>.json` with the customer's and the advisor's messages only.
+`names` and `addresses` are optional (the order form's values, when the chat has one). The task prints only counts (`exported 2 chats to s3://... (0 not found)`), never ids, names or chat text; its log is in `/ecs/martom-production/job` under the `chat-export` prefix. Each chat lands in `s3://<chat_export_bucket>/chats/<date>/<thread hash>.json` with the customer's and the advisor's messages only.
 
 Then download and **read** an export before you use it: the scrub has known misses (listed in `src/martom/evals/scrub.py`):
 
@@ -343,7 +352,7 @@ Then download and **read** an export before you use it: the scrub has known miss
 aws s3 cp --recursive "s3://$(terraform -chdir=infra output -raw chat_export_bucket)/chats/" "$HOME/martom-chat-exports/"
 ```
 
-Keep the copy outside every git checkout (the command refuses `--out` inside one for the same reason) and delete it when you're done. A case worth keeping in the eval set is rewritten by hand and approved before it goes into `evals/` (`evals/README.md`). Against a local database, `uv run martom export-chats THREAD_ID --out ~/martom-chat-exports` writes to a folder instead.
+Keep the copy outside every git checkout (the command refuses `--out` inside one for the same reason) and delete it when you're done. A case worth keeping in the eval set is rewritten by hand and approved before it goes into `evals/` (`evals/README.md`). Against a local database, `uv run martom export-chats --out ~/martom-chat-exports --name "<name>" -- THREAD_ID...` writes to a folder instead. Put the ids after `--`: a thread id can start with "-" (about 1 in 64), which would otherwise read as an option.
 
 ## Notes
 

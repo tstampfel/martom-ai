@@ -10,16 +10,18 @@
 #   any request that isn't HTTPS;
 # - versioning off (never enabled here), with noncurrent versions expired after 1 day
 #   anyway, in case someone turns it on by hand;
-# - every object deleted 90 days after it was written. The Privatnost page promises
-#   "Očišćeni primjeri razgovora: najduže 90 dana" (canvas 3aab), so the expiry is a
-#   literal here, never a variable, and tests/test_infra_chat_export.py fails if it is
-#   ever above 90;
+# - every object deleted within 90 days of being written (the rule says 89: S3 rounds up
+#   to midnight UTC). The Privatnost page promises "Očišćeni primjeri razgovora: najduže
+#   90 dana" (canvas 3aab), so the expiry is a literal here, never a variable, and
+#   tests/test_infra_chat_export.py fails if it is ever above 89;
 # - only Tomislav (var.chat_export_admin_arns) and the export task role may touch it: the
 #   bucket policy denies every other principal, whatever IAM says.
 #
 # Production runs the export as a one-off task (README, "Exporting chats"), because the
-# database is reachable only inside the VPC. The task role may only PUT under chats/; it
-# can't list, read or delete what earlier exports wrote.
+# database is reachable only inside the VPC. Which threads to export comes from a request
+# object Tomislav uploads under requests/ (never a command override, which CloudTrail
+# logs). The task role may read and delete requests/ and only PUT under chats/; it can't
+# list, read or delete what earlier exports wrote.
 
 locals {
   chat_export_bucket = "${local.prefix}-chat-export-${local.account_id}"
@@ -65,10 +67,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "chat_export" {
 
     filter {}
 
-    # The published promise: at most 90 days. Never raise it without changing the
-    # Privatnost page first (tests/test_infra_chat_export.py checks it).
+    # The published promise: at most 90 days. S3 rounds an expiry up to the next
+    # midnight UTC and deletes asynchronously, so 89 keeps an object under 90 days
+    # (review R1-7). Never raise it without changing the Privatnost page first
+    # (tests/test_infra_chat_export.py checks it).
     expiration {
-      days = 90
+      days = 89
     }
 
     # Only matters if versioning is ever turned on: a deleted or overwritten export
@@ -79,6 +83,21 @@ resource "aws_s3_bucket_lifecycle_configuration" "chat_export" {
 
     abort_incomplete_multipart_upload {
       days_after_initiation = 1
+    }
+  }
+
+  # Export requests (thread ids, order-form names and addresses) are deleted by the task
+  # as soon as it has read them; one it never read goes after a day.
+  rule {
+    id     = "expire-export-requests"
+    status = "Enabled"
+
+    filter {
+      prefix = "requests/"
+    }
+
+    expiration {
+      days = 1
     }
   }
 }
@@ -150,6 +169,13 @@ data "aws_iam_policy_document" "chat_export_write" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.chat_export.arn}/chats/*"]
   }
+
+  # Read the export request Tomislav uploaded, then delete it (review R1-5: thread ids and
+  # names in a command override would sit in CloudTrail's RunTask events).
+  statement {
+    actions   = ["s3:GetObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.chat_export.arn}/requests/*"]
+  }
 }
 
 resource "aws_iam_role_policy" "chat_export_write" {
@@ -178,8 +204,8 @@ resource "aws_ecs_task_definition" "chat_export" {
       name      = "chat-export"
       image     = local.image
       essential = true
-      # Placeholder: every run overrides the command with the thread ids to export
-      # (README, "Exporting chats").
+      # Placeholder: every run overrides the command with
+      # `martom export-chats --request requests/<file>.json` (README, "Exporting chats").
       command = ["martom", "export-chats", "--help"]
 
       environment = [

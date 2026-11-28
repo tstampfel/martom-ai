@@ -429,6 +429,11 @@ def test_address_matches_ignores_product_text(text: str) -> None:
         ("Ja sam Ana Anić.", ["Ana Anić"]),
         ("Ime: Marko Marić, Čitluk", ["Marko Marić"]),
         ("ja sam iz Čitluka", []),
+        # R1-2: only the name, never the words after it.
+        ("Zovem se Ivan zanima me cijena za 20 metara ograde", ["Ivan"]),
+        ("zovem se pero i trebam panel", ["pero"]),
+        ("Ime: Marko Marić trebam panel 153 cm", ["Marko Marić"]),
+        ("Ime: [ime]", []),
         ("Panel 3D 153 cm", []),
     ],
 )

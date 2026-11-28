@@ -50,7 +50,7 @@ output "db_password_secret_arn" {
 }
 
 output "chat_export_bucket" {
-  description = "Private bucket `martom export-chats` writes scrubbed chats to (objects expire after 90 days)."
+  description = "Private bucket `martom export-chats` writes scrubbed chats to (objects deleted within 90 days)."
   value       = aws_s3_bucket.chat_export.bucket
 }
 

@@ -34,7 +34,7 @@ Example line (fields as `martom.evals.retrieval.load_questions` reads them):
 
 To study what customers really asked, export the chats with `martom export-chats`. It passes
 every message through `martom.evals.scrub.scrub_personal_data` and writes only to the
-private S3 bucket (in the EU, objects deleted after 90 days) or to a folder outside every git
+private S3 bucket (in the EU, objects deleted within 90 days) or to a folder outside every git
 checkout. It refuses a folder inside this repo. See `infra/README.md`, "Exporting chats". The
 scrub misses some things (its docstring lists them), so read an export before you use it, and
 turn anything worth keeping into a hand-written case as above.

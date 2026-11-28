@@ -33,6 +33,9 @@
 # | LANGSMITH_API_KEY        | secret app:LANGSMITH_API_KEY      | secret app:LANGSMITH_API_KEY|
 #
 # AGENT_MODEL (Settings.agent_model, M4-3) is the advisor's Sonnet model; only the API reads it.
+#
+# CHAT_EXPORT_BUCKET (#158) is set only in the chat export task, in chat_export.tf, next to
+# the bucket it names; neither the API nor the job reads it.
 
 data "aws_caller_identity" "current" {}
 

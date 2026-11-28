@@ -111,3 +111,36 @@ def test_command_writes_to_the_out_folder(
     assert "1 not found" in out
     assert CHAT not in out and UNKNOWN not in out
     assert len(list(tmp_path.rglob("*.json"))) == 1
+
+
+def test_command_exports_the_threads_of_a_request_object(
+    database_url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import boto3
+
+    asyncio.run(seed(database_url))
+
+    class RequestS3(FakeS3):
+        def __init__(self) -> None:
+            super().__init__()
+            self.requests = {"requests/r1.json": json.dumps({"thread_ids": [CHAT]}).encode()}
+
+        def get_object(self, **kwargs: Any) -> dict[str, Any]:
+            data = self.requests[kwargs["Key"]]
+            return {"Body": type("Body", (), {"read": lambda _self: data})()}
+
+        def delete_object(self, **kwargs: Any) -> dict[str, Any]:
+            del self.requests[kwargs["Key"]]
+            return {}
+
+    s3 = RequestS3()
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("CHAT_EXPORT_BUCKET", "bucket")
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: s3)
+
+    assert main(["export-chats", "--request", "requests/r1.json"]) == 0
+
+    [key] = s3.objects
+    assert key.endswith(f"/{thread_log_id(CHAT)}.json")
+    assert s3.requests == {}
+    assert CHAT not in capsys.readouterr().out
