@@ -508,13 +508,31 @@ def _topic_notes(understanding: Understanding, spec: FenceSpec) -> list[str]:
 
 
 def anchors_question(understanding: Understanding, spec: FenceSpec) -> bool:
-    """The customer asked whether anchors come with the posts, about a fence (#171)."""
-    return understanding.asks_anchors_included and _fence_topic_applies(understanding, spec)
+    """The customer asked whether anchors come with the fence posts (#171).
+
+    The flag is fence-scoped by its own description, so any in-scope turn counts, a
+    product turn too ("dolaze li ankeri uz stupove?" reads as a product question; review
+    R2-1); an out-of-scope one only with a fence in the chat.
+    """
+    if not understanding.asks_anchors_included:
+        return False
+    return understanding.in_scope or _fence_context(understanding, spec)
+
+
+def drilling_question(understanding: Understanding, spec: FenceSpec) -> bool:
+    """The customer asked about drilling for fence posts, with the same gate as the
+    drilling notes, so a mis-flagged drill-bit product question isn't checked as one."""
+    return understanding.asks_drilling and _fence_topic_applies(understanding, spec)
 
 
 def _fence_context(understanding: Understanding, spec: FenceSpec) -> bool:
-    """A fence is in this chat: a fence request now, or a fence spec from earlier."""
-    return spec.kind is not None or understanding.request.startswith("fence_")
+    """A fence is in this chat: a fence request or a gate question now, or a fence spec
+    from earlier (a gate is part of a fence, so "kapija i montaža" gets both texts)."""
+    return (
+        spec.kind is not None
+        or understanding.request.startswith("fence_")
+        or understanding.asks_gate
+    )
 
 
 def _fence_topic_applies(understanding: Understanding, spec: FenceSpec) -> bool:

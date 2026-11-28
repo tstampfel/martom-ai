@@ -8,6 +8,8 @@ from martom.agent import copy
 from martom.agent.understand import (
     FenceSpec,
     Understanding,
+    anchors_question,
+    drilling_question,
     parse_length_m,
     plan_turn,
     total_length_text,
@@ -378,3 +380,21 @@ def test_drilling_texts_pair_each_anchor_with_its_bit() -> None:
     assert "anker vijak M8×70" in copy.DRILLING_FOOT_PLATE
     assert "ø8 mm" in copy.DRILLING_FOOT_PLATE
     assert "10 mm" not in copy.DRILLING_FOOT_PLATE
+
+
+def test_anchors_question_on_a_product_turn_without_a_fence_counts() -> None:
+    # Review R2-1: "dolaze li ankeri uz stupove?" may be classed as a product question.
+    seen = understanding(request="product", search_query="ankeri", asks_anchors_included=True)
+    assert anchors_question(seen, FenceSpec())
+
+
+def test_gate_and_installation_out_of_scope_get_both_texts() -> None:
+    # A gate is part of a fence, so the installation text comes with it.
+    plan = plan_for(in_scope=False, request="other", asks_gate=True, asks_installation=True)
+    assert plan.answer == f"{copy.GATE} {copy.INSTALLATION}"
+
+
+def test_a_mis_flagged_drilling_product_turn_is_not_a_drilling_turn() -> None:
+    seen = understanding(request="product", search_query="svrdlo", asks_drilling=True)
+    assert not drilling_question(seen, FenceSpec())
+    assert drilling_question(seen, FenceSpec(kind="panel"))

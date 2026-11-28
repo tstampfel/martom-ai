@@ -95,6 +95,7 @@ from martom.agent.understand import (
     Understanding,
     anchors_question,
     default_panel_width,
+    drilling_question,
     plan_turn,
     update_spec,
 )
@@ -259,7 +260,7 @@ def build_graph(
             "cart": [],
             "cart_note": False,
             "anchors_question": anchors_question(understanding, spec),
-            "drilling_question": understanding.asks_drilling,
+            "drilling_question": drilling_question(understanding, spec),
             "rewrite_failed": False,
             "chips": plan.chips.model_dump(mode="json") if plan.chips else None,
             "notes": plan.notes,

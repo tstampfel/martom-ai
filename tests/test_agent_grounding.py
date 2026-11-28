@@ -876,3 +876,28 @@ def test_the_installation_radius_is_known_only_in_its_phrase() -> None:
     assert check_grounding("Montažu radimo u krugu oko 40 km.", Facts()).ok
     assert not check_grounding("Trebate 40 stubova.", Facts()).ok
     assert not check_grounding("Montaža u krugu oko 40 km košta 53,00 KM.", facts()).ok
+
+
+def test_both_anchors_in_one_sentence_are_checked_pair_by_pair() -> None:
+    right = "Tiplo anker M8×80 – svrdlo ø10 mm; anker vijak M8×70 – svrdlo ø8 mm."
+    swapped = "Tiplo anker M8×80 – svrdlo ø8 mm; anker vijak M8×70 – svrdlo ø10 mm SDS."
+    assert check_grounding(right, Facts()).ok
+    problems = check_grounding(swapped, Facts()).problems
+    assert sum("wrong drill bit" in problem for problem in problems) == 2
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Anker vijci M8×80 traže svrdlo ø8 mm.",
+        "Anker vijak M8×70 / M8×80 → svrdlo ø8 mm.",
+        "Za anker-vijak M8×70 uzmite svrdlo ø8 mm.",
+    ],
+)
+def test_vijak_spellings_pass_with_the_8_mm_bit(text: str) -> None:
+    assert check_grounding(text, Facts()).ok, check_grounding(text, Facts()).problems
+
+
+def test_stairs_are_not_a_fence_sentence() -> None:
+    # "stube" (stairs) is not "stub" (a post): a drill bit for them is a product answer.
+    assert check_grounding("Za stube uzmite svrdlo 8 mm.", Facts(), known_numbers=[8]).ok

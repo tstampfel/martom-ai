@@ -232,8 +232,8 @@ _COPY_PHRASES = re.compile(
 # "tiplo anker M8×80", "anker vijak M8×70 (može i M8×80)": only the sizes are taken out,
 # so the anchor words stay for the rough-count check ("desetak tiplo ankera").
 _ANCHOR_NAME = re.compile(
-    rf"\banker\w*\s+(?:vija?k\w*\s+)?{_M8}"
-    rf"(?:\s*\(?\s*(?:ili|može\s+i|moze\s+i)\s+{_M8}\s*\)?)?",
+    rf"\banker\w*(?:\s+|-)(?:vij[a-z]*\s+)?{_M8}"
+    rf"(?:\s*\(?\s*(?:ili|može\s+i|moze\s+i|/)\s*{_M8}\s*\)?)?",
     re.IGNORECASE,
 )
 _M8_SIZE = re.compile(_M8, re.IGNORECASE)
@@ -601,9 +601,16 @@ _ANCHOR_BIT = re.compile(
     re.IGNORECASE,
 )
 # A sentence about fence posts or their anchors (so "svrdlo za beton 8 mm" is not).
-_ANCHOR_CONTEXT = re.compile(r"anker|tipl|stup|stub|ograd|pločic|plocic|\bstop", re.IGNORECASE)
-_TIPLO = re.compile(r"tipl|M8\s*[×xX]\s*80\b", re.IGNORECASE)
-_VIJAK = re.compile(r"vija?k|vijk|M8\s*[×xX]\s*70\b", re.IGNORECASE)
+# "stube" (stairs) is not a post.
+_ANCHOR_CONTEXT = re.compile(
+    r"anker|tipl|\bstup|\bstub(?!e\b)|ograd|pločic|plocic|\bstop", re.IGNORECASE
+)
+# Anchor mentions, by type: the words first; a bare M8×70 / M8×80 counts only in a sentence
+# without them ("anker vijak M8×70 ili M8×80" is one vijak, not a vijak and a tiplo).
+_TIPLO_WORD = re.compile(r"\btipl\w*", re.IGNORECASE)
+_VIJAK_WORD = re.compile(r"\bvija?k\w*|\bvij[ck]\w*|anker-vij\w*", re.IGNORECASE)
+_TIPLO_SIZE = re.compile(r"M8\s*[×xX]\s*80\b", re.IGNORECASE)
+_VIJAK_SIZE = re.compile(r"M8\s*[×xX]\s*70\b", re.IGNORECASE)
 # The bit each anchor takes (Toni, 28 Nov 2026): tiplo anker M8×80 → ø10 mm SDS, anker
 # vijak M8×70 / M8×80 → ø8 mm.
 _TIPLO_BIT = "10"
@@ -623,29 +630,45 @@ def _check_drill_bits(text: str, *, drilling: bool) -> list[str]:
     for sentence in _SENTENCE_END.split(text):
         if "svrdl" not in sentence.lower():
             continue
-        bits = {m.group("marked") or m.group("plain") for m in _ANCHOR_BIT.finditer(sentence)}
+        bits = [
+            (m.start(), m.group("marked") or m.group("plain"))
+            for m in _ANCHOR_BIT.finditer(sentence)
+        ]
         if not bits:
             continue
-        # "anker vijak M8×70 ili M8×80" names a vijak; only "tipl" or a lone M8×80 is tiplo.
-        vijak = bool(_VIJAK.search(sentence))
-        tiplo = "tipl" in sentence.lower() or (not vijak and bool(_TIPLO.search(sentence)))
+        mentions = _anchor_mentions(sentence)
         quoted = sentence.strip()
-        if not (tiplo or vijak):
+        if not mentions:
             if drilling or _ANCHOR_CONTEXT.search(sentence):
                 problems.append(
                     f"sentence '{quoted}' gives a drill bit size without the anchor type "
                     "(tiplo anker M8x80 → ø10 mm, anker vijak M8x70 → ø8 mm)"
                 )
             continue
-        if tiplo and vijak:
-            continue  # both anchors in one sentence: can't tell which bit is whose
-        right = _TIPLO_BIT if tiplo else _VIJAK_BIT
-        if bits != {right}:
-            anchor = "tiplo anker M8x80" if tiplo else "anker vijak M8x70/M8x80"
-            problems.append(
-                f"sentence '{quoted}' gives the wrong drill bit: {anchor} takes ø{right} mm"
-            )
+        for position, bit in bits:
+            # Each bit belongs to the nearest anchor named before it (or the first after
+            # it), so "tiplo … ø10 mm; anker vijak … ø8 mm" is checked pair by pair
+            # (review note on R2).
+            before = [kind for at, kind in mentions if at < position]
+            kind = before[-1] if before else mentions[0][1]
+            right = _TIPLO_BIT if kind == "tiplo" else _VIJAK_BIT
+            if bit != right:
+                anchor = "tiplo anker M8x80" if kind == "tiplo" else "anker vijak M8x70/M8x80"
+                problems.append(
+                    f"sentence '{quoted}' gives the wrong drill bit: {anchor} takes ø{right} mm"
+                )
     return problems
+
+
+def _anchor_mentions(sentence: str) -> list[tuple[int, str]]:
+    """(position, "tiplo" | "vijak") for each anchor the sentence names, in order."""
+    words = [(m.start(), "tiplo") for m in _TIPLO_WORD.finditer(sentence)]
+    words += [(m.start(), "vijak") for m in _VIJAK_WORD.finditer(sentence)]
+    if words:
+        return sorted(words)
+    sizes = [(m.start(), "tiplo") for m in _TIPLO_SIZE.finditer(sentence)]
+    sizes += [(m.start(), "vijak") for m in _VIJAK_SIZE.finditer(sentence)]
+    return sorted(sizes)
 
 
 def _decimal(value: Any) -> Decimal | None:

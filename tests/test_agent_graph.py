@@ -1183,3 +1183,23 @@ async def test_the_prompt_no_longer_tells_the_model_gates_are_out_of_scope() -> 
     prompt = system_prompt(chat)
     assert "Gates (made to order)" in prompt
     assert "Never say Martom doesn't do gates or installation" in prompt
+
+
+async def test_anchors_question_classed_as_a_product_still_gets_the_answer() -> None:
+    # Review R2-1: no fence in the chat, request "product".
+    graph = make_graph(
+        Recorder(
+            understanding(request="product", search_query="ankeri", asks_anchors_included=True)
+        ),
+        [AIMessage("Imamo ankere u ponudi.")],
+    )
+    result = await ask(graph, "Dolaze li ankeri uz stupove?")
+    assert result["answer"] == f"Imamo ankere u ponudi.\n\n{copy.ANCHORS_SOLD_SEPARATELY}"
+
+
+async def test_the_prompt_says_anchors_are_sold_separately() -> None:
+    graph, chat = recording_graph(
+        Recorder(understanding(request="product")), [AIMessage("Imamo panele.")]
+    )
+    await ask(graph, "Imate li panele?")
+    assert "Anchors are sold separately, never included with the posts" in system_prompt(chat)
