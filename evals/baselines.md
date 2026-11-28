@@ -33,6 +33,7 @@ recall and MRR.
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, Haiku filters → hybrid → rerank-v5.0-fast, batch parser (no time limit), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #16 final, m3-4-query-rerank @ e5cdbd8 (Tomislav's run) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0 | **M3-4 baseline**: full, rerank-v5.0-fast, live parser (2.5 s), 0/14 parse fallbacks | 14 lines (seed-01 … seed-14) | 13 | 0.891 | 0.891 | 0.872 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #112, branch m3-4b-manual-products-search (review round 1 fixes, agent run) | 2,570 active listings, extraction run 4, plus manual_products.toml (1 entry) | keyword | 15 lines (+ seed-15 anker M8x70, expects the manual entry) | 14 | 0.685 | 0.756 | 0.648 | 0.000 (0 of 2) |
+| 2026-11-27 | main after #133 (Tomislav's run, data/eval-20261127-b.txt, not in the repo) | 2,570 active listings, extraction run 4, embedded with embed-multilingual-v3.0, plus manual_products.toml (1 entry) | **baseline for #121**: full, Haiku filters → hybrid → rerank-v5.0-fast, live parser (2.5 s), 0/45 parse fallbacks | 15 lines (seed-01 … seed-15) | 14 | 0.899 | 0.899 | 0.881 | not computed (eval_retrieve.py) |
 | 2026-11-27 | #121, branch m3-4c-regional-synonyms (agent run), query expansion only: the catalogue's search_text has no regional synonyms yet (no re-extraction) | 2,570 active listings, extraction run 4, plus manual_products.toml (1 entry) | keyword + draft synonym list (now src/martom/search/synonyms.md) | 15 lines (seed-01 … seed-15) | 14 | 0.726 | 0.821 | 0.695 | 0.000 (0 of 2) |
 | pending | #121, Tomislav's run after `martom extract --all` + `martom embed` | 2,570 active listings, extraction prompt m3-4c-v1 (regional_synonyms) | hybrid, hybrid → rerank-v5.0-fast, full (scripts/eval_retrieve.py) | 15 lines | 14 | — | — | — | — |
 
@@ -219,5 +220,24 @@ reviewed list's query expansion alone. The same eval with expansion switched off
 - `seed-05-zatezac`: RR 0.33 → **1.00**. `zatezač: španer` puts the BOM tensioner 18129143 first.
 - `seed-04` and `seed-11` swap places 2 and 3 in their top 3; their scores don't change.
 
-The hybrid and full-pipeline numbers (the issue's done-when, against the M3-4 baseline 0.891 /
-0.891 / 0.872) need Tomislav's keyed run after re-extraction; the "pending" row is for them.
+The hybrid and full-pipeline numbers (the issue's done-when, against the main-after-#133 baseline
+0.899 / 0.899 / 0.881, see below) need Tomislav's keyed run after re-extraction; the "pending" row
+is for them.
+
+### Main after #133, full pipeline (Tomislav's run, 2026-11-27)
+
+`scripts/eval_retrieve.py` on main after #133 (manual products in search), live parser, rerank-v5.0-fast,
+output in `data/eval-20261127-b.txt` (not in the repo). This is the baseline #121's eval compares
+against.
+
+| Measure | Result |
+| --- | --- |
+| recall@5 / recall@10 / MRR | 0.899 / 0.899 / 0.881 (15 lines, 14 scored) |
+| seed-15 (M8×70 anchor, manual product) | in the top 5 |
+| Parse fallbacks | 0/45 |
+| Timed run, total | p50 1,719 ms, **p95 2,515 ms** (15 ms over the 2.5 s target), max 2,634 ms |
+| Haiku parse alone | p95 2,757 ms, 2/15 over 2.5 s |
+| Rerank | max 1,170 ms |
+
+Tomislav: the p95 over 2.5 s is Haiku variance, not a regression; re-measure after #17 (Redis
+cache).
