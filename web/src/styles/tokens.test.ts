@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // Read the file from disk: Vitest does not process CSS imports.
@@ -93,6 +94,24 @@ describe('design tokens', () => {
   // WCAG asks 3:1; it is 4.49:1. Never use it below 24 px (18.66 px bold).
   it('--color-red-on-dark on --color-charcoal reaches the large-text 3:1', () => {
     expect(contrast(expected['--color-red-on-dark'], expected['--color-charcoal'])).toBeGreaterThanOrEqual(3)
+  })
+
+  // 4.49:1 passes only for large text, so the token may only colour the
+  // slogan's accent word (44 px Outfit 800). A new use needs large text and a
+  // new entry here.
+  it('uses --color-red-on-dark only for the slogan accent', () => {
+    const srcDir = join(import.meta.dirname, '..')
+    const uses: string[] = []
+    for (const file of readdirSync(srcDir, { recursive: true }) as string[]) {
+      if (!/\.(css|tsx?)$/.test(file) || file.endsWith('tokens.css') || file.endsWith('.test.ts')) continue
+      // Comments may name the token; only real uses count.
+      const text = readFileSync(join(srcDir, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      for (const match of text.matchAll(/([^{}]*)\{[^}]*var\(--color-red-on-dark\)/g)) {
+        uses.push(`${file}: ${match[1].trim()}`)
+      }
+      if (/\.tsx?$/.test(file) && text.includes('var(--color-red-on-dark)')) uses.push(`${file}: inline style`)
+    }
+    expect(uses).toEqual(['components/StartScreen.css: .slogan__accent'])
   })
 
   it('keeps touch targets at least 44 px', () => {
