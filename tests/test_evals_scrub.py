@@ -50,12 +50,33 @@ def test_removes_bih_and_hr_phone_numbers(phone: str) -> None:
         ("moj broj je 61 000 000", "moj broj je [telefon]"),
         ("Tel: 61/000-000", "Tel: [telefon]"),
         ("mob. 91 000 0000", "mob. [telefon]"),
+        ("broj telefona je 61000000", "broj telefona je [telefon]"),
+        ("Kontakt: 61 000 000", "Kontakt: [telefon]"),
+        ("broj je 61/000-000", "broj je [telefon]"),
     ],
 )
 def test_removes_a_number_without_its_leading_zero_after_a_phone_word(
     text: str, expected: str
 ) -> None:
     assert scrub_personal_data(text) == expected
+
+
+# A listing id is 7-9 digits, the shape of a phone without its 0 (R2-1): after a bare
+# "broj" or a listing word it stays.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "artikal broj 61234567",
+        "oglas broj 61234567",
+        "šifra 61234567",
+        "broj 51234567 je artikal",
+        "broj je 61234567",
+        "Kontakt artikal 612345678",
+        "Link: https://martom.olx.ba/artikal/panel-nylofor-3d-61234567",
+    ],
+)
+def test_keeps_listing_ids_after_broj_and_listing_words(text: str) -> None:
+    assert scrub_personal_data(text) == text
 
 
 @pytest.mark.parametrize("shop", ["036 651 427", "036/651-427", "+387 36 651 427", "(036) 651 427"])
@@ -97,6 +118,11 @@ def test_keeps_the_shops_public_number(shop: str) -> None:
         "Cijena 1290 KM, artikal 51234567, 7 komada.",
         "Ja sam iz Čitluka, trebam ogradu.",
         "Broj artikla je 61234567.",
+        "Datum 03 12 2026",
+        "dostava u Mostar 3 dana",
+        "dostava u Mostar 15. decembra",
+        "Šaljemo na gradilište za 2 sata.",
+        "Kod 12345 Panel",
     ],
 )
 def test_leaves_product_text_sizes_prices_ids_and_dates_alone(text: str) -> None:

@@ -6,8 +6,11 @@ through `scrub_personal_data` first. It replaces:
 
 - phone numbers with "[telefon]": BiH and HR numbers with a leading 0, "(061)", "+387",
   "00387" or "387", grouped with spaces, "/", "-" or "."; and a number without its 0
-  right after a phone word ("broj je 61 ...", "tel:", "mob."). Martom's public shop number
-  036 651 427 stays. A date (01/12/2026, 01.12.2026) is never a phone;
+  right after a phone word ("moj broj je ...", "broj telefona", "tel:", "mob."), or after
+  a bare "broj" / "kontakt" only when its digits are grouped like a phone ("61 000 000").
+  An OLX listing id (7-9 digits in one run: "artikal broj 61234567") always stays.
+  Martom's public shop number 036 651 427 stays. A date (01/12/2026, 03 12 2026) is never
+  a phone;
 - e-mail addresses with "[email]", except Martom's own (martom-bekaert.com);
 - names with "[ime]": the names the customer typed into the order form (pass them as
   `names`; matched ignoring case, accents, "dj" for "đ" and Bosnian endings) and names
@@ -25,10 +28,12 @@ reach the eval set unchanged, or the eval measures something else.
 
 Known misses, so the human reading a promoted chat knows what to look for: a name the
 customer gives without an intro and without the order form ("Pozdrav, Pero"), a street
-written without a house number, a label or a delivery verb, foreign phone numbers, and
-numbers written as words. Pass the order form's values whenever there is one, and still
-read a promoted chat before committing it (`tests/test_fixture_privacy.py` keeps guarding
-the committed files). The function only ever removes text.
+with no label, street word or delivery verb, even with a house number ("Izmišljena 12,
+Čitluk"), a phone without its 0 written in one run after a bare "broj" (it looks like a
+listing id), foreign phone numbers, and numbers written as words. Pass the order form's
+values whenever there is one, and still read a promoted chat before committing it
+(`tests/test_fixture_privacy.py` keeps guarding the committed files). The function only
+ever removes text.
 """
 
 import re
@@ -66,14 +71,26 @@ _PHONE_RE = re.compile(
     r")"
     r"(?!\w)"
 )
-# A number without its leading 0, right after a phone word: "moj broj je 61 000 000".
-_PHONE_AFTER_WORD_RE = re.compile(
-    r"(?i)(\b(?:broj(?:\s+(?:je|mobitela|telefona))?|tel\.?|telefon|mob\.?|mobitel|kontakt)"
-    r"\s*:?\s*)"
+# A number without its leading 0, right after a word that can only mean a phone:
+# "moj broj je 61 000 000", "broj telefona 61000000", "tel: 61/000-000".
+_PHONE_AFTER_PHONE_WORD_RE = re.compile(
+    r"(?i)(\b(?:(?:moj\s+broj|broj\s+(?:telefona|mobitela|mobilnog))(?:\s+je)?"
+    r"|tel\.?|telefon|telefona|mob\.?|mobitel|mobitela|mobilni)\s*:?\s*)"
     rf"([1-9]\d(?:{_SEP}\d){{5,8}})(?!\w)"
 )
+# After a bare "broj" or "kontakt" the number may be a listing id (7-9 digits, R2-1), so
+# only digits grouped the way phones are written count ("broj je 61 000 000"), and never
+# after a listing word ("artikal broj ...", "oglas broj ...", "šifra ...").
+_PHONE_AFTER_BROJ_RE = re.compile(
+    r"(?i)(?:\b(artikl\w*|oglas\w*|[sš]ifr\w*)\s+)?"
+    r"(\b(?:broj|kontakt)(?:\s+je)?\s*:?\s*)"
+    r"([1-9]\d{1,2}(?:(?:\s?[/.-]\s?|\s)\d{2,4}){2,3})(?!\w)"
+)
 # Day, month and year: never a phone, however it is separated.
-_DATE_RE = re.compile(r"\d{1,2}\s?([./-])\s?\d{1,2}\s?\1\s?\d{2,4}")
+_DATE_RE = re.compile(
+    r"\d{1,2}\s?([./-])\s?\d{1,2}\s?\1\s?\d{2,4}"  # 01/12/2026, 01.12.2026
+    r"|\d{1,2}\s\d{1,2}\s\d{4}"  # 03 12 2026
+)
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
 
@@ -105,7 +122,9 @@ _ADDRESS_LABEL_RE = re.compile(
 # A number followed by one of these is a size, a price or a count, never a house number.
 _NOT_HOUSE_NUMBER = (
     r"(?!\s*(?i:cm|mm|m|km|kg|l|kom\w*|komad\w*|metr\w*|metar|stub\w*|panel\w*|palet\w*"
-    r"|x|\u00d7|%)\b|[,.]\d|\s*[x\u00d7*/])"
+    r"|dan\w*|sat\w*|sedmic\w*|tjed\w*|min\w*|h|x|\u00d7|%)\b"
+    # "15. decembra" (a date), "54,90" (a price), "153x250" (a size).
+    r"|\.\s*[a-zčćžšđ]|[,.]\d|\s*[x\u00d7*/])"
 )
 _HOUSE_NUMBER = rf"(?:\d{{1,4}}[a-zA-Z]?\b{_NOT_HOUSE_NUMBER}|bb\b)"
 _STREET_WORDS = rf"(?:{_WORD}\.?\s+)"
@@ -125,8 +144,9 @@ _STREET_AFTER_VERB_RE = re.compile(
 _BB_STREET_RE = re.compile(
     r"(?i)\b(?!(?:je|na|u|i|za|do|od|sa|s|a)\s)" rf"{_STREET_WORDS}{{1,2}}bb\b"
 )
-# Postal code and town: "88000 Mostar".
-_POSTAL_RE = re.compile(rf"\b\d{{5}}\s+{_CAPITALISED}")
+# Postal code and town: "88000 Mostar", after a comma or at the start of a line (as in
+# "..., 88000 Mostar"), so "Kod 12345 Panel" stays.
+_POSTAL_RE = re.compile(rf"(?m)(?:(?<=,)|(?<=, )|^)\d{{5}}\s+{_CAPITALISED}")
 
 # --- known names and addresses from the order form ----------------------------------
 
@@ -177,7 +197,8 @@ def _scrub(
 def _scrub_text(text: str, names: list[re.Pattern[str]], addresses: list[re.Pattern[str]]) -> str:
     text = _EMAIL_RE.sub(_email_replacement, text)
     text = _PHONE_RE.sub(_phone_replacement, text)
-    text = _PHONE_AFTER_WORD_RE.sub(_phone_after_word_replacement, text)
+    text = _PHONE_AFTER_PHONE_WORD_RE.sub(_phone_after_word_replacement, text)
+    text = _PHONE_AFTER_BROJ_RE.sub(_phone_after_broj_replacement, text)
     text = _ADDRESS_LABEL_RE.sub(rf"\g<1>{ADDRESS}", text)
     text = _NAME_LABEL_RE.sub(rf"\g<1>{NAME}", text)
     for address in addresses:
@@ -208,6 +229,14 @@ def _phone_after_word_replacement(match: re.Match[str]) -> str:
     prefix, number = match.group(1), match.group(2)
     if _is_shop_phone(number) or _DATE_RE.fullmatch(number):
         return match.group()
+    return prefix + PHONE
+
+
+def _phone_after_broj_replacement(match: re.Match[str]) -> str:
+    listing_word, prefix, number = match.group(1), match.group(2), match.group(3)
+    if listing_word or _is_shop_phone(number) or _DATE_RE.fullmatch(number):
+        return match.group()
+    # Without a listing word the match is just the prefix and the number.
     return prefix + PHONE
 
 
