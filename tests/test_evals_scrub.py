@@ -139,6 +139,17 @@ def test_keeps_the_shops_public_number(shop: str) -> None:
         "dostava u Mostar 5-7 dana",
         "dostava u Mostar 2 - 3 sata",
         "dostava na gradilište 60/400",
+        # A spaced unit or "x" is never a house-number letter (R5-1).
+        "dostava u Mostar 20 m ograde",
+        "dostava na kuću 15 m ograde",
+        "dostava u Čitluk 40 m žice i 10 stubova",
+        "dostava na gradilište 30 m žice",
+        "dostava na gradilište 153 x 250",
+        "dostava na kuću 3 x 2 m",
+        "dostava u Mostar 12 X 3",
+        "dostava na gradilište 5 l boje",
+        "Ulica Izmišljena 5 m",
+        "dostava na gradilište 1/2 cola",
         # Sizes with a slash stay (R4-1).
         "dostava na gradilište 153/250",
         "dostava na gradilište 60/40 cm",

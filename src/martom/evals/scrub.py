@@ -135,7 +135,7 @@ _UNIT_WORDS = (
     "metar metra metri metara metru metrima metre "
     "stub stuba stubu stubovi stubova stubove stubovima "
     "panel panela panelu paneli panele panelima "
-    "paleta palete paletu paleti paletama "
+    "paleta palete paletu paleti paletama col cola coli "
     # Times: "dostava u Mostar 3 dana", "za 2 sata".
     "dan dana danu dani danima sat sata satu sati satima min minut minuta minute minutu "
     "sedmica sedmice sedmicu sedmici sedmica sedmicama "
@@ -181,7 +181,9 @@ _BB = r"(?:b\.\s?b\.?|bb)(?!\w)"
 _HOUSE_RANGE = r"(?:\s?[\u2013-]\s?\d{1,4}[a-zA-Z]?(?!\w))?"
 _HOUSE_NUMBER = (
     r"(?:(?:\d\s?/\s?\d{3}[a-zA-Z]?(?!\w)"
-    r"|\d{1,4}(?:[a-zA-Z](?!\w)|\s[A-Z](?!\w))?"
+    # "5 A": a spaced letter is upper case only and never a unit or "x" (R5-1: every
+    # regex using this is case-insensitive, so "20 m ograde" was read as "20 M").
+    rf"|\d{{1,4}}(?:[a-zA-Z](?!\w)|\s(?!(?i:{_whole_words(_UNIT_WORDS)}|x))(?-i:[A-Z])(?!\w))?"
     rf"{_HOUSE_RANGE}"
     r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2})"
     rf"{_HOUSE_RANGE}(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"
