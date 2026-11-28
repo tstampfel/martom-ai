@@ -54,6 +54,13 @@ router = APIRouter()
 # The longest message the advisor reads (Tomislav decides the number, #21). The request
 # schema has no limit, so this check lives here and answers `invalid_request`.
 MAX_MESSAGE_CHARS = 2000
+# Request size caps, checked here so the request schema (the contract) stays as it is.
+# A real request is well under 1 KB; anything bigger is refused before it is parsed,
+# and oversized answers before they reach the graph or its checkpoint.
+MAX_BODY_BYTES = 16_384
+MAX_SIDES = 50  # far more sides than any yard; the BOM caps the total at 1,000 m anyway
+MAX_CHOICES = 10  # one per single question of a chips event
+MAX_CHOICE_CHARS = 64  # question ids and option values are short keys
 STREAM_HEADERS = {
     "Cache-Control": "no-store",
     # Tells a buffering proxy (nginx and friends) to pass each event on at once.
@@ -87,7 +94,9 @@ class ChatService:
 async def chat(request: Request) -> StreamingResponse:
     started = time.perf_counter()
     service: ChatService | None = getattr(request.app.state, "chat_service", None)
-    raw = await request.body()
+    raw = await _read_capped(request)
+    if raw is None:
+        return await _refuse(service, None, reason="too_large")
     try:
         data = json.loads(raw)
     except ValueError:
@@ -98,6 +107,8 @@ async def chat(request: Request) -> StreamingResponse:
         return await _refuse(service, data, reason="schema")
     if len(body.message) > MAX_MESSAGE_CHARS:
         return await _refuse(service, data, reason="too_long")
+    if body.answers is not None and _answers_too_large(body):
+        return await _refuse(service, data, reason="answers_too_large")
 
     existing = service is not None and await service.thread_exists(body.thread_id)
     thread_id = body.thread_id if existing and body.thread_id else new_thread_id()
@@ -105,6 +116,32 @@ async def chat(request: Request) -> StreamingResponse:
         logger.warning("chat turn refused: no advisor configured")
         return _stream(_events_only([ErrorEvent(kind="internal")], thread_id))
     return _stream(_turn_stream(service, body, thread_id, new_thread=not existing, started=started))
+
+
+async def _read_capped(request: Request) -> bytes | None:
+    """The body, or None when it is over MAX_BODY_BYTES (the rest is never read)."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        return None
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_BODY_BYTES:
+            return None
+    return bytes(body)
+
+
+def _answers_too_large(body: ChatRequest) -> bool:
+    answers = body.answers
+    assert answers is not None
+    return (
+        len(answers.sides) > MAX_SIDES
+        or len(answers.choices) > MAX_CHOICES
+        or any(
+            len(key) > MAX_CHOICE_CHARS or len(value) > MAX_CHOICE_CHARS
+            for key, value in answers.choices.items()
+        )
+    )
 
 
 async def _refuse(service: ChatService | None, data: object, *, reason: str) -> StreamingResponse:

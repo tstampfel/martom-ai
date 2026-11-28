@@ -33,7 +33,14 @@ from martom.agent.graph import AgentDeps, AgentModels, build_graph
 from martom.agent.prompts import Grade, Rewrite
 from martom.api import chat_copy
 from martom.api.app import create_app
-from martom.api.chat import MAX_MESSAGE_CHARS, ChatService
+from martom.api.chat import (
+    MAX_BODY_BYTES,
+    MAX_CHOICE_CHARS,
+    MAX_CHOICES,
+    MAX_MESSAGE_CHARS,
+    MAX_SIDES,
+    ChatService,
+)
 from martom.api.threads import LocalThreadLocks, is_wellformed_thread_id, new_thread_id
 from martom.settings import Settings
 
@@ -370,3 +377,53 @@ def test_the_lifespan_opens_the_service_once_and_closes_it_on_shutdown() -> None
         post(test_client, {"message": "Hvala"})
         assert opened == ["open"]
     assert opened == ["open", "close"]
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"sides": [1.0] * (MAX_SIDES + 1), "closed": False},
+        {"choices": {f"q{i}": "x" for i in range(MAX_CHOICES + 1)}},
+        {"choices": {"posts": "x" * (MAX_CHOICE_CHARS + 1)}},
+        {"choices": {"x" * (MAX_CHOICE_CHARS + 1): "plate"}},
+    ],
+)
+def test_oversized_answers_are_refused_before_the_advisor(answers: dict[str, Any]) -> None:
+    service = bom_turn_service()
+    events = post(client(service), {"message": "ograda", "answers": answers})
+    assert [e["type"] for e in events] == ["error", "done"]
+    assert events[0]["kind"] == "invalid_request"
+
+
+def refusal_reasons(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.reason for r in caplog.records if r.getMessage() == "chat request refused"]  # type: ignore[attr-defined]
+
+
+def test_a_body_over_the_size_limit_is_refused_unread(caplog: pytest.LogCaptureFixture) -> None:
+    body = json.dumps({"message": "ograda", "padding": "x" * MAX_BODY_BYTES}).encode()
+    with caplog.at_level(logging.INFO, logger="martom.api"):
+        response = client(bom_turn_service()).post(
+            "/api/chat", content=body, headers={"content-type": "application/json"}
+        )
+    events = events_of(response)
+    assert [e["type"] for e in events] == ["error", "done"]
+    assert events[0]["kind"] == "invalid_request"
+    assert refusal_reasons(caplog) == ["too_large"]
+
+
+def test_a_body_without_content_length_is_still_capped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def chunks() -> Iterable[bytes]:
+        yield b'{"message": "'
+        for _ in range(MAX_BODY_BYTES // 1000 + 2):
+            yield b"x" * 1000
+        yield b'"}'
+
+    with caplog.at_level(logging.INFO, logger="martom.api"):
+        response = client(bom_turn_service()).post(
+            "/api/chat", content=chunks(), headers={"content-type": "application/json"}
+        )
+    assert "content-length" not in response.request.headers
+    assert [e["type"] for e in events_of(response)] == ["error", "done"]
+    assert refusal_reasons(caplog) == ["too_large"]

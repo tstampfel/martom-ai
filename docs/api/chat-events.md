@@ -34,8 +34,9 @@ contract both sides build against.
   thread, and the `done` event carries the new id. A client never picks its own id.
 - **One turn at a time.** A second message on a thread whose previous turn still runs
   waits for it (up to 60 s, then `error` kind `internal`).
-- **Invalid requests** (bad JSON, a body the request schema refuses, a message over 2,000
-  characters) answer `error` kind `invalid_request` and `done`, with the sent `thread_id`
+- **Invalid requests** (bad JSON, a body the request schema refuses, a body over 16 KB, a
+  message over 2,000 characters, more than 50 sides, more than 10 choices or a choice key
+  or value over 64 characters) answer `error` kind `invalid_request` and `done`, with the sent `thread_id`
   only if it names a saved conversation, else a fresh id; nothing is saved.
 - **No advisor** (the API runs without `ANTHROPIC_API_KEY` or an embedder): every message
   answers `error` kind `internal` and `done`.
