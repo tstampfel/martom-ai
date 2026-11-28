@@ -458,7 +458,7 @@ def test_planted_email_fails(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "email",
-    ["info@martom-bekaert.com", "zeljezarija@martom-bekaert.com", "INFO@Martom-Bekaert.com"],
+    ["info@martom-bekaert.com", "prodaja@martom-bekaert.com", "INFO@Martom-Bekaert.com"],
 )
 def test_martom_emails_pass(tmp_path: Path, email: str) -> None:
     path = write_json(tmp_path, {"listings": [listing(63996799, f"E-mail: {email}")]})
