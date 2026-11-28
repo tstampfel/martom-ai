@@ -20,11 +20,14 @@ from tests.agent_fakes import (
     EUROFENCE,
     PANEL,
     PANEL_ID,
+    T_POST,
+    T_POST_ID,
     FakeCatalogue,
     FakeChat,
     FakePricer,
     FakeRetriever,
     Recorder,
+    RefPricer,
     tool_call,
     understanding,
 )
@@ -391,6 +394,33 @@ async def test_any_quantity_from_the_model_is_a_tool_error(quantity: int) -> Non
     assert result["cart"] == []
     errors = cart_tool_errors(result)
     assert errors == ["error: invalid arguments: quantity"]
+
+
+async def test_a_t_post_takes_the_posts_and_the_braces_of_the_list() -> None:
+    # Review R3-1: 51 line posts + 8 support T-posts (priced as the T-post) = 59.
+    graph = make_graph(
+        Recorder(
+            understanding(
+                request="fence_roll",
+                height="100 cm",
+                lengths=["100 m"],
+                layout="straight",
+                wants_concrete_posts=True,
+            )
+        ),
+        [
+            tool_call("calculate_fence_bom"),
+            tool_call("add_to_cart", {"listing_id": T_POST_ID, "variant_label": "T stup 150 cm"}),
+            AIMessage("Dodao sam T-stupove s popisa u korpu."),
+        ],
+        catalogue=FakeCatalogue(PANEL, EUROFENCE, T_POST),
+        pricer=RefPricer(),
+    )
+    result = await ask(graph, "Mreža u roli 100 cm, 100 m, stupovi u zemlju, dodaj stupove")
+    posts = {line["item"]: line["quantity"] for line in result["bom"]["lines"]}
+    assert (posts["post_t"], posts["brace_t_post"]) == (51, 8)
+    assert [(line["quantity"], line["unit_price"]) for line in result["cart"]] == [(59, "12.50")]
+    assert cart_tool_errors(result) == []
 
 
 async def test_a_product_off_the_list_is_one_piece_and_the_reply_says_how_to_change_it() -> None:

@@ -40,6 +40,17 @@ EUROFENCE = ProductInfo(
     listing_price=None,
     variants=[VariantInfo(f"{h} cm", None, "rola", str(h)) for h in (60, 80, 125)],
 )
+# The T-post listing price_map.toml maps every post_t size to (#147, review R3-1).
+T_POST_ID = 59473597
+T_POST = ProductInfo(
+    listing_id=T_POST_ID,
+    title="T STUP",
+    slug="t-stup-59473597",
+    product_type="t stup",
+    colours=[],
+    listing_price=None,
+    variants=[VariantInfo(f"T stup {h} cm", Decimal("12.50"), "kom", str(h)) for h in (150, 175)],
+)
 # The one entry of the real manual_products.toml (Toni, 26 Nov: 0.80 KM).
 ANCHOR_KEY = "anchor_m8x70"
 ANCHOR_NAME = "Anker M8×70"
@@ -49,6 +60,15 @@ PRICES_26_NOV = {
     Item.PVC_CLIP: Decimal("1.00"),
     Item.ANCHOR_M8X80: Decimal("1.30"),
 }
+
+
+class RefPricer:
+    """Prices a line by its price source, as PostgresBomPricer does: a support T-post
+    (`price_from`) costs what its T-post costs."""
+
+    async def unit_price(self, line: BomLine) -> Decimal | None:
+        item = line.price_from.item if line.price_from else line.item
+        return Decimal("12.50") if item == Item.POST_T else PRICES_26_NOV.get(item)
 
 
 class FakeChat(GenericFakeChatModel):

@@ -425,7 +425,10 @@ illustrative.
 
 Quantities and prices come only from tool output, never from a number in the chat
 (Tomislav, 28 Nov 2026; `src/martom/agent/cart_quantity.py`): a product on the current
-materials list goes in with that `bom` line's `quantity` and `unit_price`; any other
+materials list goes in with that `bom` line's `quantity` and `unit_price` (when
+several lines are priced from one product, such as a roll fence's T-posts and support
+T-posts, their quantities add up; a line shown "cijena na upit" gives `unit_price` and
+`line_total` null); any other
 product goes in as 1 piece at the catalogue price, and the answer ends with the fixed
 sentence "Količinu možete promijeniti u korpi." The advisor's `add_to_cart` takes no
 quantity at all (one sent anyway is refused), and the endpoint checks every line against

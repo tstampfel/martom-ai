@@ -27,7 +27,12 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from martom.agent import copy
-from martom.agent.cart_quantity import DEFAULT_QUANTITY, bom_lines_for
+from martom.agent.cart_quantity import (
+    DEFAULT_QUANTITY,
+    CartQuantityError,
+    bom_quantity,
+    price_sources,
+)
 from martom.agent.catalogue import Catalogue, ProductInfo
 from martom.agent.understand import FenceSpec, default_panel_width, total_length_text
 from martom.api.chat_events import BomEvent, BomLineOut, ExtraLine, format_price
@@ -238,6 +243,8 @@ async def _fence_bom(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
         lines, ctx.pricer, summary=summary, extra_lines=ctx.extra_lines, notes=notes
     )
     result: dict[str, Any] = event.model_dump(mode="json")
+    # Each line's price source, for the cart (agent/cart_quantity.py); not in the event.
+    result["price_sources"] = price_sources(lines)
     if addon:
         # The suggested "Dodaj nosivu žicu" add-on (fence-rules.md): counted, not in the BOM.
         result["wire_addon"] = [
@@ -334,12 +341,12 @@ async def _add_to_cart(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
             "variant_label": args.variant_label,
             "unit_price": _price(unit_price),
         }
-    on_bom = bom_lines_for(line, ctx.bom)
-    if len(on_bom) > 1:
-        raise ToolError("this product matches several lines of the materials list")
-    if on_bom:
-        bom_line = on_bom[0]
-        line.update(quantity=bom_line["quantity"], unit_price=bom_line["unit_price"])
+    try:
+        from_list = bom_quantity(line, ctx.bom)
+    except CartQuantityError as exc:
+        raise ToolError(str(exc)) from exc
+    if from_list is not None:
+        line["quantity"], line["unit_price"] = from_list
         return {"cart_line": line, "quantity_from": "materials_list"}
     line["quantity"] = DEFAULT_QUANTITY
     return {"cart_line": line, "quantity_from": "default"}

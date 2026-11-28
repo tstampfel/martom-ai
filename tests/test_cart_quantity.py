@@ -2,9 +2,19 @@
 
 # ruff: noqa: RUF001, RUF003
 
+from decimal import Decimal
 from typing import Any
 
-from martom.agent.cart_quantity import bom_lines_for, matches_bom
+import pytest
+
+from martom.agent.cart_quantity import (
+    CartQuantityError,
+    bom_lines_for,
+    bom_quantity,
+    matches_bom,
+    price_sources,
+)
+from martom.bom.roll import roll_fence_bom
 
 PANEL_LINE: dict[str, Any] = {
     "source": "olx",
@@ -77,3 +87,60 @@ def test_a_product_off_the_list_goes_in_as_one_piece() -> None:
     assert matches_bom({**off_list, "quantity": 1}, BOM)
     assert not matches_bom({**off_list, "quantity": 37}, BOM)  # the reviewer's 37 x 53.00
     assert matches_bom({**PANEL_LINE, "quantity": 1}, None)
+
+
+# Review R3-1: a roll fence's support T-posts are priced as the T-post of the same size,
+# so the T-post's cart line takes both lines' quantities.
+
+T_POST_LINE: dict[str, Any] = {
+    "source": "olx",
+    "listing_id": 59473597,
+    "manual_key": None,
+    "variant_label": "T stup 150 cm",
+}
+POST_SOURCE = {"item": "post_t", "size": "150 cm"}
+
+
+def braced_bom(unit_price: str | None) -> dict[str, Any]:
+    return {
+        "lines": [
+            bom_line("post_t", "150 cm", 26, unit_price),
+            bom_line("brace_t_post", "150 cm", 4, unit_price),
+        ],
+        "price_sources": [POST_SOURCE, POST_SOURCE],
+    }
+
+
+def test_the_calculator_gives_a_brace_the_t_posts_price_source() -> None:
+    bom = roll_fence_bom(
+        sides_m=[Decimal(100)], roll_height_cm=100, post_model="t_post", closed=False
+    )
+    items = [line.item.value for line in bom.lines]
+    sources = dict(zip(items, price_sources(bom.lines), strict=True))
+    assert sources["brace_t_post"] == POST_SOURCE
+    assert sources["post_t"] == POST_SOURCE
+
+
+def test_posts_and_braces_of_one_t_post_add_up() -> None:
+    assert bom_quantity(T_POST_LINE, braced_bom("12.50")) == (30, "12.50")
+    assert matches_bom({**T_POST_LINE, "quantity": 30, "unit_price": "12.50"}, braced_bom("12.50"))
+    assert not matches_bom(
+        {**T_POST_LINE, "quantity": 26, "unit_price": "12.50"}, braced_bom("12.50")
+    )
+
+
+def test_on_a_draft_map_the_sum_comes_without_a_price() -> None:
+    assert bom_quantity(T_POST_LINE, braced_bom(None)) == (30, None)
+
+
+def test_lines_of_one_product_priced_differently_have_no_cart_quantity() -> None:
+    bom = braced_bom("12.50")
+    bom["lines"][1]["unit_price"] = None
+    with pytest.raises(CartQuantityError):
+        bom_quantity(T_POST_LINE, bom)
+    assert not matches_bom({**T_POST_LINE, "quantity": 30, "unit_price": "12.50"}, bom)
+
+
+def test_another_t_post_height_is_not_on_the_list() -> None:
+    taller = {**T_POST_LINE, "variant_label": "T stup 175 cm"}
+    assert bom_quantity(taller, braced_bom("12.50")) is None

@@ -22,6 +22,8 @@ from tests.agent_fakes import (
     EUROFENCE,
     PANEL,
     PANEL_ID,
+    T_POST,
+    T_POST_ID,
     FakeCatalogue,
     FakeChat,
     FakePricer,
@@ -64,12 +66,16 @@ async def healthy() -> None:
     return None
 
 
+FAKE_PRICER = FakePricer()
+
+
 def make_service(
     guard: Recorder,
     replies: Iterable[AIMessage] = (),
     *,
     retriever: Any = None,
     locks: LocalThreadLocks | None = None,
+    pricer: Any = FAKE_PRICER,
 ) -> ChatService:
     models = AgentModels(
         guard=RunnableLambda(guard),
@@ -80,8 +86,8 @@ def make_service(
     deps = AgentDeps(
         models=models,
         retriever=retriever or FakeRetriever(),
-        catalogue=FakeCatalogue(PANEL, EUROFENCE),
-        pricer=FakePricer(),
+        catalogue=FakeCatalogue(PANEL, EUROFENCE, T_POST),
+        pricer=pricer,
     )
     graph = build_graph(deps, checkpointer=InMemorySaver())
     return ChatService(graph=graph, locks=locks or LocalThreadLocks())
@@ -210,6 +216,38 @@ def test_a_fence_cart_turn_takes_quantity_and_price_from_the_bom(
         }
     ]
     assert panel["quantity"] == 10
+
+
+def test_a_fence_item_on_request_goes_in_with_the_lists_quantity_and_no_price() -> None:
+    # Review R3-1, the draft-map path: no pricer prices anything ("cijena na upit"), so
+    # the T-post line (posts + braces) carries the list's quantity, price and total null.
+    service = make_service(
+        Recorder(
+            understanding(
+                request="fence_roll",
+                height="100 cm",
+                lengths=["100 m"],
+                layout="straight",
+                wants_concrete_posts=True,
+            )
+        ),
+        [
+            tool_call("calculate_fence_bom"),
+            tool_call("add_to_cart", {"listing_id": T_POST_ID, "variant_label": "T stup 150 cm"}),
+            AIMessage("Dodao sam T-stupove s popisa u korpu."),
+        ],
+        pricer=None,
+    )
+    events = post(client(service), {"message": "Mreža u roli 100 cm, 100 m, dodaj stupove"})
+    for event in events:
+        jsonschema.validate(event, SCHEMA)
+    bom = next(e for e in events if e["type"] == "bom")
+    assert "price_sources" not in bom
+    cart = next(e for e in events if e["type"] == "cart")
+    assert [
+        (line["listing_id"], line["quantity"], line["unit_price"], line["line_total"])
+        for line in cart["lines"]
+    ] == [(T_POST_ID, 59, None, None)]
 
 
 def cart_probe(message: str, *answers: AIMessage, add: dict[str, Any]) -> list[dict[str, Any]]:

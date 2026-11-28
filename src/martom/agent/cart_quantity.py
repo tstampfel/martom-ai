@@ -9,13 +9,18 @@ text, only from tool output:
   database row, or manual_products.toml); the customer changes the quantity in the korpa.
 
 The model never sets a quantity: add_to_cart has no quantity argument. The tool builds
-the line with `bom_lines_for`, and api/chat_turn.py checks every line again with
+the line with `bom_quantity`, and api/chat_turn.py checks every line again with
 `matches_bom` before a `cart` event goes out.
 
-A BOM line is linked to a product through price_map.toml (BOM item + size -> listing id,
-or a manual product's key). One listing holds panels, posts, clips and anchors as its
-variants, so for an OLX product the variant being added must also fit the map entry's
-variant table (`_label_fits`).
+A BOM line is linked to a product through its price source (`price_sources`, which
+calculate_fence_bom adds next to the lines: the line's `price_from`, or its own item and
+size), then price_map.toml (BOM item + size -> listing id, or a manual product's key).
+So a roll fence's support T-posts (`brace_t_post`, priced as the `post_t` of the same
+size) link to the T-post too, and one cart line gets the sum of every line that shares
+the product (#147, review R3-1). The link doesn't depend on a price: on a draft map the
+quantity still comes from the list and the price stays null ("na upit"). One listing
+holds panels, posts, clips and anchors as its variants, so for an OLX product the
+variant being added must also fit the map entry's variant table (`_label_fits`).
 """
 
 # The size sign "×" is real data here (listing labels write it).
@@ -23,18 +28,55 @@ variant table (`_label_fits`).
 
 import functools
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import Any
 
 from martom.agent.grounding import numbers_in
-from martom.bom.common import Item, PriceRef
+from martom.bom.common import BomLine, Item, PriceRef
 from martom.bom.pricing import CM_FIELDS, Match, PriceMap, load_price_map, normalise
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_QUANTITY = 1
 _ITEMS = frozenset(item.value for item in Item)
+
+
+def price_sources(lines: Sequence[BomLine]) -> list[dict[str, str | None]]:
+    """Each line's price source (item + size), for calculate_fence_bom's output.
+
+    It sits next to the bom event's lines (the event itself doesn't carry it), so the cart
+    can link a line priced through `price_from` to that product.
+    """
+    sources = []
+    for line in lines:
+        ref = line.price_from or PriceRef(line.item, line.size)
+        sources.append({"item": ref.item.value, "size": ref.size})
+    return sources
+
+
+def bom_quantity(
+    product: Mapping[str, Any],
+    bom: Mapping[str, Any] | None,
+    price_map: PriceMap | None = None,
+) -> tuple[int, str | None] | None:
+    """The quantity and unit price a cart line takes from the materials list, or None
+    when the product isn't on it.
+
+    Several lines priced from one product (T-posts and support T-posts) add up; they
+    share one unit price by construction. Raises CartQuantityError when they don't.
+    """
+    lines = bom_lines_for(product, bom, price_map)
+    if not lines:
+        return None
+    unit_prices = {line.get("unit_price") for line in lines}
+    if len(unit_prices) > 1:
+        raise CartQuantityError("the materials list prices this product differently")
+    return sum(int(line["quantity"]) for line in lines), unit_prices.pop()
+
+
+class CartQuantityError(ValueError):
+    """The materials list gives no single quantity and price for this product."""
 
 
 def bom_lines_for(
@@ -47,20 +89,26 @@ def bom_lines_for(
     `product` has a cart line's keys: source, listing_id, manual_key, variant_label.
     """
     links = price_map if price_map is not None else shipped_price_map()
-    return [line for line in (bom or {}).get("lines", []) if _is_this_product(product, line, links)]
+    lines = list((bom or {}).get("lines", []))
+    sources = list((bom or {}).get("price_sources") or [])
+    if len(sources) != len(lines):  # an older list without them: each line's own key
+        sources = [{"item": line.get("item"), "size": line.get("size")} for line in lines]
+    return [
+        line
+        for line, source in zip(lines, sources, strict=True)
+        if _is_this_product(product, source, links)
+    ]
 
 
 def matches_bom(cart_line: Mapping[str, Any], bom: Mapping[str, Any] | None) -> bool:
-    """Whether a cart line follows the rule: the BOM line's quantity and price, or 1."""
-    lines = bom_lines_for(cart_line, bom)
-    if not lines:
-        return cart_line.get("quantity") == DEFAULT_QUANTITY
-    if len(lines) > 1:
+    """Whether a cart line follows the rule: the list's (summed) quantity and price, or 1."""
+    try:
+        from_list = bom_quantity(cart_line, bom)
+    except CartQuantityError:
         return False
-    line = lines[0]
-    return cart_line.get("quantity") == line.get("quantity") and cart_line.get(
-        "unit_price"
-    ) == line.get("unit_price")
+    if from_list is None:
+        return cart_line.get("quantity") == DEFAULT_QUANTITY
+    return (cart_line.get("quantity"), cart_line.get("unit_price")) == from_list
 
 
 @functools.cache
@@ -75,9 +123,10 @@ def shipped_price_map() -> PriceMap | None:
 
 
 def _is_this_product(
-    product: Mapping[str, Any], bom_line: Mapping[str, Any], price_map: PriceMap | None
+    product: Mapping[str, Any], source: Mapping[str, Any], price_map: PriceMap | None
 ) -> bool:
-    item, size = bom_line.get("item"), bom_line.get("size")
+    """Whether a BOM line whose price source is `source` (item + size) is this product."""
+    item, size = source.get("item"), source.get("size")
     if product.get("source") == "manual" and item == product.get("manual_key"):
         return True
     if price_map is None or item not in _ITEMS:
