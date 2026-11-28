@@ -4,7 +4,7 @@
 
 import type { ChatEvent } from '../events'
 import { bomAllOnRequest, fenceBom, fenceClarify, fenceConcretePosts, rollFenceSomeOnRequest } from './fence'
-import { internalError, productQuestion, rateLimited } from './other'
+import { internalError, manualProduct, productQuestion, rateLimited } from './other'
 
 export const fixtures = {
   fenceClarify,
@@ -13,6 +13,7 @@ export const fixtures = {
   rollFenceSomeOnRequest,
   bomAllOnRequest,
   productQuestion,
+  manualProduct,
   internalError,
   rateLimited,
 } satisfies Record<string, ChatEvent[]>

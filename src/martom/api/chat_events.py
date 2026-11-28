@@ -221,10 +221,24 @@ class Variant(_Event):
 
 
 class ProductCard(_Event):
-    listing_id: int = Field(ge=1)
-    url: str = Field(
+    """One product: an OLX listing, or a manual product (#132) without one.
+
+    A manual product (`source` "manual", from manual_products.toml) has no listing id and
+    no link, only its `manual_key`; never build an olx.ba link for it.
+    """
+
+    source: Literal["olx", "manual"] = Field(
+        default="olx", description="'manual': sold without an OLX listing (no link)."
+    )
+    listing_id: int | None = Field(default=None, ge=1, description="null for a manual product.")
+    manual_key: str | None = Field(
+        default=None, description="The manual_products.toml key; null for an OLX product."
+    )
+    url: str | None = Field(
+        default=None,
         pattern=LISTING_URL_PATTERN,
-        description="https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id.",
+        description="https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id. "
+        "null for a manual product.",
     )
     title: str
     subtitle: str | None = None
@@ -236,7 +250,21 @@ class ProductCard(_Event):
     variants: list[Variant] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _slug_ends_in_listing_id(self) -> Self:
+    def _matches_source(self) -> Self:
+        if self.source == "manual":
+            if not self.manual_key:
+                raise ValueError("a manual product card needs its manual_key")
+            if self.listing_id is not None:
+                raise ValueError("a manual product card has no listing_id")
+            if self.url is not None:
+                raise ValueError("a manual product card has no url (no OLX listing)")
+            return self
+        if self.manual_key is not None:
+            raise ValueError("an OLX product card has no manual_key")
+        if self.listing_id is None:
+            raise ValueError("an OLX product card needs its listing_id")
+        if self.url is None:
+            raise ValueError("an OLX product card needs its url")
         if not self.url.endswith(f"-{self.listing_id}"):
             raise ValueError(f"url {self.url!r} must end in -{{listing_id}} ({self.listing_id})")
         return self

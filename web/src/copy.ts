@@ -151,6 +151,9 @@ export const copy = {
       olx: 'OLX oglas',
       olxLabel: (title: string) => `${title}, oglas na OLX-u (otvara se u novoj kartici)`,
       noPhoto: 'Slika s OLX oglasa',
+      // Screen-reader name of the grey placeholder of a product sold without an OLX
+      // listing (it has no listing photo); the placeholder itself shows only an icon.
+      photoUnavailable: 'Slika nije dostupna',
     },
     project: {
       label: 'Vaš projekt',

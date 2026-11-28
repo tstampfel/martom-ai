@@ -2,7 +2,10 @@
 
 # ruff: noqa: RUF001
 
-from collections.abc import Iterable
+import json
+from collections.abc import Iterable, Mapping
+from dataclasses import replace
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -12,6 +15,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.memory import InMemorySaver
 from tests.agent_fakes import (
+    ANCHOR_KEY,
+    ANCHOR_NAME,
     EUROFENCE,
     PANEL,
     PANEL_ID,
@@ -33,6 +38,7 @@ from martom.agent.graph import (
     build_graph,
 )
 from martom.agent.prompts import Grade, Rewrite
+from martom.bom.manual_products import ManualProduct, load_manual_products
 
 pytestmark = pytest.mark.anyio
 
@@ -51,6 +57,7 @@ def make_graph(
     retriever: FakeRetriever | None = None,
     pricer: FakePricer | None = None,
     catalogue: FakeCatalogue | None = None,
+    manual_products: Mapping[str, ManualProduct] | None = None,
 ):
     models = AgentModels(
         guard=RunnableLambda(guard),
@@ -63,6 +70,7 @@ def make_graph(
         retriever=retriever or FakeRetriever(),
         catalogue=catalogue or FakeCatalogue(PANEL, EUROFENCE),
         pricer=pricer,
+        manual_products=manual_products,
     )
     return build_graph(deps, checkpointer=InMemorySaver())
 
@@ -314,7 +322,9 @@ async def test_add_to_cart_records_the_database_price() -> None:
     result = await ask(graph, "Dodaj 10 panela 153 u korpu")
     assert result["cart"] == [
         {
+            "source": "olx",
             "listing_id": PANEL_ID,
+            "manual_key": None,
             "title": PANEL.title,
             "url": "https://martom.olx.ba/artikal/panel-3d-ograda-63996799",
             "variant_label": "153 × 250",
@@ -628,26 +638,171 @@ async def test_numbered_recommendation_list_is_not_a_fallback() -> None:
 
 
 async def test_manual_product_hit_flows_through_the_graph() -> None:
-    # #112 hits: no listing id, no link. The full manual-product handling is #132.
+    # #112 hits: no listing id, no link; the hit keeps its source and TOML key.
     graph = make_graph(
         Recorder(understanding(request="product")),
-        [AIMessage("Imamo i stup za panel.")],
+        [AIMessage("Imamo i anker.")],
         retriever=FakeRetriever(manual=True),
     )
-    result = await ask(graph, "Stup za panel")
+    result = await ask(graph, "Anker za stup")
     manual = next(hit for hit in result["hits"] if hit["source"] == "manual")
     assert manual["listing_id"] is None
     assert manual["url"] is None
-    assert manual["manual_key"] == "post_60x40"
-    assert result["answer"] == "Imamo i stup za panel."
+    assert manual["manual_key"] == ANCHOR_KEY
+    assert result["answer"] == "Imamo i anker."
 
 
-async def test_fallback_skips_hits_without_a_link() -> None:
+# --- manual products (#132) -------------------------------------------------------------
+
+
+def anchor_graph(replies: Iterable[AIMessage], **kwargs: Any):
+    return make_graph(
+        Recorder(understanding(request="product", search_query="anker m8x70")),
+        replies,
+        retriever=FakeRetriever(manual=True, listings=False),
+        **kwargs,
+    )
+
+
+async def test_agent_finds_prices_and_carts_the_anchor_without_an_olx_link() -> None:
+    # The "Done when" of #132: find, price (from the TOML) and add to the cart.
+    graph = anchor_graph(
+        [
+            tool_call("search_products", {"query": "anker m8x70"}),
+            tool_call("get_product", {"manual_key": ANCHOR_KEY}),
+            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY, "quantity": 20}),
+            AIMessage("Anker M8×70 je 0,80 KM po komadu. Dodao sam 20 komada u korpu."),
+        ]
+    )
+    result = await ask(graph, "Dodaj 20 ankera M8x70 u korpu")
+    assert result["fallback"] is False
+    assert result["answer"] == "Anker M8×70 je 0,80 KM po komadu. Dodao sam 20 komada u korpu."
+    assert result["cart"] == [
+        {
+            "source": "manual",
+            "listing_id": None,
+            "manual_key": ANCHOR_KEY,
+            "title": ANCHOR_NAME,
+            "url": None,
+            "variant_label": None,
+            "quantity": 20,
+            "unit_price": "0.80",
+        }
+    ]
+    product = json.loads(
+        next(m.content for m in result["messages"] if getattr(m, "name", "") == "get_product")
+    )
+    assert product["price"] == "0.80"
+    assert product["url"] is None
+    # No OLX link anywhere: hits, tool results, cart, answer.
+    everything = json.dumps(
+        {
+            "hits": result["hits"],
+            "cart": result["cart"],
+            "messages": [m.content for m in result["messages"]],
+        },
+        ensure_ascii=False,
+    )
+    assert "olx" not in everything
+
+
+async def test_manual_price_comes_from_the_toml_entry() -> None:
+    # The graph reads the price from manual_products.toml (here a changed copy of it),
+    # never from the manual_product search table.
+    toml = load_manual_products()
+    changed = {ANCHOR_KEY: replace(toml[ANCHOR_KEY], price_km=Decimal("0.95"))}
+    graph = anchor_graph(
+        [
+            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY, "quantity": 5}),
+            AIMessage("Dodao sam 5 ankera po 0,95 KM."),
+        ],
+        manual_products=changed,
+    )
+    result = await ask(graph, "Dodaj 5 ankera")
+    assert result["cart"][0]["unit_price"] == "0.95"
+    assert result["answer"] == "Dodao sam 5 ankera po 0,95 KM."
+
+
+async def test_manual_product_priced_zero_is_on_request() -> None:
+    toml = load_manual_products()
+    free = {ANCHOR_KEY: replace(toml[ANCHOR_KEY], price_km=Decimal("0"))}
+    graph = anchor_graph(
+        [tool_call("get_product", {"manual_key": ANCHOR_KEY}), AIMessage("Cijena je na upit.")],
+        manual_products=free,
+    )
+    result = await ask(graph, "Koliko je anker?")
+    product = json.loads(
+        next(m.content for m in result["messages"] if getattr(m, "name", "") == "get_product")
+    )
+    assert product["price"] is None
+
+
+async def test_invented_manual_price_fails_grounding() -> None:
+    graph = anchor_graph(
+        [
+            tool_call("get_product", {"manual_key": ANCHOR_KEY}),
+            AIMessage("Anker je 0,90 KM."),
+            AIMessage("Anker je 0,80 KM."),
+        ]
+    )
+    result = await ask(graph, "Koliko je anker?")
+    assert result["answer"] == "Anker je 0,80 KM."
+    assert any("0,90 KM" in problem for problem in result["grounding_problems"])
+
+
+async def test_bad_manual_product_calls_go_back_to_the_model() -> None:
+    graph = anchor_graph(
+        [
+            tool_call("get_product", {"manual_key": "no_such_product"}),
+            tool_call("get_product", {}),
+            tool_call("get_product", {"listing_id": PANEL_ID, "manual_key": ANCHOR_KEY}),
+            tool_call(
+                "add_to_cart", {"manual_key": ANCHOR_KEY, "variant_label": "x", "quantity": 1}
+            ),
+            tool_call("add_to_cart", {"manual_key": "no_such_product", "quantity": 1}),
+            AIMessage("Koji proizvod želite?"),
+        ]
+    )
+    result = await ask(graph, "Anker")
+    errors = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert [m.status for m in errors] == ["error"] * 5
+    assert result["cart"] == []
+
+
+async def test_fallback_lists_manual_products_without_a_link() -> None:
+    # Decision (#132): the plain search results list a manual product by name, with no
+    # link (it has no OLX listing) and, like every fallback line, no price.
     graph = make_graph(
         Recorder(understanding(request="product")),
         [AIMessage("Košta 999 KM."), AIMessage("Košta 999 KM.")],
         retriever=FakeRetriever(manual=True),
     )
-    result = await ask(graph, "Stup za panel")
+    result = await ask(graph, "Anker za stup")
     assert result["fallback"] is True
-    assert "Stup za panel 60 x 40" not in result["answer"]
+    lines = result["answer"].splitlines()
+    assert f"- {ANCHOR_NAME}" in lines
+    assert "- PANEL 3D OGRADA: https://martom.olx.ba/artikal/panel-3d-ograda-63996799" in lines
+    assert "KM" not in result["answer"]
+
+
+async def test_retrieve_hit_facts_carry_source_and_manual_key() -> None:
+    # R1-2 (#132 review): the answer cites a manual key known only from the Retrieve hits
+    # (no tool call), so dropping manual_key from _hit_facts fails this test.
+    graph = anchor_graph([AIMessage(f"Imamo {ANCHOR_NAME} (šifra {ANCHOR_KEY}).")])
+    result = await ask(graph, "Imate li anker?")
+    assert result["fallback"] is False
+    assert result["grounding_problems"] == []
+    assert result["facts"]["manual_keys"] == [ANCHOR_KEY]
+
+
+async def test_invented_link_for_a_manual_product_fails_grounding() -> None:
+    # R1-1 (#132 review): a manual product has no OLX listing, so a link is invented.
+    graph = anchor_graph(
+        [
+            AIMessage(f"{ANCHOR_NAME}: https://martom.olx.ba/artikal/anker-m8x70"),
+            AIMessage(f"Imamo {ANCHOR_NAME}."),
+        ]
+    )
+    result = await ask(graph, "Imate li anker?")
+    assert result["answer"] == f"Imamo {ANCHOR_NAME}."
+    assert any("link" in problem for problem in result["grounding_problems"])

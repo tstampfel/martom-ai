@@ -343,3 +343,133 @@ def test_upper_case_prices_and_counts_fail(text: str) -> None:
 def test_upper_case_grounded_text_passes(text: str) -> None:
     found = facts().merge(Facts(prices=["150"]))
     assert check_grounding(text, found).ok, check_grounding(text, found).problems
+
+
+# --- manual products (#132) -------------------------------------------------------------
+
+MANUAL_OUTPUT = {
+    "source": "manual",
+    "listing_id": None,
+    "manual_key": "anchor_m8x70",
+    "title": "Anker M8×70",
+    "url": None,
+    "price": "0.80",
+}
+
+
+def test_facts_collect_manual_keys_and_prices() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert facts.manual_keys == ["anchor_m8x70"]
+    assert facts.prices == ["0.80"]
+    assert facts.listing_ids == []
+
+
+def test_manual_price_from_a_tool_passes() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert check_grounding("Anker M8×70 je 0,80 KM po komadu.", facts).ok
+
+
+def test_manual_price_not_from_a_tool_fails() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert not check_grounding("Anker M8×70 je 0,85 KM.", facts).ok
+
+
+def test_manual_key_from_a_tool_passes_like_a_listing_id() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert check_grounding("Šifra: anchor_m8x70.", facts).ok
+
+
+def test_unknown_manual_key_fails_like_a_listing_id() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    result = check_grounding("Šifra: anchor_m10x90.", facts)
+    assert not result.ok
+    assert any("anchor_m10x90" in problem for problem in result.problems)
+
+
+# --- links (#132 R1-1) ---------------------------------------------------------------
+
+OLX_OUTPUT = {
+    "results": [
+        {
+            "source": "olx",
+            "listing_id": 63996799,
+            "title": "PANEL 3D OGRADA",
+            "url": "https://martom.olx.ba/artikal/panel-3d-ograda-63996799",
+        },
+        MANUAL_OUTPUT,
+    ]
+}
+
+
+def test_facts_collect_tool_urls() -> None:
+    facts = facts_from_output(OLX_OUTPUT)
+    assert facts.urls == ["https://martom.olx.ba/artikal/panel-3d-ograda-63996799"]
+
+
+PANEL_URL = "https://martom.olx.ba/artikal/panel-3d-ograda-63996799"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"Panel: {PANEL_URL}",
+        f"Panel: {PANEL_URL}.",
+        f"Panel ({PANEL_URL}).",
+        # A1-1: the same link in the wrappers a model writes.
+        f"Panel: **{PANEL_URL}**",
+        f"Panel: <{PANEL_URL}>",
+        f"Panel: `{PANEL_URL}`",
+        f"Panel: „{PANEL_URL}“",
+        f"Panel: “{PANEL_URL}”",
+        f"Panel: '{PANEL_URL}'",
+        f"Panel: {PANEL_URL}…",
+        f"[PANEL 3D OGRADA]({PANEL_URL})",
+        f"[PANEL 3D OGRADA]({PANEL_URL}).",
+        f"[{PANEL_URL}]({PANEL_URL})",
+        f"**[PANEL 3D OGRADA]({PANEL_URL})**",
+    ],
+)
+def test_link_a_tool_returned_passes(text: str) -> None:
+    facts = facts_from_output(OLX_OUTPUT)
+    result = check_grounding(text, facts)
+    assert result.ok, result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sve artikle imamo na OLX.ba.",
+        "Pogledajte oglas na olx.ba ili nas nazovite.",
+        "Martom je na OLX.ba, a i u Međugorju.",
+    ],
+)
+def test_naming_olx_ba_without_a_link_passes(text: str) -> None:
+    # A1-1: the site's name alone is not a link.
+    assert check_grounding(text, facts_from_output(OLX_OUTPUT)).ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A manual product has no OLX listing: any link for it is invented.
+        "Anker: https://martom.olx.ba/artikal/anker-m8x70",
+        "Anker: martom.olx.ba/artikal/anchor_m8x70",
+        "Anker: olx.ba/artikal/anker-m8x70",
+        "Anker: www.olx.ba/artikal/anker",
+        # An OLX link no tool returned, even for a known listing id.
+        "Panel: https://olx.ba/artikal/63996799",
+        "Panel: https://martom.olx.ba/artikal/drugi-panel-63996799",
+        "Pogledajte https://example.com/anker",
+        # Wrappers never turn a wrong link into a right one.
+        "Anker: **https://martom.olx.ba/artikal/anker-m8x70**",
+        "Anker: <martom.olx.ba/artikal/anker-m8x70>",
+        "[Anker](https://martom.olx.ba/artikal/anker-m8x70)",
+        f"[{PANEL_URL}](https://martom.olx.ba/artikal/anker-m8x70)",
+        f"Panel: `{PANEL_URL}/`",
+    ],
+)
+def test_link_no_tool_returned_fails(text: str) -> None:
+    facts = facts_from_output(OLX_OUTPUT)
+    result = check_grounding(text, facts)
+    assert not result.ok
+    assert any("link" in problem for problem in result.problems)

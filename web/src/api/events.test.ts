@@ -18,6 +18,7 @@ import {
   CHAT_EVENT_TYPES,
   CHIP_KINDS,
   ERROR_KINDS,
+  PRODUCT_SOURCES,
   STEP_STATUSES,
   type BomEvent,
   type BomLine,
@@ -62,8 +63,10 @@ const SHAPES = {
   ChipsEvent: { type: false, intro: true, project: true, questions: false } satisfies Nullability<ChipsEvent>,
   Variant: { label: false, price: true } satisfies Nullability<Variant>,
   ProductCard: {
-    listing_id: false,
-    url: false,
+    source: false,
+    listing_id: true,
+    manual_key: true,
+    url: true,
     title: false,
     subtitle: true,
     why: false,
@@ -72,7 +75,9 @@ const SHAPES = {
     price: true,
     price_unit: true,
     variants: false,
-  } satisfies Nullability<ProductCard>,
+    // Pick merges the two card types (olx | manual) into one object type first:
+    // Nullability<ProductCard> alone would map each member separately.
+  } satisfies Nullability<Pick<ProductCard, keyof ProductCard>>,
   ProductCardsEvent: { type: false, cards: false } satisfies Nullability<ProductCardsEvent>,
   BomLineOut: {
     item: false,
@@ -104,6 +109,7 @@ const ENUMS: Record<string, readonly string[]> = {
   'StepEvent.status': STEP_STATUSES,
   'ChipQuestion.kind': CHIP_KINDS,
   'ErrorEvent.kind': ERROR_KINDS,
+  'ProductCard.source': PRODUCT_SOURCES,
 }
 
 interface SchemaProperty {
@@ -224,6 +230,19 @@ describe('chat event contract', () => {
     expect(concrete?.note).toBeTruthy()
     const bom = fixtures.fenceConcretePosts.find((event): event is BomEvent => event.type === 'bom')
     expect(bom?.extra_lines.map((line) => line.name)).toEqual(['Stupovi za betoniranje – po upitu'])
+  })
+
+  it('has a manual product card without a listing id or link', () => {
+    const cards = Object.values(fixtures)
+      .flat()
+      .flatMap((event) => (event.type === 'product_cards' ? event.cards : []))
+    const manual = cards.filter((card) => card.source === 'manual')
+    expect(manual.map((card) => [card.listing_id, card.url, card.manual_key])).toEqual([[null, null, 'anchor_m8x70']])
+  })
+
+  it('rejects an unknown product source', () => {
+    const [card] = fixtures.manualProduct.flatMap((event) => (event.type === 'product_cards' ? event.cards : []))
+    expect(validate({ type: 'product_cards', cards: [{ ...card, source: 'sale' }] })).toBe(false)
   })
 
   it('has a rate-limited reply', () => {
