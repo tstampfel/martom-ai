@@ -97,7 +97,7 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
   | 150 cm | 200 cm | derived from Toni's rule |
 
 - **Foot-plate post (b) height = fence (roll) height** (Toni): 60 → 60, 80 → 80, 100 → 100, 125 → 125, 150 → 150 cm. Reference prices (26 Nov 2026): 60 cm → 10,50 · 80 cm → 11,90 · 100 cm → 14,00 · 125 cm → 16,50 · 150 cm → 21,00 KM. Colours: green and anthracite.
-- **Anchors for (b):** **anker vijak M8×70 or M8×80** (a bolt anchor, no sleeve), **3 per post** for the foot plate's 3 holes; drill bit **ø8 mm** (Toni, 28 Nov 2026). The default and the BOM line stay **M8×70**; the advisor may mention M8×80 as an alternative. These are not the panel fence's tiplo anker M8×80. M8×70 has **no OLX listing**, so it comes from the `manual_products` config (see below), price 0,80 KM (re-confirmed by Toni 26 Nov 2026 14:29). Anchors are prateći materijal, sold separately (see "Panel fence").
+- **Anchors for (b), foot-plate posts 81645615 (3 holes):** **anker vijak M8×70 or M8×80** (a bolt anchor, no sleeve), **3 per post** for the foot plate's 3 holes; drill bit **ø8 mm** (Toni, 28 Nov 2026). The default and the BOM line stay **M8×70**; the advisor may mention M8×80 as an alternative. These are not the panel fence's tiplo anker M8×80. M8×70 has **no OLX listing**, so it comes from the `manual_products` config (see below), price 0,80 KM (re-confirmed by Toni 26 Nov 2026 14:29). Anchors are prateći materijal, sold separately (see "Panel fence").
 - T-posts (a) need no anchors.
 - **Allowlist:** listing (b) sits in "Oprema/pribor za stolariju", not "Ograde". Toni will try to move it (and the tensioner 18129143) to "Ograde". Until the sync actually sees a listing in "Ograde", **81645615** stays on the explicit sync allowlist (issue #45). The sync never syncs the whole joinery category to get one listing, and it dedupes, so a moved listing is never stored twice.
 
@@ -131,7 +131,7 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
 | Tensioner (španer) | OLX 18129143, category "Biznis i Industrija > Poljoprivreda > Ostalo" (allowlist) | green, galvanized or anthracite; reference price 1,65 KM (all prices from the sync) | **per side: 3 × ceil(side / 25)** |
 | Tension wire (žica nosiva) | OLX 46677177, category "Ograde" | PVC-coated, green or anthracite, 100 m coils, **2,70 mm**; reference price 18,00 KM per 100 m coil | **optional**: coils = **ceil(rows × total length / 100)** |
 | Wire holder (nosač nosive žice) | OLX 48475613, category "Ostalo" (allowlist) | foot-plate posts only | **assumption, pending Toni:** 1 per wire row per foot-plate post |
-| Anchor M8×70 | no OLX listing; `manual_products` | 0,80 KM (Toni, 26 Nov 2026) | 3 per foot-plate post |
+| Anker vijak M8×70 (anchor) | no OLX listing; `manual_products` | 0,80 KM (Toni, 26 Nov 2026) | 3 per foot-plate post |
 
 - **Tensioners are counted per side** (Toni): each side gets 3 per started 25 m. At a corner, each of the two sides has its own tensioner, which is already in that side's count. Example: 10 m + 10 m with 1 corner → 3 + 3 = **6**.
 - **Tension wire is optional ("po želji")** and **left out of the BOM by default** (Tomislav, 26 Nov 2026: many customers have their own). The BOM returns it as a **suggested add-on** with the quantity already calculated: rows by fence height (Toni: **≤ 100 cm → 2 rows, > 100 cm → 3 rows**), coils, and for foot-plate fences the wire holders. The UI shows it under the BOM with a one-tap **"Dodaj nosivu žicu"** button that adds the wire (and holders) as normal, removable lines.
@@ -141,7 +141,7 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
 ### Products without an OLX listing (`manual_products`)
 
 - A product Toni sells that has no OLX listing goes into a small, reviewed `manual_products` config file, never into code as a constant. Each entry has: name, price, source (e.g. "Toni 26.11.2026") and a `last_confirmed` date.
-- First entry: **Anchor M8×70**, 0,80 KM, source "Toni 26.11.2026", last_confirmed 2026-11-26.
+- First entry: **Anker vijak M8×70**, 0,80 KM, source "Toni 26.11.2026", last_confirmed 2026-11-26.
 - The BOM and the cart treat a manual product like any other product (price, quantity, removable line).
 - An entry whose `last_confirmed` is **more than 90 days old** raises an item in Toni's review queue (`review_issue`), so he reconfirms the price.
 
@@ -211,7 +211,7 @@ Toni confirmed the breakdown. The prices were checked against OLX listing 639967
 | Panel 153 × 250 cm | 10 | 53,00 KM | 530,00 KM |
 | Post 155 cm with base plate | 11 | 24,90 KM | 273,90 KM |
 | PVC clip | 44 (11 × 4) | 1,00 KM | 44,00 KM |
-| Anchor M8×80 | 44 (11 × 4) | 1,30 KM | 57,20 KM |
+| Tiplo anker M8×80 | 44 (11 × 4) | 1,30 KM | 57,20 KM |
 | **Total** | | | **905,10 KM** |
 
 Where the prices live: posts, clips and anchors aren't separate OLX listings. Their prices are in the free-text description of the panel listing 63996799, next to the panel prices. Extraction (M2-1) must read them from there.
