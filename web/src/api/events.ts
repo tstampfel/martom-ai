@@ -12,7 +12,18 @@
 /** A price in KM as sent by the API, e.g. "53.00". Format it for display. */
 export type Price = string
 
-export const CHAT_EVENT_TYPES = ['token', 'step', 'chips', 'product_cards', 'bom', 'error', 'done'] as const
+export const CHAT_EVENT_TYPES = [
+  'token',
+  'step',
+  'chips',
+  'product_cards',
+  'bom',
+  'bom_cleared',
+  'cart',
+  'contact_martom',
+  'error',
+  'done',
+] as const
 
 // The closed sets of values; events.test.ts compares each with the schema.
 export const STEP_STATUSES = ['working', 'done', 'needs_input'] as const
@@ -185,6 +196,60 @@ export interface BomEvent {
   notes: string[]
 }
 
+/**
+ * The materials list on screen no longer fits (the customer changed the
+ * fence): hide it and its total until the next bom event (#147).
+ */
+export interface BomClearedEvent {
+  type: 'bom_cleared'
+}
+
+interface CartLineFields {
+  title: string
+  /** As written in the listing, e.g. "153 × 250"; null without variants. */
+  variant_label: string | null
+  quantity: number
+  /** null: "cijena na upit". */
+  unit_price: Price | null
+  /** unit_price × quantity, worked out by the server; null when on request. */
+  line_total: Price | null
+}
+
+/** A cart line for a product with an OLX listing. */
+export interface OlxCartLine extends CartLineFields {
+  source: 'olx'
+  listing_id: number
+  manual_key: null
+  /** https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id. */
+  url: string
+}
+
+/** A cart line for a product without an OLX listing: no id, no link. */
+export interface ManualCartLine extends CartLineFields {
+  source: 'manual'
+  listing_id: null
+  /** The manual_products.toml key, e.g. "anchor_m8x70". */
+  manual_key: string
+  url: null
+}
+
+/** One product the advisor added to the cart; narrow on `source`. */
+export type CartLine = OlxCartLine | ManualCartLine
+
+/** Products the advisor added to the cart this turn; add them to the korpa (#27). */
+export interface CartEvent {
+  type: 'cart'
+  lines: CartLine[]
+}
+
+/**
+ * Offer the "contact Martom" button: no materials list for this request
+ * (chain link, a fence too large). The answer text says why.
+ */
+export interface ContactMartomEvent {
+  type: 'contact_martom'
+}
+
 /** The reply failed. Show the copy for `kind`; a done event follows. */
 export interface ErrorEvent {
   type: 'error'
@@ -206,6 +271,9 @@ export type ChatEvent =
   | ChipsEvent
   | ProductCardsEvent
   | BomEvent
+  | BomClearedEvent
+  | CartEvent
+  | ContactMartomEvent
   | ErrorEvent
   | DoneEvent
 

@@ -3,8 +3,8 @@
 // events.test.ts checks every event against events.ts and the JSON Schema.
 
 import type { ChatEvent } from '../events'
-import { bomAllOnRequest, fenceBom, fenceClarify, fenceConcretePosts, rollFenceSomeOnRequest } from './fence'
-import { internalError, manualProduct, productQuestion, rateLimited } from './other'
+import { bomAllOnRequest, fenceBom, fenceChanged, fenceClarify, fenceConcretePosts, rollFenceSomeOnRequest } from './fence'
+import { cartAdded, chainLink, internalError, manualProduct, productQuestion, rateLimited } from './other'
 
 export const fixtures = {
   fenceClarify,
@@ -12,8 +12,11 @@ export const fixtures = {
   fenceConcretePosts,
   rollFenceSomeOnRequest,
   bomAllOnRequest,
+  fenceChanged,
   productQuestion,
   manualProduct,
+  cartAdded,
+  chainLink,
   internalError,
   rateLimited,
 } satisfies Record<string, ChatEvent[]>

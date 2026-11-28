@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { BomRecalculator } from '../api/bomRecalculator'
 import type { ChatClient, RequestAnswers } from '../api/chatClient'
-import type { ChatError, Turn } from '../chat'
+import { currentBom, type ChatError, type Turn } from '../chat'
 import { answerSummary, initialAnswers, requestAnswers, type ClarifyAnswers } from '../clarify'
 import { copy } from '../copy'
 import { useMediaQuery } from '../hooks'
@@ -58,10 +58,12 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
   const busy = lastReply.streaming
   const answers = answersState ?? (openChips ? initialAnswers(openChips) : null)
 
-  // One materials list: the newest bom event. Its edits live here, so they
-  // survive moving between the panel and the card when the window resizes.
-  const bomTurn = state.turns.findLastIndex((turn) => turn.reply.bom !== null)
-  const bomEditor = useBomEditor(bomTurn === -1 ? null : state.turns[bomTurn].reply.bom, recalculator)
+  // One materials list: the newest bom event, none after the fence changed
+  // (bom_cleared). Its edits live here, so they survive moving between the
+  // panel and the card when the window resizes.
+  const shownBom = currentBom(state.turns)
+  const bomTurn = shownBom?.turnIndex ?? -1
+  const bomEditor = useBomEditor(shownBom?.bom ?? null, recalculator)
   const bomInPanel = wide && !openChips
   const bomCard = (variant: 'card' | 'panel') =>
     bomEditor ? (

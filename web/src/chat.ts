@@ -6,6 +6,7 @@
 import {
   CHAT_EVENT_TYPES,
   type BomEvent,
+  type CartLine,
   type ChatEvent,
   type ChipsEvent,
   type ErrorEvent,
@@ -34,6 +35,12 @@ export type AdvisorReply = {
   chips: ChipsEvent | null
   cards: ProductCard[]
   bom: BomEvent | null
+  /** The advisor dropped the materials list shown so far (bom_cleared, #147). */
+  bomCleared: boolean
+  /** Products the advisor added to the cart in this reply; the korpa itself is #27. */
+  cart: CartLine[]
+  /** The advisor offers to contact Martom (no materials list for this request). */
+  contactMartom: boolean
   error: ChatError | null
   /** True until the done event (or a failure) arrives. */
   streaming: boolean
@@ -66,6 +73,9 @@ const EMPTY_REPLY: AdvisorReply = {
   chips: null,
   cards: [],
   bom: null,
+  bomCleared: false,
+  cart: [],
+  contactMartom: false,
   error: null,
   streaming: true,
 }
@@ -101,12 +111,28 @@ function applyEvent(reply: AdvisorReply, event: ChatEvent): AdvisorReply {
     case 'product_cards':
       return { ...reply, cards: [...reply.cards, ...event.cards] }
     case 'bom':
-      return { ...reply, bom: event }
+      return { ...reply, bom: event, bomCleared: false }
+    case 'bom_cleared':
+      return { ...reply, bom: null, bomCleared: true }
+    case 'cart':
+      return { ...reply, cart: [...reply.cart, ...event.lines] }
+    case 'contact_martom':
+      return { ...reply, contactMartom: true }
     case 'error':
       return { ...reply, error: { kind: event.kind, retryAfterSeconds: event.retry_after_seconds } }
     case 'done':
       return { ...reply, streaming: false }
   }
+}
+
+/**
+ * The materials list to show: the newest bom event, unless a later reply
+ * dropped it (bom_cleared, the fence changed). null: show no list.
+ */
+export function currentBom(turns: readonly Turn[]): { turnIndex: number; bom: BomEvent } | null {
+  const turnIndex = turns.findLastIndex((turn) => turn.reply.bom !== null || turn.reply.bomCleared)
+  const bom = turnIndex === -1 ? null : turns[turnIndex].reply.bom
+  return bom ? { turnIndex, bom } : null
 }
 
 function withLastReply(state: ChatState, update: (reply: AdvisorReply) => AdvisorReply): ChatState {

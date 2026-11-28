@@ -225,3 +225,16 @@ export const bomAllOnRequest: ChatEvent[] = [
   },
   { type: 'done', thread_id: '9e4b1a73-2c8d-4f05-b6e2-7d3a5c0f8b19' },
 ]
+
+/**
+ * The customer changed the fence after a list was shown ("Ipak 103 cm"): the
+ * advisor dropped the old list (#147), so the browser must hide it and its
+ * total until the next bom event.
+ */
+export const fenceChanged: ChatEvent[] = [
+  { type: 'step', id: 'parse', text: 'Razumijem: panelna ograda · 25 m · 103 cm', status: 'done' },
+  { type: 'bom_cleared' },
+  { type: 'token', text: 'Promijenili ste visinu, ' },
+  { type: 'token', text: 'pa računam popis ispočetka.' },
+  { type: 'done', thread_id: '3b6f2a0e-7c1d-4e7a-9a43-2f1c5d8e9b10' },
+]

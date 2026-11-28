@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fixtures } from './api/fixtures'
-import { chatReducer, INITIAL_CHAT_STATE, type ChatState } from './chat'
+import { chatReducer, currentBom, INITIAL_CHAT_STATE, type ChatState } from './chat'
 
 /** Sends `text`, then replays `events` as one reply. */
 function replay(events: readonly unknown[], text = 'Treba mi 25 m ograde', state: ChatState = INITIAL_CHAT_STATE) {
@@ -50,6 +50,40 @@ describe('chatReducer', () => {
     const results = replay(fixtures.fenceBom)
     expect(lastReply(results).cards.map((card) => card.listing_id)).toEqual([63996799, 24449780])
     expect(lastReply(results).bom?.total).toBe('913.10')
+  })
+
+  it('keeps the cart additions and the contact Martom offer of the reply', () => {
+    const cart = replay(fixtures.cartAdded)
+    expect(lastReply(cart).cart.map((line) => [line.title, line.quantity, line.line_total])).toEqual([
+      ['Panelna ograda 3D (Nylofor)', 3, '159.00'],
+      ['Anker M8×70', 8, null],
+    ])
+    expect(lastReply(cart).contactMartom).toBe(false)
+    expect(lastReply(replay(fixtures.chainLink)).contactMartom).toBe(true)
+  })
+
+  it('marks the reply when the advisor dropped the materials list', () => {
+    const state = replay(fixtures.fenceChanged)
+    expect(lastReply(state).bomCleared).toBe(true)
+    expect(lastReply(state).bom).toBeNull()
+  })
+
+  it('shows no materials list after the fence changed, and the new one once it comes', () => {
+    const withList = replay(fixtures.fenceBom)
+    expect(currentBom(withList.turns)?.bom.total).toBe('913.10')
+    const changed = replay(fixtures.fenceChanged, 'Ipak 103 cm', withList)
+    expect(currentBom(changed.turns)).toBeNull()
+    // A later turn without any list keeps it hidden; a new bom event shows again.
+    const chatted = replay(fixtures.productQuestion, 'A katanac?', changed)
+    expect(currentBom(chatted.turns)).toBeNull()
+    const recalculated = replay(fixtures.bomAllOnRequest, 'Izračunaj', chatted)
+    expect(currentBom(recalculated.turns)).toEqual({ turnIndex: 3, bom: lastReply(recalculated).bom })
+  })
+
+  it('uses the new list when one reply clears and then sends a list', () => {
+    const state = replay([{ type: 'bom_cleared' }, ...fixtures.fenceBom])
+    expect(currentBom(state.turns)?.bom.total).toBe('913.10')
+    expect(lastReply(state).bomCleared).toBe(false)
   })
 
   it('stops streaming and remembers the thread id on done', () => {
