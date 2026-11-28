@@ -1,6 +1,7 @@
 """Privacy guard for committed fixtures (M2-1b).
 
-The repo is public, and `tests/fixtures/` and `evals/` hold real OLX listing text. This guard
+The repo is public, and `tests/fixtures/` and `evals/` hold real OLX listing text (and
+`knowledge/sources/` Toni's raw Q&A, #169). This guard
 scans every file under them and fails on what must never be committed: phone numbers,
 email addresses, seller/user fields, oversized files and files with more than 20 listings.
 
@@ -30,7 +31,12 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FIXTURE_ROOTS = (REPO_ROOT / "tests" / "fixtures", REPO_ROOT / "evals")
+# knowledge/sources/ holds Toni's raw Q&A files (#169), committed next to the chunks made from them.
+FIXTURE_ROOTS = (
+    REPO_ROOT / "tests" / "fixtures",
+    REPO_ROOT / "evals",
+    REPO_ROOT / "knowledge" / "sources",
+)
 
 MAX_FILE_BYTES = 100_000
 MAX_LISTINGS_PER_FILE = 20
@@ -338,6 +344,12 @@ def fixture_files() -> list[Path]:
 
 def test_guard_finds_the_fixtures() -> None:
     assert len(fixture_files()) >= 6
+
+
+def test_guard_scans_the_knowledge_sources() -> None:
+    # Toni's raw Q&A (#169) is committed under knowledge/sources/, so it gets the same scan.
+    source = REPO_ROOT / "knowledge" / "sources" / "martom_3d_panels_qa.jsonl"
+    assert source in fixture_files()
 
 
 @pytest.mark.parametrize("path", fixture_files(), ids=lambda path: str(path.relative_to(REPO_ROOT)))

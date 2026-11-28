@@ -5,6 +5,7 @@ topic: installation
 sources:
   - "fence-rules.md: Panel fence > Concrete, installation and availability"
   - "Toni, 26.11.2026"
+  - "Toni / Tomislav, 28.11.2026 (montaža po dogovoru u krugu oko 40 km, po ponudi; uz montažu dostava besplatna)"
 status: draft
 ---
 
@@ -13,7 +14,8 @@ status: draft
 ## Montaža
 
 - Martom montira ogradu **samo na postojeći betonski zid**.
-- Cijena montaže je **uvijek na upit**, jer ovisi o lokaciji. Savjetnik nikada ne navodi cijenu montaže.
+- Montažu radimo **po dogovoru u krugu oko 40 km** od Međugorja. Montaža je **po ponudi**: cijena ovisi o lokaciji, pa se kupac javi na **036 651 427** ili **info@martom-bekaert.com**. Savjetnik nikada ne navodi cijenu montaže.
+- Uz Martomovu montažu dostava materijala je besplatna.
 - Montaža nije stavka u spisku materijala ni u korpi.
 
 ## Beton i građevinski radovi

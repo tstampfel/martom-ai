@@ -14,10 +14,9 @@ status: draft
 
 ## Panelna ograda
 
-- Kruti paneli visine **83, 103, 123, 153 ili 203 cm**.
-- Širina panela je **250 cm** ili **200 cm**. Preporučujemo 250 cm jer treba manje stupova, pa je ograda jeftinija. 200 cm nudimo kada kupac to traži ili kada dužina bolje odgovara panelima od 200 cm.
-- Paneli se PVC klipsama pričvršćuju na **stupove s pločicom**, a stupovi se ankerima pričvršćuju za betonsku podlogu.
+- Kruti 3D paneli koji se PVC kopčama pričvršćuju na **stupove s pločicom**, a stupovi se ankerima pričvršćuju za betonsku podlogu.
 - Stupovi s pločicom su na stanju i to je naša standardna preporuka.
+- Visine, boje, stupovi, kopče, trake za privatnost, kapije i montaža: vidi tekstove "3D panelna ograda" (Tonijevi odgovori od 28.11.2026).
 
 ## Varena ograda u roli
 
