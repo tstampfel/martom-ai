@@ -1,8 +1,13 @@
-"""Strip personal data from a real chat before it is promoted to an eval set (#129).
+"""Strip personal data from a real chat before it is kept longer than the chats (#129).
 
-Every path that copies a customer chat into something kept longer than the chats
-themselves (a LangSmith dataset or feedback example, `evals/*.jsonl`) must pass it
-through `scrub_personal_data` first. It replaces:
+Real customer chats are never committed to the public repo, even scrubbed (Tomislav,
+28 Nov 2026): a scrubbed real chat is exported only to a private location (an S3 bucket
+in our AWS account or a private repo), never to `evals/`, which holds only hand-written
+or hand-reviewed cases that Tomislav or Toni approved, rewritten so no real customer
+wording, street or village remains. Every path that copies a customer chat into
+something kept longer than the chats themselves (a LangSmith dataset, a feedback
+example or a private export) must still pass it through `scrub_personal_data` first.
+It replaces:
 
 - phone numbers with "[telefon]": BiH and HR numbers with a leading 0, "(061)", "+387",
   "00387" or "387", grouped with spaces, "/", "-" or "."; and a number without its 0
@@ -27,15 +32,15 @@ Addresses are recognised only by such a label or context, never by capitalised w
 and a number alone: product text ("Panel Nylofor 3D 153 cm", "Kolica Tačke 85 L") must
 reach the eval set unchanged, or the eval measures something else.
 
-Known misses, so the human reading a promoted chat knows what to look for: a name the
+Known misses, so the human reading a scrubbed chat knows what to look for: a name the
 customer gives without an intro and without the order form ("Pozdrav, Pero"), a street
 with no label, street word or delivery verb, even with a house number ("Izmišljena 12,
 Čitluk"), a phone without its 0 written in one run after a bare "broj" (it looks like a
 listing id), a house number followed by a sentence end and a name that is also a month
 ("Izmišljena 5. Maja ..." reads as a date), foreign phone numbers, and numbers written
-as words. Pass the order form's values whenever there is one, and still read a promoted
-chat before committing it (`tests/test_fixture_privacy.py` keeps guarding the committed
-files).
+as words. Pass the order form's values whenever there is one, and still read a scrubbed
+chat before it is exported or uploaded (`tests/test_fixture_privacy.py` keeps guarding
+the committed files).
 
 Known over-scrubs (accepted: the function only ever removes text): a size written in
 capitals after a delivery place or street, "DOSTAVA U MOSTAR 20 M OGRADE" ->
