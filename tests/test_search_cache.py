@@ -1,0 +1,165 @@
+"""The Redis search cache (M3-5): hit, miss, Redis down, and what may never be stored.
+
+Hit and miss run against the compose Redis (TEST_REDIS_URL; skipped locally when it is
+down, failing in CI), each test under its own random key prefix, deleted afterwards.
+Redis-down tests point at a port nothing listens on.
+"""
+
+import logging
+import uuid
+from collections.abc import AsyncIterator
+from decimal import Decimal
+
+import pytest
+import redis.asyncio as redis
+from pydantic import SecretStr
+
+from martom.search.cache import (
+    SearchCache,
+    make_search_cache,
+    question_digest,
+    redis_client,
+)
+from martom.search.keyword import SearchFilters
+from martom.settings import Settings
+
+pytestmark = pytest.mark.anyio
+
+UNREACHABLE_REDIS = "redis://127.0.0.1:1/0"
+QUESTION = "Panelna ograda 1,5 m antracit, imate li?"
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture
+async def cache(redis_url: str) -> AsyncIterator[SearchCache]:
+    prefix = f"test-{uuid.uuid4().hex}"
+    cache = SearchCache(redis_client(redis_url), query_ttl=60, result_ttl=60, prefix=prefix)
+    yield cache
+    keys = [key async for key in cache.client.scan_iter(match=f"{prefix}:*")]
+    if keys:
+        await cache.client.delete(*keys)
+    await cache.aclose()
+
+
+async def stored_keys(cache: SearchCache) -> list[str]:
+    return [key.decode() async for key in cache.client.scan_iter(match=f"{cache.prefix}:*")]
+
+
+def test_the_digest_ignores_extra_spaces_but_not_words() -> None:
+    assert question_digest("  ograda  1,5 m ") == question_digest("ograda 1,5 m")
+    assert question_digest("ograda 1,5 m") != question_digest("ograda 1,2 m")
+    assert "ograda" not in question_digest("ograda")
+
+
+async def test_a_miss_returns_none(cache: SearchCache) -> None:
+    assert await cache.get_filters("haiku", QUESTION) is None
+    assert await cache.get_vector("cohere/x", QUESTION) is None
+    assert await cache.get_result("some-key") is None
+
+
+async def test_filters_come_back_exactly_as_stored(cache: SearchCache) -> None:
+    filters = SearchFilters(height_cm=150.0, colour="antracit", max_price=Decimal("60.50"))
+    await cache.set_filters("haiku", QUESTION, filters)
+    assert await cache.get_filters("haiku", QUESTION) == filters
+    # Another parser model (or prompt version) is another key.
+    assert await cache.get_filters("sonnet", QUESTION) is None
+
+
+async def test_no_filters_is_a_hit_not_a_miss(cache: SearchCache) -> None:
+    await cache.set_filters("haiku", QUESTION, SearchFilters())
+    assert await cache.get_filters("haiku", QUESTION) == SearchFilters()
+
+
+async def test_a_vector_comes_back_exactly_as_stored(cache: SearchCache) -> None:
+    vector = [0.1, -2.5e-7, 1 / 3] + [0.0] * 1021
+    await cache.set_vector("cohere/x", QUESTION, vector)
+    assert await cache.get_vector("cohere/x", QUESTION) == vector
+    assert await cache.get_vector("cohere/y", QUESTION) is None
+
+
+async def test_a_result_comes_back_as_stored(cache: SearchCache) -> None:
+    await cache.set_result("k", {"hits": [{"listing_id": 1, "title": "PANEL"}]})
+    assert await cache.get_result("k") == {"hits": [{"listing_id": 1, "title": "PANEL"}]}
+
+
+async def test_entries_expire(cache: SearchCache) -> None:
+    await cache.set_filters("haiku", QUESTION, SearchFilters(colour="zelena"))
+    await cache.set_result("k", {"hits": []})
+    ttls = {key: await cache.client.ttl(key) for key in await stored_keys(cache)}
+    assert len(ttls) == 2
+    assert all(0 < ttl <= 60 for ttl in ttls.values())
+
+
+async def test_the_question_is_never_in_a_key(cache: SearchCache) -> None:
+    await cache.set_filters("haiku", QUESTION, SearchFilters())
+    await cache.set_vector("cohere/x", QUESTION, [0.5] * 4)
+    keys = " ".join(await stored_keys(cache)).lower()
+    for word in ("panelna", "ograda", "antracit", "imate"):
+        assert word not in keys
+
+
+async def test_a_corrupt_entry_is_a_miss(cache: SearchCache) -> None:
+    await cache.set_filters("haiku", QUESTION, SearchFilters())
+    for key in await stored_keys(cache):
+        await cache.client.set(key, b"\xff not json")
+    assert await cache.get_filters("haiku", QUESTION) is None
+
+
+async def test_redis_down_is_a_miss_and_never_raises(caplog: pytest.LogCaptureFixture) -> None:
+    cache = SearchCache(redis_client(UNREACHABLE_REDIS), query_ttl=60, result_ttl=60)
+    with caplog.at_level(logging.WARNING):
+        assert await cache.get_filters("haiku", QUESTION) is None
+        await cache.set_vector("cohere/x", QUESTION, [0.5])
+        assert await cache.get_result("k") is None
+    await cache.aclose()
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    # One warning per outage, not one per call; never the question.
+    assert len(warnings) == 1
+    assert "panelna" not in caplog.text.lower()
+
+
+class CountingRedis(redis.Redis):
+    def __init__(self, url: str) -> None:
+        pool = redis.ConnectionPool.from_url(url, socket_connect_timeout=0.2, socket_timeout=0.2)
+        super().__init__(connection_pool=pool)
+        self.calls = 0
+
+    async def execute_command(self, *args, **options):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        return await super().execute_command(*args, **options)
+
+
+async def test_after_a_failure_redis_is_skipped_for_a_while() -> None:
+    now = [1000.0]
+    client = CountingRedis(UNREACHABLE_REDIS)
+    cache = SearchCache(client, query_ttl=60, result_ttl=60, retry_after=30, clock=lambda: now[0])
+    await cache.get_result("k")
+    assert client.calls == 1
+    await cache.get_result("k")
+    await cache.set_result("k", {})
+    assert client.calls == 1  # skipped: no waiting on a dead server for every search
+    now[0] += 31
+    await cache.get_result("k")
+    assert client.calls == 2  # tried again after retry_after
+    await cache.aclose()
+
+
+def test_no_cache_when_turned_off() -> None:
+    settings = Settings(search_cache_enabled=False, anthropic_api_key=SecretStr("x"))
+    assert make_search_cache(settings) is None
+
+
+async def test_the_cache_follows_the_settings() -> None:
+    settings = Settings(
+        redis_url="redis://127.0.0.1:6379/0",
+        search_cache_ttl_seconds=120,
+        query_cache_ttl_seconds=600,
+    )
+    cache = make_search_cache(settings)
+    assert cache is not None
+    assert (cache.result_ttl, cache.query_ttl) == (120, 600)
+    await cache.aclose()

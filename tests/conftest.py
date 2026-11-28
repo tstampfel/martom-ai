@@ -7,8 +7,9 @@ and dropped afterwards, so tests never touch the development database. If the se
 can't be reached the tests are skipped locally, but fail in CI (where CI is set), so a
 broken database setup can never turn into a quietly green run.
 
-Redis tests work the same way with TEST_REDIS_URL (unset = the local compose Redis). They
-only ping it and never write keys.
+Redis tests work the same way with TEST_REDIS_URL (unset = the local compose Redis). The
+search cache tests (M3-5) write keys only under a random `test-<uuid>` prefix and delete
+them afterwards, so they never touch the app's `martom:search` keys.
 """
 
 import os

@@ -12,6 +12,9 @@
 # | DATABASE_URL             | postgresql://martom@<rds endpoint>/martom?sslmode=require (no password) | same |
 # | PGPASSWORD               | secret: RDS-managed, key password | same                        |
 # | REDIS_URL                | redis://localhost:6379/0 (sidecar)| not set (no Redis)          |
+# | SEARCH_CACHE_ENABLED     | true                              | not set (API only)          |
+# | SEARCH_CACHE_TTL_SECONDS | 3600                              | not set                     |
+# | QUERY_CACHE_TTL_SECONDS  | 86400                             | not set                     |
 # | OLX_API_BASE_URL         | not set (Settings default)        | https://api.olx.ba          |
 # | OLX_SHOP_USERNAME        | not set                           | martom                      |
 # | OLX_REQUEST_INTERVAL     | not set                           | var.sync_request_interval (2.8) |
@@ -62,6 +65,11 @@ locals {
     # The Redis sidecar shares the task's network namespace, so it is on localhost.
     REDIS_URL   = "redis://localhost:6379/0"
     AGENT_MODEL = "claude-sonnet-5-5"
+    # Search cache (M3-5, search/cache.py). Same as the Settings defaults, set here so
+    # production doesn't depend on them silently.
+    SEARCH_CACHE_ENABLED     = "true"
+    SEARCH_CACHE_TTL_SECONDS = "3600"
+    QUERY_CACHE_TTL_SECONDS  = "86400"
   })
 
   job_environment = merge(local.common_environment, {
