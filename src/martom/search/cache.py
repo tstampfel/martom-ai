@@ -31,14 +31,15 @@ import logging
 import struct
 import time
 from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 
 import psycopg
 import redis.asyncio as redis
+from pydantic import TypeAdapter, ValidationError
 from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 
+from martom.embeddings import EMBEDDING_DIMENSIONS
 from martom.search.keyword import SearchFilters
 from martom.search.query_parser import PROMPT_VERSION
 from martom.settings import Settings
@@ -51,6 +52,10 @@ KEY_PREFIX = "martom:search"
 REDIS_TIMEOUT_SECONDS = 0.2
 # How long Redis is skipped after an error before it is tried again.
 RETRY_AFTER_SECONDS = 30.0
+# Part of the parse key. Bump it when the Python that turns Haiku's strings into filters
+# changes (parse_height_cm, parse_price_km, colour handling in query_parser.py), which
+# needs no PROMPT_VERSION bump, so a local Redis never serves filters parsed the old way.
+FILTERS_CACHE_FORMAT = 1
 
 
 def question_digest(question: str) -> str:
@@ -69,25 +74,20 @@ def redis_client(url: str) -> redis.Redis:
     )
 
 
+# Pydantic validates a cached entry against the dataclass's type hints, like a zod schema
+# built from a TS type: a field of the wrong type (a damaged or foreign entry) raises
+# ValidationError, which counts as a miss, instead of becoming filters that break the SQL.
+_FILTERS = TypeAdapter(SearchFilters)
+
+
 def filters_to_json(filters: SearchFilters) -> dict[str, Any]:
-    return {
-        "product_type": filters.product_type,
-        "height_cm": filters.height_cm,
-        "colour": filters.colour,
-        # Decimal as a string: JSON numbers are floats, and 60.50 must stay exact.
-        "min_price": None if filters.min_price is None else str(filters.min_price),
-        "max_price": None if filters.max_price is None else str(filters.max_price),
-    }
+    # mode="json" writes a Decimal as a string ("60.50"): JSON numbers are floats.
+    return _FILTERS.dump_python(filters, mode="json")
 
 
-def filters_from_json(data: dict[str, Any]) -> SearchFilters:
-    return SearchFilters(
-        product_type=data["product_type"],
-        height_cm=data["height_cm"],
-        colour=data["colour"],
-        min_price=None if data["min_price"] is None else Decimal(data["min_price"]),
-        max_price=None if data["max_price"] is None else Decimal(data["max_price"]),
-    )
+def filters_from_json(data: Any) -> SearchFilters:
+    """Raises ValidationError when `data` doesn't fit SearchFilters."""
+    return _FILTERS.validate_python(data)
 
 
 class SearchCache:
@@ -114,7 +114,8 @@ class SearchCache:
     # -- the three kinds of value -------------------------------------------------------
 
     def _parse_key(self, parser_model: str, question: str) -> str:
-        return f"{self.prefix}:parse:{parser_model}:{PROMPT_VERSION}:{question_digest(question)}"
+        version = f"{PROMPT_VERSION}:f{FILTERS_CACHE_FORMAT}"
+        return f"{self.prefix}:parse:{parser_model}:{version}:{question_digest(question)}"
 
     def _vector_key(self, embedding_model: str, question: str) -> str:
         return f"{self.prefix}:vector:{embedding_model}:{question_digest(question)}"
@@ -129,7 +130,7 @@ class SearchCache:
             return None
         try:
             return filters_from_json(data)
-        except (KeyError, TypeError, ArithmeticError):
+        except ValidationError:
             return self._unreadable("parse")
 
     async def set_filters(self, parser_model: str, question: str, filters: SearchFilters) -> None:
@@ -140,7 +141,9 @@ class SearchCache:
         raw = await self._get(self._vector_key(embedding_model, question))
         if raw is None:
             return None
-        if len(raw) % 8:
+        # Every allowed model gives EMBEDDING_DIMENSIONS numbers; any other size is damaged
+        # (Embedder's size check would turn it into a keyword-only search).
+        if len(raw) != 8 * EMBEDDING_DIMENSIONS:
             return self._unreadable("vector")
         # Little-endian doubles: exact, and 8 KB for 1024 numbers instead of ~20 KB of JSON.
         return list(struct.unpack(f"<{len(raw) // 8}d", raw))
@@ -158,6 +161,11 @@ class SearchCache:
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+    @property
+    def available(self) -> bool:
+        """False while Redis is being skipped after an error (every call is then a miss)."""
+        return self._available()
 
     # -- Redis calls, with the fallback ---------------------------------------------------
 
@@ -233,15 +241,18 @@ def make_search_cache(settings: Settings) -> SearchCache | None:
 # - sync_run: a new run (sync or extraction) and each run's end. Syncs add, change and
 #   deactivate listings; extraction rewrites products. A run's own writes are covered when
 #   it finishes (finished_at), so a result cached during a run lives until it ends.
-# - product.embedding_hash: `martom embed` writes no sync_run row; XOR of the hashes'
-#   hashtext changes whenever any vector does (order-independent, no sort).
-# - manual_product: the TOML entry (content_hash) and its vector.
+# - product.embedding_hash: `martom embed` writes no sync_run row; an XOR over the rows
+#   changes whenever any vector does (order-independent, no sort). Each row's id is mixed
+#   in: duplicate listings share a search_text and so an embedding_hash, and two equal
+#   values XOR-ed together would cancel out.
+# - manual_product: the TOML entry (content_hash, which includes the price) and its vector.
 _CATALOGUE_VERSION_SQL = """
 SELECT concat_ws(':',
     (SELECT max(id) FROM sync_run),
     (SELECT extract(epoch FROM max(finished_at)) FROM sync_run),
-    (SELECT coalesce(bit_xor(hashtext(embedding_hash)), 0) FROM product),
-    (SELECT coalesce(bit_xor(hashtext(content_hash || coalesce(embedding_hash, ''))), 0)
+    (SELECT coalesce(bit_xor(hashtext(listing_id || ':' || embedding_hash)), 0) FROM product),
+    (SELECT coalesce(bit_xor(hashtext(
+         key || ':' || content_hash || ':' || coalesce(embedding_hash, ''))), 0)
        FROM manual_product))
 """
 

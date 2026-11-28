@@ -6,6 +6,8 @@ read or write the cache; a degraded answer must never be cached; and Redis being
 change nothing but the speed.
 """
 
+import json
+import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
 
@@ -16,6 +18,7 @@ from langchain_core.runnables import RunnableLambda
 
 from martom.embed_job import run_embedding
 from martom.embeddings import Embedder
+from martom.search import retrieve as retrieve_module
 from martom.search.cache import SearchCache, redis_client
 from martom.search.query_parser import ParsedQuery, QueryParser
 from martom.search.retrieve import retrieve
@@ -242,3 +245,82 @@ async def test_another_model_is_another_result(
         conn, QUESTION, embedder=embedder, parser=None, reranker=other, cache=cache
     )
     assert not result.cached and len(other.calls) == 1
+
+
+async def test_a_damaged_cached_vector_is_embedded_again(
+    conn: psycopg.AsyncConnection,
+    embedder: Embedder,
+    embeddings: CountingEmbeddings,
+    cache: SearchCache,
+) -> None:
+    # R1-1: the damaged vector must not make the search fall back to keywords (and that
+    # weaker answer must not be cached as a full one).
+    await cache.set_vector(MODEL, QUESTION, [0.5] * 4)
+    result = await retrieve(
+        conn, QUESTION, embedder=embedder, parser=None, reranker=FakeReranker(), cache=cache
+    )
+    assert embeddings.query_calls == 1
+    assert any(hit.vector_rank is not None for hit in result.hits)
+    assert await cache.get_vector(MODEL, QUESTION) is not None  # replaced by a good one
+
+
+async def test_a_damaged_cached_result_is_a_miss_and_the_search_still_runs(
+    conn: psycopg.AsyncConnection, embedder: Embedder, cache: SearchCache
+) -> None:
+    # R1-2: wrong-typed fields must never come back as a Retrieval (or fail the search).
+    first = await retrieve(
+        conn, QUESTION, embedder=embedder, parser=None, reranker=FakeReranker(), cache=cache
+    )
+    damaged = {"hits": [{"listing_id": "not a number"}], "filters": [], "parsed": "maybe"}
+    async for key in cache.client.scan_iter(match=f"{cache.prefix}:result:*"):
+        await cache.client.set(key, json.dumps(damaged))
+    again = await retrieve(
+        conn, QUESTION, embedder=embedder, parser=None, reranker=FakeReranker(), cache=cache
+    )
+    assert not again.cached
+    assert again.hits == first.hits
+
+
+async def test_a_cache_hit_logs_the_outcomes_of_the_answer_it_serves(
+    conn: psycopg.AsyncConnection,
+    embedder: Embedder,
+    cache: SearchCache,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # R1-5: every served answer has one `retrieval` line with its outcomes (a cached answer
+    # is always a full one), so rates over all lines stay the share of answers served
+    # degraded; `cache` tells hits apart.
+    parser = CountingParser(COLOUR)
+    reranker = FakeReranker(favourite="panel")
+    await retrieve(conn, QUESTION, embedder=embedder, parser=parser, reranker=reranker, cache=cache)
+    caplog.clear()  # only the second search's line (another test may leave INFO on)
+    with caplog.at_level(logging.INFO, logger="martom.search.retrieve"):
+        await retrieve(
+            conn, QUESTION, embedder=embedder, parser=parser, reranker=reranker, cache=cache
+        )
+    [line] = [r for r in caplog.records if getattr(r, "event", None) == "retrieval"]
+    assert line.cache == "hit"
+    assert (line.parse_outcome, line.rerank_outcome) == ("ok", "ok")
+    assert line.embedding_fallback is False
+    assert line.filters_parsed is True
+    assert line.hits > 0
+
+
+async def test_no_catalogue_query_while_redis_is_being_skipped(
+    conn: psycopg.AsyncConnection, embedder: Embedder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R1-6: during an outage the result key would be thrown away; don't compute it.
+    calls = 0
+    real = retrieve_module.catalogue_version
+
+    async def counting(c: psycopg.AsyncConnection) -> str:
+        nonlocal calls
+        calls += 1
+        return await real(c)
+
+    monkeypatch.setattr(retrieve_module, "catalogue_version", counting)
+    down = SearchCache(redis_client(UNREACHABLE_REDIS), query_ttl=60, result_ttl=60)
+    for _ in range(3):
+        await retrieve(conn, QUESTION, embedder=embedder, parser=None, reranker=None, cache=down)
+    await down.aclose()
+    assert calls == 1  # the first search found Redis down; the next two skip it

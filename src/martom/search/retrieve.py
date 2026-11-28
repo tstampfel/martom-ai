@@ -55,20 +55,19 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx
 import psycopg
 from langchain_core.embeddings import Embeddings
+from pydantic import TypeAdapter, ValidationError
 
 from martom.embeddings import Embedder
 from martom.search import query_parser
 from martom.search.cache import (
     SearchCache,
     catalogue_version,
-    filters_from_json,
-    filters_to_json,
     question_digest,
 )
 from martom.search.hybrid import (
@@ -234,7 +233,9 @@ async def retrieve(
         return Retrieval([], SearchFilters(), False, False, 0, False, timings)
 
     result_key: str | None = None
-    if cache is not None:
+    # While Redis is being skipped after an error, the key would be thrown away: don't
+    # run the catalogue-version query for it.
+    if cache is not None and cache.available:
         result_key = await _result_key(
             conn, question, embedder, parser, reranker, limit=limit, candidates=candidates
         )
@@ -243,12 +244,22 @@ async def retrieve(
             for name in ("understand", "parse", "search", "rerank"):
                 timings[name] = 0.0
             lap("total", started)
+            # The same fields as a searched answer, with the outcomes of the answer served:
+            # only full answers are cached, so a hit never counts as a fallback, and a rate
+            # over every `retrieval` line is the share of answers served degraded.
             logger.info(
                 "retrieval finished",
                 extra={
                     "event": "retrieval",
                     "cache": "hit",
+                    "parse_outcome": hit.parse_outcome,
+                    "parse_ms": 0.0,
+                    "rerank_outcome": hit.rerank_outcome,
+                    "rerank_ms": 0.0,
                     "total_ms": timings["total"],
+                    "embedding_fallback": False,
+                    "filters_parsed": hit.filters != SearchFilters(),
+                    "top_up_added": hit.top_up_added,
                     "hits": len(hit.hits),
                 },
             )
@@ -431,37 +442,27 @@ async def _result_key(
     return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
 
 
+# Validates a cached entry against Retrieval's type hints (hits, filters and all), so a
+# damaged or foreign entry is a miss rather than a Retrieval with wrong-typed fields.
+_RETRIEVAL = TypeAdapter(Retrieval)
+# Not cached: the timings belong to the search that made the entry, and `cached` is set
+# on the way out.
+_NOT_CACHED = {"timings_ms", "cached"}
+
+
 def _retrieval_to_json(retrieval: Retrieval) -> dict[str, Any]:
-    """The cacheable part of a Retrieval (not its timings): ids, titles, scores, filters.
+    """The cacheable part of a Retrieval: ids, titles, slugs, scores, filters, outcomes.
     No prices: a hit has none (CLAUDE.md, grounding)."""
-    return {
-        "hits": [asdict(hit) for hit in retrieval.hits],
-        "filters": filters_to_json(retrieval.filters),
-        "parsed": retrieval.parsed,
-        "filters_dropped": retrieval.filters_dropped,
-        "top_up_added": retrieval.top_up_added,
-        "reranked": retrieval.reranked,
-        "parse_outcome": retrieval.parse_outcome,
-        "rerank_outcome": retrieval.rerank_outcome,
-    }
+    return _RETRIEVAL.dump_python(retrieval, mode="json", exclude=_NOT_CACHED)
 
 
-def _retrieval_from_json(data: dict[str, Any] | None) -> Retrieval | None:
+def _retrieval_from_json(data: Any) -> Retrieval | None:
     """A Retrieval back from the cache, or None for a miss or an entry that doesn't fit."""
     if data is None:
         return None
     try:
-        return Retrieval(
-            hits=[RetrievedHit(**hit) for hit in data["hits"]],
-            filters=filters_from_json(data["filters"]),
-            parsed=data["parsed"],
-            filters_dropped=data["filters_dropped"],
-            top_up_added=data["top_up_added"],
-            reranked=data["reranked"],
-            parse_outcome=data["parse_outcome"],
-            rerank_outcome=data["rerank_outcome"],
-        )
-    except (KeyError, TypeError, ArithmeticError):
+        return _RETRIEVAL.validate_python(data)
+    except ValidationError:
         logger.warning("unreadable search cache entry; ignored", extra={"kind": "result"})
         return None
 

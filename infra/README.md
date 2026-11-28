@@ -146,6 +146,9 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `DATABASE_URL` | `postgresql://martom@<rds endpoint>/martom?sslmode=require`, no password | same | plain |
 | `PGPASSWORD` | RDS-managed secret → `password` (libpq reads it for every connection) | same | secret (RDS) |
 | `REDIS_URL` | `redis://localhost:6379/0` (sidecar) | not set | plain |
+| `SEARCH_CACHE_ENABLED` | `true` (M3-5 search cache in the Redis sidecar) | not set | plain |
+| `SEARCH_CACHE_TTL_SECONDS` | `3600` (cached search results; a catalogue change also expires them) | not set | plain |
+| `QUERY_CACHE_TTL_SECONDS` | `86400` (cached parsed filters and query vectors) | not set | plain |
 | `OLX_API_BASE_URL` | not set | `https://api.olx.ba` | plain |
 | `OLX_SHOP_USERNAME` | not set | `martom` | plain |
 | `OLX_REQUEST_INTERVAL` | not set | `2.8` (`var.sync_request_interval`, at least 1.3), for the nightly sync and one-off syncs | plain |
@@ -282,6 +285,26 @@ So the latest a task can still be running is 17:00 UTC (a 01:00 UTC start after 
 - **SSE through CloudFront:** CloudFront drops an origin connection after 60 s without bytes. The `/api/chat` stream must send something (a token or a `: keep-alive` comment) at least every 60 s.
 - **pgvector:** RDS for PostgreSQL 16.5 and later ship pgvector 0.8.0; the engine version is `16`, so RDS picks its current default minor. Migration 007 checks the version itself.
 - **No passwords in Terraform:** the database password lives only in the RDS-managed secret, the API keys only in the `app` secret you set by hand. Plan, state and tfvars hold just the two ARNs. To check after an apply: `terraform -chdir=infra state pull | grep -i -E 'password|secret_string'` shows only `manage_master_user_password` and ARNs. The state bucket is still private, encrypted and versioned, because state maps the whole account.
+
+## When Redis dies
+
+Redis is a sidecar in the API task and holds only the search cache (M3-5). It is **not essential** (`ecs.tf`), so when it exits the task and the API keep running:
+
+- Searches run uncached: each one pays for its Haiku parse, embedding and rerank again, so they are slower and cost a little more, but nothing fails. The API logs one WARNING `search cache unavailable; searching uncached` per outage (and tries Redis again every 30 s), then INFO `search cache available again` when it is back.
+- `GET /health` still answers 200, with `"status": "degraded"` and `"redis": "error"`, so the load balancer keeps sending traffic. Only Postgres down answers 503.
+- ECS restarts the Redis container by itself (restart policy, `restartAttemptPeriod = 60`), at most once a minute, and only if it had run for at least 60 s before it exited. A Redis that dies within a minute of starting stays down until the task is replaced. The restarted Redis starts empty.
+
+How to check:
+
+```sh
+curl -s "$(terraform -chdir=infra output -raw api_url)/health"   # "degraded" = Redis down
+aws ecs describe-tasks --cluster martom-production \
+  --tasks "$(aws ecs list-tasks --cluster martom-production --service-name martom-production-api --query 'taskArns[0]' --output text)" \
+  --query 'tasks[0].containers[].{name:name,status:lastStatus,exit:exitCode}'
+aws logs tail /ecs/martom-production/api --log-stream-name-prefix redis --since 1h   # Redis's own log
+```
+
+If Redis stays down (still "degraded" a few minutes later), start a fresh task: `aws ecs update-service --cluster martom-production --service martom-production-api --force-new-deployment`. The new task starts with an empty cache; nothing is lost but speed.
 
 ## Database password
 

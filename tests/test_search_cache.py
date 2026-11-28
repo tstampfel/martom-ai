@@ -5,7 +5,9 @@ down, failing in CI), each test under its own random key prefix, deleted afterwa
 Redis-down tests point at a port nothing listens on.
 """
 
+import asyncio
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from decimal import Decimal
@@ -14,14 +16,20 @@ import pytest
 import redis.asyncio as redis
 from pydantic import SecretStr
 
+from martom.bom.manual_products import load_manual_products
+from martom.search import cache as cache_module
 from martom.search.cache import (
+    RETRY_AFTER_SECONDS,
     SearchCache,
+    catalogue_version,
     make_search_cache,
     question_digest,
     redis_client,
 )
 from martom.search.keyword import SearchFilters
+from martom.search.manual import sync_manual_products
 from martom.settings import Settings
+from search_catalogue import build_catalogue
 
 pytestmark = pytest.mark.anyio
 
@@ -163,3 +171,96 @@ async def test_the_cache_follows_the_settings() -> None:
     assert cache is not None
     assert (cache.result_ttl, cache.query_ttl) == (120, 600)
     await cache.aclose()
+
+
+async def test_a_vector_of_the_wrong_size_is_a_miss(cache: SearchCache) -> None:
+    # R1-1: a damaged vector must not reach search (its size check would make the search
+    # fall back to keywords, and that weaker result would then be cached as a full one).
+    await cache.set_vector("cohere/x", QUESTION, [0.5] * 4)
+    assert await cache.get_vector("cohere/x", QUESTION) is None
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        b'{"product_type": null, "height_cm": "high", "colour": null,'
+        b' "min_price": null, "max_price": null}',
+        b'{"product_type": null, "height_cm": null, "colour": 7,'
+        b' "min_price": null, "max_price": null}',
+        b'{"product_type": null, "height_cm": null, "colour": null,'
+        b' "min_price": "lots", "max_price": null}',
+        b"[1, 2, 3]",
+        b'"just a string"',
+    ],
+)
+async def test_wrong_typed_filters_are_a_miss(cache: SearchCache, stored: bytes) -> None:
+    # R1-2: a foreign or damaged entry must never become filters that break the SQL.
+    await cache.set_filters("haiku", QUESTION, SearchFilters())
+    for key in await stored_keys(cache):
+        await cache.client.set(key, stored)
+    assert await cache.get_filters("haiku", QUESTION) is None
+
+
+async def test_a_change_to_the_filter_parsing_code_is_a_new_key(
+    cache: SearchCache, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R1-4: the cached filters are the output of the Python parsing, not only of the prompt.
+    await cache.set_filters("haiku", QUESTION, SearchFilters(colour="zelena"))
+    monkeypatch.setattr(cache_module, "FILTERS_CACHE_FORMAT", cache_module.FILTERS_CACHE_FORMAT + 1)
+    assert await cache.get_filters("haiku", QUESTION) is None
+
+
+async def test_available_says_whether_redis_is_being_skipped() -> None:
+    now = [1000.0]
+    cache = SearchCache(
+        redis_client(UNREACHABLE_REDIS), query_ttl=60, result_ttl=60, clock=lambda: now[0]
+    )
+    assert cache.available
+    await cache.get_result("k")
+    assert not cache.available
+    now[0] += RETRY_AFTER_SECONDS + 1
+    assert cache.available
+    await cache.aclose()
+
+
+async def test_a_redis_that_never_answers_costs_one_short_timeout() -> None:
+    # R1-9: a server that accepts the connection but never replies (hung, overloaded),
+    # unlike port 1, which refuses at once.
+    async def hang(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await asyncio.sleep(10)
+
+    server = await asyncio.start_server(hang, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    cache = SearchCache(redis_client(f"redis://127.0.0.1:{port}/0"), query_ttl=60, result_ttl=60)
+    started = time.perf_counter()
+    assert await cache.get_filters("haiku", QUESTION) is None
+    await cache.set_vector("cohere/x", QUESTION, [0.5] * 1024)  # skipped: breaker is open
+    assert await cache.get_result("k") is None
+    assert time.perf_counter() - started < 1.0
+    await cache.aclose()
+    server.close()
+
+
+async def test_identical_vectors_embedded_together_still_change_the_version(
+    database_url: str,
+) -> None:
+    # R1-3: duplicate listings share a search_text, so a run gives them the same
+    # embedding_hash; XOR-ing the bare hashes would cancel the pair out.
+    async with await build_catalogue(database_url) as conn:
+        await conn.execute("UPDATE product SET embedding_hash = NULL")
+        before = await catalogue_version(conn)
+        await conn.execute(
+            "UPDATE product SET embedding_hash = 'same' WHERE listing_id IN ("
+            "SELECT listing_id FROM product ORDER BY listing_id LIMIT 2)"
+        )
+        assert await catalogue_version(conn) != before
+
+
+async def test_a_manual_product_change_changes_the_version(database_url: str) -> None:
+    # R1-9: a manual_products.toml price change reaches content_hash via migrate/embed.
+    async with await build_catalogue(database_url) as conn:
+        await sync_manual_products(conn, load_manual_products())
+        before = await catalogue_version(conn)
+        cursor = await conn.execute("UPDATE manual_product SET content_hash = 'new-price'")
+        assert cursor.rowcount > 0
+        assert await catalogue_version(conn) != before
