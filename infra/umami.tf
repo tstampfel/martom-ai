@@ -26,6 +26,25 @@
 # the same name on that distribution.
 
 locals {
+  # Country-only location (Tomislav, #163 review r2), with the official image: a pinned
+  # GeoLite2-Country database is downloaded at every start and checked against its
+  # sha256; on any failure the container exits before Umami starts (never falling back to
+  # the image's GeoLite2-City). /tmp because the image runs as the unprivileged `nextjs`
+  # user. Checked locally with Umami 3.5.0 (docs/analytics.md, "Country only").
+  umami_country_db_path = "/tmp/geo/GeoLite2-Country.mmdb"
+  umami_start_script    = <<-EOT
+    set -eu
+    mkdir -p /tmp/geo
+    cd /tmp/geo
+    curl -fsSL --retry 3 -o country.tar.gz "$GEO_COUNTRY_DB_URL"
+    echo "$GEO_COUNTRY_DB_SHA256  country.tar.gz" | sha256sum -c -
+    tar -xzf country.tar.gz
+    mv GeoLite2-Country_*/GeoLite2-Country.mmdb "$GEOLITE_DB_PATH"
+    rm -rf country.tar.gz GeoLite2-Country_*
+    cd /app
+    exec sh scripts/start-docker.sh
+  EOT
+
   umami_origin_header = "X-Martom-Origin"
   umami_port          = 3000
   umami_origin_id     = "alb-umami"
@@ -96,12 +115,26 @@ resource "aws_ecs_task_definition" "umami" {
 
       portMappings = [{ containerPort = local.umami_port, protocol = "tcp" }]
 
-      # At start the image applies its own Prisma migrations to the `umami` database and,
-      # on the very first start, creates the admin login admin / umami: change it at once
-      # (README, "Umami", step 4).
+      # Country only (Tomislav, #163 review r2): local.umami_start_script first puts a
+      # GeoLite2-Country database in place, then runs the image's own start script, which
+      # applies Umami's Prisma migrations to the `umami` database and, on the very first
+      # start, creates the admin login admin / umami: change it at once (README, "Umami",
+      # step 4).
+      command = ["sh", "-c", local.umami_start_script]
       environment = [
         { name = "DISABLE_TELEMETRY", value = "1" }, # no anonymous usage pings to Umami
         { name = "DISABLE_UPDATES", value = "1" },   # no version check; upgrades are a var.umami_image change
+        # The location lookup reads this database instead of the image's GeoLite2-City, so
+        # region and city stay empty. Never point it back at a City database.
+        { name = "GEOLITE_DB_PATH", value = local.umami_country_db_path },
+        # Never take the location from request headers (cf-ipcountry, cf-ipcity,
+        # cloudfront-viewer-city, ...): a visitor can send those, and they carry a city.
+        { name = "SKIP_LOCATION_HEADERS", value = "1" },
+        { name = "GEO_COUNTRY_DB_URL", value = var.umami_geo_country_db_url },
+        { name = "GEO_COUNTRY_DB_SHA256", value = var.umami_geo_country_db_sha256 },
+        # Left unset on purpose (docs/analytics.md, "What Umami stores"): SALT_ROTATION
+        # (a value other than day/week/month fixes the salt for ever), ENABLE_CLIENT_SALT,
+        # CLIENT_IP_HEADER, TRUSTED_PROXIES and LOG_QUERY.
       ]
       secrets = [
         for key in ["DATABASE_URL", "APP_SECRET"] :

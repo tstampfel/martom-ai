@@ -18,9 +18,69 @@ a hash of the IP address, the browser's user agent and a salt that changes every
 the country is looked up from the IP. Under the GDPR that brief use is still processing of
 personal data (an IP address is personal data), so the stored statistics are pseudonymous,
 not anonymous, and the privacy text must not say "no personal data" (see "Privacy text"
-below). It shows page views,
-visitors, referrers, countries, devices and (from #164) custom events. We run the official
-image ourselves; nothing goes to Umami's cloud.
+below). It shows page views, visitors, referrers, countries, devices and (from #164) custom
+events. We run the official image ourselves; nothing goes to Umami's cloud.
+
+### What Umami stores (Umami 3.5, checked in its source)
+
+Per session (`session` table): a session id (a UUID derived from a hash of website id, IP
+address, user agent and the monthly salt, mixed with a hash of `APP_SECRET`), browser,
+operating system, device, screen size, language, **country** and the time. Per page view
+or event: the page path and title, the referrer, the event name. **Never the IP address:**
+no table has an IP column, and no Umami setting stores one.
+
+`region` and `city` columns exist too, and the official image would fill them: it ships
+the city-level GeoLite2-City database and also trusts location headers (`cf-ipcity`,
+`cloudfront-viewer-city`, ...) that a visitor can send. **We store the country only**
+(Tomislav, #163 review r2), so those two columns stay empty. How, below.
+
+Left unset on purpose (each would weaken this), guarded by `tests/test_umami_infra.py`:
+`SALT_ROTATION` (any value other than `day`/`week`/`month` fixes the salt for ever, so
+sessions could be linked across months), `ENABLE_CLIENT_SALT`, `CLIENT_IP_HEADER`,
+`TRUSTED_PROXIES` and `LOG_QUERY` (writes Umami's queries to the container log).
+
+The salt is derived from the month, not random: someone holding both `APP_SECRET` and the
+database could test a guessed IP address and user agent against a session id. That is why
+the data is pseudonymous, not anonymous.
+
+Accuracy note: behind CloudFront and the ALB, Umami reads the left-most `X-Forwarded-For`
+address, which a visitor can set, so a visitor can fake their own country or split their
+own sessions. That affects only the accuracy of the statistics, never someone else's data.
+
+### Country only, with the official image (Tomislav, #163 review r2)
+
+How Umami 3.5 finds a location (`src/lib/detect.ts`, `getLocation`): unless
+`SKIP_LOCATION_HEADERS` is set, it first takes country, region and city from CDN headers
+(Cloudflare, Vercel, CloudFront, EdgeOne); otherwise it opens the MaxMind database at
+`GEOLITE_DB_PATH` (default: the image's `geo/GeoLite2-City.mmdb`) and reads country,
+subdivision and city from the result. Both settings are read at run time, so no image
+build is needed:
+
+- `SKIP_LOCATION_HEADERS=1`: never take a location from a request header.
+- `GEOLITE_DB_PATH=/tmp/geo/GeoLite2-Country.mmdb`: a **GeoLite2-Country** database, which
+  has no subdivision or city data, so `region` and `city` come out empty.
+- The image doesn't contain a Country database, so the container's command
+  (`umami_start_script` in `infra/umami.tf`) downloads one at every start: the same
+  redistribution the official image's build takes its City database from
+  (`GitSquared/node-geolite2-redist`), **pinned to a commit and checked against its
+  sha256** (`umami_geo_country_db_url` / `_sha256` in `infra/variables.tf`). Any failure
+  (download, checksum, unpacking) stops the container before Umami starts; it never falls
+  back to the City database. Then it runs the image's own `scripts/start-docker.sh`.
+  Startup needs raw.githubusercontent.com (outbound HTTPS, already allowed); if GitHub is
+  down, a new task fails to start and ECS retries, while a running task is unaffected.
+- Use of the data is under MaxMind's GeoLite2 EULA (as for the City database the official
+  image ships). Refresh the pin and its sha256 together when upgrading Umami.
+
+Checked locally on 28 Nov 2026 with the real `ghcr.io/umami-software/umami:3.5.0` image and
+Postgres 16, sending the same visit (an address with city data in GeoLite2, plus fake
+`cf-ipcountry`/`cf-region-code`/`cf-ipcity` headers) to two containers:
+
+| Container | Stored `country`, `region`, `city` |
+| --- | --- |
+| Official image, default settings | `XX`, `XX-FAKE`, `Fakeville` (the visitor's own headers); without them `SE`, `SE-O`, `Lidköping` |
+| Our settings (country database, headers skipped) | `SE`, empty, empty, both times |
+
+A wrong sha256 made the container exit 1 before Umami started (`sha256sum: ... did NOT match`).
 
 ### How it runs (Terraform: `infra/umami.tf`)
 
@@ -123,7 +183,17 @@ country, and is never stored. The statistics are kept on our servers in the EU.*
 If the page names a legal basis, it is legitimate interest (Art. 6(1)(f)): that is for the
 privacy review to confirm, not decided here.
 
+The Privatnost text is now frozen (Tomislav, 28 Nov 2026) and is not changed by #163. Its
+sentence "IP adresu koristimo samo trenutno, da posjetu ne bismo brojali dvaput, i ne
+čuvamo je u statistici" holds with the setup above: the IP address is used for the session
+hash and the country lookup and never stored, and the location stored is the country only.
+
 ### Upgrading Umami
 
 Change `umami_image` in `infra/variables.tf` to the new tag after reading Umami's release
 notes, then apply. The container runs Umami's database migrations by itself on start.
+Before upgrading, check in the new version's `src/lib/detect.ts` that `SKIP_LOCATION_HEADERS`
+and `GEOLITE_DB_PATH` still work as described in "Country only", and that its
+`scripts/start-docker.sh` still exists (our start script ends by running it); then repeat
+the local check above (a visit with fake city headers must store the country only). Refresh
+`umami_geo_country_db_url` and `umami_geo_country_db_sha256` at the same time.
