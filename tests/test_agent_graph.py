@@ -306,7 +306,7 @@ async def test_eurofence_100_uses_synced_heights() -> None:
 
 async def test_installation_note_is_added_after_the_grounded_answer() -> None:
     graph = make_graph(
-        Recorder(understanding(request="product", asks_installation=True)),
+        Recorder(understanding(request="fence_eurofence", asks_installation=True)),
         [AIMessage("Imamo panelne ograde.")],
     )
     result = await ask(graph, "Montirate li ograde?")
@@ -1151,7 +1151,7 @@ async def test_drilling_question_names_the_anchor_and_bit_for_each_fence_type(
                 search_query="ankeri svrdlo",
             )
         ),
-        [AIMessage("Uzmite svrdlo 10 mm."), AIMessage("Evo što vam treba za bušenje.")],
+        [AIMessage("Uzmite svrdlo ø10 mm."), AIMessage("Evo što vam treba za bušenje.")],
     )
     answers = {"choices": {"posts": "foot_plate"}} if request_kind == "fence_roll" else None
     result = await ask(graph, "Koje svrdlo za ankere, 8 ili 10 mm?", answers=answers)

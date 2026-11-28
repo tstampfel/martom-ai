@@ -56,7 +56,7 @@ describe('chatReducer', () => {
     const cart = replay(fixtures.cartAdded)
     expect(lastReply(cart).cart.map((line) => [line.title, line.quantity, line.line_total])).toEqual([
       ['Panelna ograda 3D (Nylofor)', 10, '530.00'],
-      ['Anker M8×70', 1, null],
+      ['Anker vijak M8×70', 1, null],
     ])
     expect(lastReply(cart).contactMartom).toBe(false)
     expect(lastReply(replay(fixtures.chainLink)).contactMartom).toBe(true)

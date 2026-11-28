@@ -185,7 +185,9 @@ def test_eurofence_existing_height_searches() -> None:
 
 
 def test_product_question_searches_with_notes() -> None:
-    plan = plan_for(request="product", search_query="bušilica", asks_installation=True)
+    seen = understanding(request="product", search_query="bušilica", asks_installation=True)
+    # Installation is a fence topic (review R1-4): with a fence in the chat, the note stays.
+    plan = plan_turn(seen, FenceSpec(kind="panel"))
     assert plan.route == "retrieve"
     assert plan.query == "bušilica"
     assert plan.notes == [copy.INSTALLATION]
@@ -295,12 +297,32 @@ def test_installation_answer_offers_montaza_with_phone_and_email() -> None:
     assert "info@martom-bekaert.com" in copy.INSTALLATION
 
 
-@pytest.mark.parametrize("flag", ["asks_gate", "asks_installation"])
-def test_gate_or_installation_is_never_refused_as_out_of_scope(flag: str) -> None:
-    plan = plan_for(in_scope=False, request="other", **{flag: True})
+def test_gate_question_is_never_refused_as_out_of_scope() -> None:
+    plan = plan_for(in_scope=False, request="other", asks_gate=True)
     assert plan.route == "respond"
-    assert plan.answer != copy.OUT_OF_SCOPE
-    assert plan.answer in (copy.GATE, copy.INSTALLATION)
+    assert plan.answer == copy.GATE
+
+
+@pytest.mark.parametrize("flag", ["asks_installation", "asks_drilling", "asks_anchors_included"])
+def test_off_topic_installation_or_drilling_without_a_fence_stays_out_of_scope(flag: str) -> None:
+    # Review R1-4: "Možete li mi montirati klimu?" is not a fence question.
+    plan = plan_for(in_scope=False, request="other", **{flag: True})
+    assert plan.answer == copy.OUT_OF_SCOPE
+
+
+@pytest.mark.parametrize("flag", ["asks_installation", "asks_drilling"])
+def test_installation_or_drilling_with_a_fence_in_the_chat_is_answered(flag: str) -> None:
+    seen = understanding(in_scope=False, request="other", **{flag: True})
+    plan = plan_turn(seen, FenceSpec(kind="panel"))
+    assert plan.answer in (copy.INSTALLATION, copy.DRILLING_PANEL)
+
+
+@pytest.mark.parametrize("flag", ["asks_installation", "asks_drilling"])
+def test_a_product_turn_without_a_fence_gets_no_fence_texts(flag: str) -> None:
+    # "bojler i ugradnja", "kojom bušilicom za pločice": a product search, no fence notes.
+    plan = plan_for(request="product", search_query="bojler", **{flag: True})
+    assert plan.route == "retrieve"
+    assert plan.notes == []
 
 
 def test_gate_and_installation_together_get_both_texts() -> None:
@@ -316,7 +338,7 @@ def test_fence_with_a_gate_question_keeps_the_gate_note() -> None:
 
 def test_anchors_question_alone_is_answered_not_refused() -> None:
     # The graph adds the anchors text at the end of the turn (it depends on the list).
-    plan = plan_for(in_scope=False, request="other", asks_anchors_included=True)
+    plan = plan_for(request="other", asks_anchors_included=True)
     assert plan.route == "respond"
     assert plan.answer == ""
 
@@ -336,6 +358,17 @@ def test_drilling_question_names_the_anchor_with_its_bit(
     plan = plan_turn(seen, FenceSpec(kind=kind))
     assert plan.route == "respond"
     assert plan.answer == " ".join(expected)
+
+
+@pytest.mark.parametrize(
+    ("posts", "expected"),
+    [("t_post", copy.DRILLING_T_POST), ("foot_plate", copy.DRILLING_FOOT_PLATE)],
+)
+def test_roll_fence_drilling_follows_the_post_model(posts: str, expected: str) -> None:
+    # Review R1-5: T-posts take no anchors.
+    seen = understanding(request="other", asks_drilling=True)
+    plan = plan_turn(seen, FenceSpec(kind="roll", posts=posts))
+    assert plan.answer == expected
 
 
 def test_drilling_texts_pair_each_anchor_with_its_bit() -> None:

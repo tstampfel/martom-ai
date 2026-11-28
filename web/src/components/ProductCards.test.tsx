@@ -19,7 +19,7 @@ describe('ProductCards', () => {
   it('shows a manual product with its price and no OLX link', () => {
     const [card] = cardsOf(fixtures.manualProduct)
     render(<ProductCards cards={[card]} />)
-    expect(screen.getByRole('heading', { name: 'Anker M8×70' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Anker vijak M8×70' })).toBeInTheDocument()
     expect(screen.getByText(/0,80/)).toBeInTheDocument()
     expect(screen.queryByRole('link')).toBeNull()
     expect(screen.queryByText(copy.chat.cards.olx)).toBeNull()

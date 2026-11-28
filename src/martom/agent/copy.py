@@ -36,6 +36,8 @@ ANCHORS_SOLD_SEPARATELY_IN_LIST = "Ne, ankeri se kupuju posebno; za vaš popis s
 # Toni, 28 Nov 2026 (#171, "Anchors, final"): a drilling answer always names the anchor
 # type with its bit, never a bare "8 mm" or "10 mm".
 DRILLING_PANEL = "Stupovi panelne ograde (s pločicom): tiplo anker M8×80 – svrdlo ø10 mm SDS."
+# fence-rules.md, "Posts: two models": T-posts go into soil or concrete, no anchors.
+DRILLING_T_POST = "T-stupovi idu u zemlju ili u beton i ne trebaju ankere."
 DRILLING_FOOT_PLATE = (
     "Stupovi sa stopom (ograda u roli): anker vijak M8×70 (može i M8×80) – svrdlo ø8 mm."
 )

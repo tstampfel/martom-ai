@@ -93,6 +93,7 @@ from martom.agent.tools import (
 from martom.agent.understand import (
     FenceSpec,
     Understanding,
+    anchors_question,
     default_panel_width,
     plan_turn,
     update_spec,
@@ -150,6 +151,9 @@ class AgentState(TypedDict, total=False):
     # copy.ANCHORS_SOLD_SEPARATELY, or its "already on your list" form when this chat's
     # materials list has an anchor line at the end of the turn.
     anchors_question: bool
+    # The customer asked about drilling for fence posts (#171): the grounding check then
+    # fails a bare anchor-bit size ("svrdlo ø10 mm") even without a fence word in it.
+    drilling_question: bool
     chips: dict[str, Any] | None
     notes: list[str]
     extra_lines: list[dict[str, Any]]  # chat_events.ExtraLine
@@ -254,7 +258,8 @@ def build_graph(
             **_bom_update(state, previous, plan.spec, clear=plan.contact_martom),
             "cart": [],
             "cart_note": False,
-            "anchors_question": understanding.asks_anchors_included,
+            "anchors_question": anchors_question(understanding, spec),
+            "drilling_question": understanding.asks_drilling,
             "rewrite_failed": False,
             "chips": plan.chips.model_dump(mode="json") if plan.chips else None,
             "notes": plan.notes,
@@ -414,7 +419,12 @@ def build_graph(
             return _fallback(state, remove=None)
         text = last.text.strip()
         facts = _facts(state).merge(_bom_facts(state))
-        result = check_grounding(text, facts, known_numbers=_customer_numbers(state))
+        result = check_grounding(
+            text,
+            facts,
+            known_numbers=_customer_numbers(state),
+            drilling=state.get("drilling_question", False),
+        )
         if text and not last.tool_calls and result.ok:
             notes = _final_notes(state)
             if state.get("cart_note"):

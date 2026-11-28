@@ -791,31 +791,72 @@ def test_the_gate_and_installation_copy_has_no_price() -> None:
         assert check_grounding(text, Facts()).ok, text
 
 
+BITS = [Decimal(8), Decimal(10)]
+
+
 @pytest.mark.parametrize(
     "text",
     [
         "Trebate svrdlo 8 mm.",
-        "Za stupove uzmite svrdlo ø10.",
+        "Uzmite svrdlo ø10 mm.",
+        "Svrdlo fi 8 mm je dovoljno.",
+        "Za bušenje: svrdlo Ø 10 mm SDS.",
         "Svrdlo fi 10 i SDS bušilica.",
         "Bušite svrdlom 10 mm SDS.",
     ],
 )
-def test_a_drill_bit_size_without_the_anchor_type_fails(text: str) -> None:
-    result = check_grounding(text, Facts(), known_numbers=[Decimal(8), Decimal(10)])
+def test_a_bare_anchor_bit_on_a_drilling_turn_fails(text: str) -> None:
+    # Review R1-1: "ø10 mm" / "fi 8 mm" are checked on the raw text, before any stripping.
+    result = check_grounding(text, Facts(), known_numbers=BITS, drilling=True)
     assert any("anchor type" in problem for problem in result.problems), result.problems
 
 
 @pytest.mark.parametrize(
     "text",
     [
+        "Za stupove uzmite svrdlo ø10 mm.",
+        "Ankeri za ogradu traže svrdlo 8 mm.",
+        "Za pločicu stupa: svrdlo fi 10 mm.",
+    ],
+)
+def test_a_bare_anchor_bit_in_a_fence_sentence_fails_on_any_turn(text: str) -> None:
+    result = check_grounding(text, Facts(), known_numbers=BITS)
+    assert any("anchor type" in problem for problem in result.problems), result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Tiplo anker M8×80 → svrdlo ø8 mm.",
+        "Anker vijak M8×70 → svrdlo ø10 mm SDS.",
+        "Za tiplo anker M8x80 uzmite svrdlo 8 mm.",
+    ],
+)
+def test_a_wrong_anchor_and_bit_pairing_fails(text: str) -> None:
+    result = check_grounding(text, Facts(), known_numbers=BITS)
+    assert any("wrong drill bit" in problem for problem in result.problems), result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "Tiplo anker M8x80 traži svrdlo ø10 mm SDS.",
-        "Za anker vijak M8x70 uzmite svrdlo 8 mm.",
+        "Za anker vijak M8x70 uzmite svrdlo ø8 mm.",
+        "Anker vijak M8×70 ili M8×80 → svrdlo ø8 mm.",
         "Trebate SDS bušilicu i svrdlo.",
     ],
 )
-def test_a_drill_bit_with_the_anchor_type_or_no_size_passes(text: str) -> None:
-    known = [Decimal(8), Decimal(10), Decimal(70), Decimal(80)]
-    assert check_grounding(text, Facts(), known_numbers=known).ok
+def test_the_right_pairing_or_no_size_passes(text: str) -> None:
+    assert check_grounding(text, Facts(), drilling=True).ok, text
+
+
+@pytest.mark.parametrize(
+    "text", ["Svrdlo za beton 6 mm je dobar izbor.", "Imamo svrdlo za metal 8 mm."]
+)
+def test_a_drill_bit_product_answer_passes(text: str) -> None:
+    # Review R1-3: Martom sells drill bits; only anchor bits in a fence sentence or on a
+    # drilling turn must name the anchor.
+    assert check_grounding(text, Facts(), known_numbers=[Decimal(6), Decimal(8)]).ok
 
 
 def test_the_anchor_names_and_bits_are_known_numbers() -> None:
@@ -823,6 +864,12 @@ def test_the_anchor_names_and_bits_are_known_numbers() -> None:
     assert check_grounding("Anker vijak M8x70 ili M8x80 → svrdlo ø8 mm.", Facts()).ok
     # Only inside the phrase: a bare count still fails.
     assert not check_grounding("Trebate 80 ankera.", Facts()).ok
+
+
+@pytest.mark.parametrize("text", ["Žica panela je ø8 mm.", "Šipka fi 10 mm.", "Vijak M8x80."])
+def test_an_anchor_size_outside_its_phrase_is_not_known(text: str) -> None:
+    # Review R1-2: the copy's sizes count only inside an anchor name or "svrdlo ø.. mm".
+    assert not check_grounding(text, Facts()).ok
 
 
 def test_the_installation_radius_is_known_only_in_its_phrase() -> None:
