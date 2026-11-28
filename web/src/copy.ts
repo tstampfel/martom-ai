@@ -321,7 +321,10 @@ export const copy = {
       { value: '2', text: 'Dvije prodavaonice okova, boja i lakova europskih i domaćih proizvođača' },
       { value: '30', text: 'Na tržištu od 1995. godine, uz stalan rast i kvalitetu usluge', short: 'Na tržištu od 1995.' },
       { value: '10k+', text: 'Preko 10.000 artikala po povoljnim cijenama', short: 'Preko 10.000 artikala' },
-      { value: 'OLX', text: 'Online trgovina na OLX-u s aktualnim ponudama' },
+      // Canvas 1795853807-d861 (Tomislav, 28 Nov 2026). A fixed string on
+      // purpose: never compute it live from the database. Change it only if
+      // the active listing count drops below 2,500.
+      { value: 'OLX', text: 'Preko 2.500 artikala online na OLX-u, savjetnik pretražuje sve' },
     ],
   },
 } as const

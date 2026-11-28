@@ -94,3 +94,14 @@ describe('copy.footer credit (M5-9)', () => {
     },
   )
 })
+
+describe('copy.about OLX badge', () => {
+  // Canvas version 1795853807-d861: a fixed count, never computed live.
+  it('matches the OLX tile in docs/mockups/web/1-start.html', () => {
+    const html = readFileSync(join(import.meta.dirname, '../../docs/mockups/web/1-start.html'), 'utf8')
+    const tile = html.match(/>OLX<\/div><span[^>]*>([^<]+)<\/span>/)?.[1]
+    const olx = copy.about.badges.find((badge) => badge.value === 'OLX')
+    expect(olx?.text).toBe(tile)
+    expect(tile).toBe('Preko 2.500 artikala online na OLX-u, savjetnik pretražuje sve')
+  })
+})
