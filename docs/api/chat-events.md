@@ -9,8 +9,38 @@ data: {"type": "token", "text": "Odlično — "}
 data: {"type": "done", "thread_id": "c0f3…"}
 ```
 
-The endpoint itself lands with #21 [M4-4]. This document, the models and the schema are
-the contract both sides build against.
+The endpoint is `src/martom/api/chat.py` (#21 [M4-4]); "How the endpoint behaves" below
+covers threads, errors and limits. This document, the models and the schema are the
+contract both sides build against.
+
+## How the endpoint behaves
+
+- **Response.** Always `200` with `Content-Type: text/event-stream`, `Cache-Control:
+  no-store` and `X-Accel-Buffering: no`, also for an invalid request: every failure is an
+  `error` event followed by `done`, so the browser has one code path.
+- **Order.** `step` "parse" `working` comes first, at once. While the advisor works,
+  steps follow its progress (parse done, search working/done, bom done). Then the reply:
+  for questions, the `clarify` step (`needs_input`), `token`s and `chips`; otherwise
+  `token`s, `product_cards` (when the advisor looked products up this turn) and `bom`
+  (only when this turn made a new list). `done` is always last.
+- **Tokens.** The answer is streamed only after the grounding check passed (every price and
+  number comes from a tool). The `token` events are the checked answer cut into chunks of
+  a few words, not the model's live tokens: join them in order and you have the answer.
+- **Product cards** come only from the products the advisor looked up this turn (database
+  or `manual_products.toml` prices). `why` is `""` for now (no grounded "why it fits"
+  yet), and `badge`, `subtitle` and `photo_url` are `null`.
+- **Threads.** The server issues every `thread_id` (256 random bits); send it back to
+  continue. An id that is missing, malformed or has no saved conversation starts a new
+  thread, and the `done` event carries the new id. A client never picks its own id.
+- **One turn at a time.** A second message on a thread whose previous turn still runs
+  waits for it (up to 60 s, then `error` kind `internal`).
+- **Invalid requests** (bad JSON, a body the request schema refuses, a message over 2,000
+  characters) answer `error` kind `invalid_request` and `done`, with the sent `thread_id`
+  only if it names a saved conversation, else a fresh id; nothing is saved.
+- **No advisor** (the API runs without `ANTHROPIC_API_KEY` or an embedder): every message
+  answers `error` kind `internal` and `done`.
+- **Not sent yet:** cart additions and the "contact Martom" offer have no event yet
+  (#147), and neither does the roll fence's suggested wire add-on.
 
 ## Where the contract lives
 
