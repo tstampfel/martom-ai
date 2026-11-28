@@ -31,7 +31,9 @@ Known misses, so the human reading a promoted chat knows what to look for: a nam
 customer gives without an intro and without the order form ("Pozdrav, Pero"), a street
 with no label, street word or delivery verb, even with a house number ("Izmišljena 12,
 Čitluk"), a phone without its 0 written in one run after a bare "broj" (it looks like a
-listing id), foreign phone numbers, and numbers written as words. Pass the order form's
+listing id), a house number followed by a sentence end and a name that is also a month
+("Izmišljena 5. Maja ..." reads as a date), foreign phone numbers, and numbers written
+as words. Pass the order form's
 values whenever there is one, and still read a promoted chat before committing it
 (`tests/test_fixture_privacy.py` keeps guarding the committed files). The function only
 ever removes text.
@@ -124,7 +126,6 @@ _JA_SAM_RE = re.compile(rf"\b((?i:ja sam)\s+){_CAPITALISED}(?:\s+{_CAPITALISED})
 _ADDRESS_LABEL_RE = re.compile(
     r"(?im)\b(adresa(?: za dostavu)?\s*:[ \t]*)(?:\b(?:ul|br)\.|[^\n.!?<])+"
 )
-# A number followed by one of these is a size, a price or a count, never a house number.
 # What may follow a number without it being a house number. Every word is a whole word
 # in its real forms, never an open prefix (R3-1: "dan\\w*" swallowed "danas", "mart"
 # swallowed "Martom", so the address before them leaked). `(?!\\w)` closes each form, so
@@ -163,11 +164,23 @@ def _whole_words(words: str) -> str:
 
 _NOT_HOUSE_NUMBER = (
     rf"(?!\s*(?i:{_whole_words(_UNIT_WORDS)})"
-    # "15. decembra" (a date), "54,90" (a price), "153x250" / "60/40" (a size: a digit
-    # must follow, so "5 xanadu" stays a house number).
-    rf"|\.\s*(?i:{_whole_words(_MONTH_WORDS)})|[,.]\d|\s*[x\u00d7*/]\s*\d)"
+    # "15. decembra" (a date), "54,90" (a price), "153x250" (a size: a digit must
+    # follow, so "5 xanadu" stays a house number). A "/" or "-" and a digit still left
+    # after the house number below is a size or a count: "153/250", "5-7 dana".
+    rf"|\.\s*(?i:{_whole_words(_MONTH_WORDS)})|[,.]\d|\s*[x\u00d7*]\s*\d"
+    r"|\s?[/\u2013-]\s?\d)"
 )
-_HOUSE_NUMBER = rf"(?:\d{{1,4}}[a-zA-Z]?\b{_NOT_HOUSE_NUMBER}|bb\b)"
+# "bb" (bez broja), also written "b.b." or "B.B.".
+_BB = r"(?:b\.\s?b\.?|bb)(?!\w)"
+# "5", "5a", "5 A", "5-7", and up to two entrance or flat parts after a slash (R4-1):
+# "24/14", "7 / 3", "7/III", "24/14a", "12/4/2". A slash part longer than 2 digits
+# ("153/250", "60/40/2000") is a size; "60/40 cm" is one through the unit word after it.
+_HOUSE_NUMBER = (
+    r"(?:\d{1,4}(?:[a-zA-Z](?!\w)|\s[A-Z](?!\w))?"
+    r"(?:\s?[\u2013-]\s?\d{1,4}(?!\d))?"
+    r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2}"
+    rf"(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"
+)
 _STREET_WORDS = rf"(?:{_WORD}\.?\s+)"
 # "ulici Izmišljenoj 5a", "Ul. Izmišljena bb", "Trg izmišljenih 3". No "put": it also
 # means "time" ("prvi put kupujem 3 panela").
@@ -183,7 +196,7 @@ _STREET_AFTER_VERB_RE = re.compile(
 )
 # "Izmišljena bb" (bez broja): only streets end in "bb".
 _BB_STREET_RE = re.compile(
-    r"(?i)\b(?!(?:je|na|u|i|za|do|od|sa|s|a)\s)" rf"{_STREET_WORDS}{{1,2}}bb\b"
+    r"(?i)\b(?!(?:je|na|u|i|za|do|od|sa|s|a)\s)" rf"{_STREET_WORDS}{{1,2}}{_BB}"
 )
 # Postal code and town: "88000 Mostar", after a comma or at the start of a line (as in
 # "..., 88000 Mostar"), so "Kod 12345 Panel" stays.
