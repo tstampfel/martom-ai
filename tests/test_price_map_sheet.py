@@ -100,7 +100,9 @@ def test_the_tensioner_gets_one_row_per_colour() -> None:
 
 
 def test_manual_product_row() -> None:
-    rows = rows_for("Anker M8×70", build_rows(PRICE_MAP, LISTINGS, MANUAL, roll_candidates=[]))
+    rows = rows_for(
+        "Anker vijak M8×70", build_rows(PRICE_MAP, LISTINGS, MANUAL, roll_candidates=[])
+    )
     assert len(rows) == 1
     assert rows[0].listing == "bez OLX oglasa (manual_products.toml)"
     assert rows[0].price == "0,80 KM"
@@ -183,7 +185,7 @@ def test_a_manual_price_of_zero_is_noted_like_the_pricer_sees_it() -> None:
         key: dataclasses.replace(product, price_km=Decimal("0.00"))
         for key, product in MANUAL.items()
     }
-    [row] = rows_for("Anker M8×70", build_rows(PRICE_MAP, LISTINGS, zero, roll_candidates=[]))
+    [row] = rows_for("Anker vijak M8×70", build_rows(PRICE_MAP, LISTINGS, zero, roll_candidates=[]))
     assert row.price == ""
     assert row.note.startswith("cijena 0 KM → kupac vidi „cijena na upit“")
 

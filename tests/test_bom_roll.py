@@ -425,7 +425,7 @@ def test_foot_plate_fence_with_10_posts_needs_30_m8x70_anchors_at_0_80_km() -> N
     anchor = line_for(lines, Item.ANCHOR_M8X70)
     assert anchor.quantity == 30
     assert anchor.size == "M8×70"
-    assert anchor.name == "Anker M8×70"
+    assert anchor.name == "Anker vijak M8×70"
     # Price and name come from the reviewed manual_products config, keyed by the item value;
     # the line's label must not drift from it.
     entry = load_manual_products()[anchor.item.value]

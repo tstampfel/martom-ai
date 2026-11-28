@@ -53,7 +53,7 @@ T_POST = ProductInfo(
 )
 # The one entry of the real manual_products.toml (Toni, 26 Nov: 0.80 KM).
 ANCHOR_KEY = "anchor_m8x70"
-ANCHOR_NAME = "Anker M8×70"
+ANCHOR_NAME = "Anker vijak M8×70"
 PRICES_26_NOV = {
     Item.PANEL: Decimal("53.00"),
     Item.POST_BASE_PLATE: Decimal("24.90"),

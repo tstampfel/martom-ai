@@ -215,7 +215,7 @@ def roll_fence_bom(
         lines.append(
             BomLine(
                 item=Item.ANCHOR_M8X70,
-                name="Anker M8×70",
+                name="Anker vijak M8×70",
                 quantity=posts * ANCHORS_PER_FOOT_PLATE_POST,
                 size="M8×70",
             )

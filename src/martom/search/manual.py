@@ -1,6 +1,6 @@
 """Manual products in search (#112): keep `manual_product` in step with manual_products.toml.
 
-Products Toni sells without an OLX listing (today only "Anker M8×70") live in the reviewed
+Products Toni sells without an OLX listing (today only "Anker vijak M8×70") live in the reviewed
 `src/martom/bom/manual_products.toml`. Search reads `manual_product`, an index of that file:
 keyword search over its normalised text, vector search over its embedding (`martom embed`),
 the same as `product` for OLX listings. Hits from it say `source="manual"`, carry the TOML
