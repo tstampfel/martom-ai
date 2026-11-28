@@ -70,7 +70,7 @@ export function PrivacyPage() {
       </main>
 
       {/* On phones this footer shows the address, not the hours (mobile/6-privatnost.html). */}
-      <SiteFooter narrowStart={copy.shop.address} />
+      <SiteFooter narrowStart={copy.shop.address} credit />
     </div>
   )
 }

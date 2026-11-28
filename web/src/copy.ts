@@ -223,6 +223,14 @@ export const copy = {
     orderNotice: 'Ime, telefon i adresu koristimo samo za ovu narudžbu.',
     link: 'Privatnost',
   },
+  // Canvas version 1795853475-32a4 (Tomislav, 28 Nov 2026): the footer ends
+  // with "Izradio i održava Stampfel Consulting", the name linking to
+  // `creditUrl` (docs/mockups/{web,mobile}/1-start.html, 6-privatnost.html).
+  footer: {
+    creditLead: 'Izradio i održava',
+    credit: 'Stampfel Consulting',
+    creditUrl: 'https://stampfelconsulting.com/',
+  },
   // The "Privatnost" page, canvas version 1795851325-40ff (Tomislav, 28 Nov
   // 2026): docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // The wording gets an AI review before launch (#33); don't reword it here.
@@ -306,6 +314,13 @@ export const copy = {
       },
     ],
   },
+  // Slogan band on the web start screen (canvas 1795853906-fa58; to be
+  // confirmed by Toni). Split around the accent word, shown in
+  // --color-red-on-dark; the line breaks after it.
+  brand: {
+    slogan: { before: 'Sve što nije ', accent: 'ograđeno', after: ' nije vaše!' },
+    sloganLabel: 'Martomov slogan',
+  },
   about: {
     label: 'O Martomu',
     badges: [
@@ -313,7 +328,10 @@ export const copy = {
       { value: '2', text: 'Dvije prodavaonice okova, boja i lakova europskih i domaćih proizvođača' },
       { value: '30', text: 'Na tržištu od 1995. godine, uz stalan rast i kvalitetu usluge', short: 'Na tržištu od 1995.' },
       { value: '10k+', text: 'Preko 10.000 artikala po povoljnim cijenama', short: 'Preko 10.000 artikala' },
-      { value: 'OLX', text: 'Online trgovina na OLX-u s aktualnim ponudama' },
+      // Canvas 1795853807-d861 (Tomislav, 28 Nov 2026). A fixed string on
+      // purpose: never compute it live from the database. Change it only if
+      // the active listing count drops below 2,500.
+      { value: 'OLX', text: 'Preko 2.500 artikala online na OLX-u, savjetnik pretražuje sve' },
     ],
   },
 } as const

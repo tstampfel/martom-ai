@@ -40,6 +40,13 @@ export function AppShell({ children, onStartChat, cartCount = 0, showPrivacyNoti
             </a>
           </>
         )}
+        {/* docs/mockups/web/1-start.html: the credit closes the wide notice. */}
+        {variant === 'wide' && (
+          <>
+            {' · '}
+            <FooterCredit />
+          </>
+        )}
       </p>
     )
   }
@@ -78,7 +85,8 @@ export function AppShell({ children, onStartChat, cartCount = 0, showPrivacyNoti
 
       <main className="shell__main">{children}</main>
 
-      <SiteFooter notice={showPrivacyNotice}>
+      {/* The credit only on the start screen: the chat screens' canvas footers have none. */}
+      <SiteFooter notice={showPrivacyNotice} credit={showPrivacyNotice}>
         {showPrivacyNotice && (
           <>
             {privacyNotice(copy.privacy.chatNotice, 'wide')}
@@ -112,17 +120,22 @@ type SiteFooterProps = {
   narrowStart?: string
   /** Leaves room under the phone row for a notice (the start screen's privacy notice). */
   notice?: boolean
+  /**
+   * Ends the footer with "Izradio i održava Stampfel Consulting": the start
+   * screen and the Privatnost page, as on the canvas.
+   */
+  credit?: boolean
   /** Shown under the footer row. */
   children?: ReactNode
 }
 
 /**
  * The footer: logo, address, e-mail and phone on wide screens; one row on
- * phones (docs/mockups/{web,mobile}/).
+ * phones (docs/mockups/{web,mobile}/), optionally ending with the credit line.
  */
-export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, children }: SiteFooterProps) {
+export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, credit = false, children }: SiteFooterProps) {
   return (
-    <footer className={notice ? 'site-footer site-footer--notice' : 'site-footer'}>
+    <footer className={['site-footer', notice && 'site-footer--notice', credit && 'site-footer--credit'].filter(Boolean).join(' ')}>
       <div className="site-footer__inner site-footer__inner--wide">
         <span className="site-footer__brand">
           <img src={logoWhite} alt={copy.shop.name} width={992} height={308} />
@@ -139,6 +152,24 @@ export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, chil
         </a>
       </div>
       {children}
+      {/* On wide screens the start notice carries the credit itself. */}
+      {credit && (
+        <p className="site-footer__credit">
+          <FooterCredit />
+        </p>
+      )}
     </footer>
+  )
+}
+
+/** "Izradio i održava Stampfel Consulting", the name linking to the site in a new tab. */
+function FooterCredit() {
+  return (
+    <>
+      {copy.footer.creditLead}{' '}
+      <a className="site-footer__credit-link" href={copy.footer.creditUrl} target="_blank" rel="noopener">
+        {copy.footer.credit}
+      </a>
+    </>
   )
 }

@@ -240,6 +240,7 @@ Seven milestones and 33 issues. Each row is one GitHub issue and roughly one PR.
 | M6-2 | CD: deploy on merge to `main`, OIDC to AWS (no long-lived keys) | A merge deploys without manual steps |
 | M6-3 | Monitoring: LangSmith feedback (thumbs), sync freshness alert, error alerts, cost per conversation | Alert fires when the nightly sync fails |
 | M6-4 | Launch checklist + Toni handover (review queue, switching the order number to his) | Toni can read and close review issues alone |
+| M6-6 | Spike: Claude Haiku/Sonnet and Cohere Embed/Rerank on Amazon Bedrock in eu-central-1 (availability, parity, cost; findings in [`decisions/bedrock-eu-spike.md`](decisions/bedrock-eu-spike.md)) | Tomislav has the sourced facts to decide; no code changes |
 
 ## Evals, monitoring and security
 

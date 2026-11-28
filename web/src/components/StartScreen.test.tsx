@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copy } from '../copy'
@@ -178,5 +180,26 @@ describe('StartScreen starting a chat', () => {
     fireEvent.change(questionBox(), { target: { value: '   ' } })
     fireEvent.click(screen.getByRole('button', { name: copy.start.submit }))
     expect(onStartChat).not.toHaveBeenCalled()
+  })
+})
+
+describe('StartScreen slogan band', () => {
+  it('shows the slogan with its accent word and the white logo', () => {
+    stubReducedMotion(true)
+    render(<StartScreen onStartChat={() => {}} />)
+    const band = screen.getByRole('region', { name: 'Martomov slogan' })
+    const { before, accent, after } = copy.brand.slogan
+    expect(band).toHaveTextContent(`${before}${accent}${after}`)
+    expect(within(band).getByText(accent)).toHaveClass('slogan__accent')
+    expect(within(band).getByRole('img', { name: 'Željezarija Martom' })).toBeInTheDocument()
+  })
+
+  // jsdom applies no CSS, so check the stylesheet: phones (below 768 px)
+  // hide the band, as the mobile canvas has none.
+  it('is hidden on the phone layout', () => {
+    const css = readFileSync(join(import.meta.dirname, 'StartScreen.css'), 'utf8')
+    const phone = css.slice(css.indexOf('@media (max-width: 767px)'))
+    expect(phone).toMatch(/\.slogan[\s,][^{]*\{\s*display: none;/)
+    expect(css.slice(0, css.indexOf('@media (max-width: 767px)'))).not.toMatch(/\.slogan[^{]*\{[^}]*display: none/)
   })
 })
