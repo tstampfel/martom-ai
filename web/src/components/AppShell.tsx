@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import logo from '../assets/martom-logo.png'
 import logoWhite from '../assets/martom-logo-white.png'
+import { companyDetails, companyLine } from '../companyDetails'
 import { copy, telHref } from '../copy'
 import { CartIcon, PhoneIcon } from './Icons'
 import './AppShell.css'
@@ -125,6 +126,8 @@ type SiteFooterProps = {
    * screen and the Privatnost page, as on the canvas.
    */
   credit?: boolean
+  /** Martom's legal details line; a prop only so tests can show it filled in. */
+  company?: string | null
   /** Shown under the footer row. */
   children?: ReactNode
 }
@@ -133,7 +136,13 @@ type SiteFooterProps = {
  * The footer: logo, address, e-mail and phone on wide screens; one row on
  * phones (docs/mockups/{web,mobile}/), optionally ending with the credit line.
  */
-export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, credit = false, children }: SiteFooterProps) {
+export function SiteFooter({
+  narrowStart = copy.shop.hours,
+  notice = false,
+  credit = false,
+  company = companyLine(companyDetails),
+  children,
+}: SiteFooterProps) {
   return (
     <footer className={['site-footer', notice && 'site-footer--notice', credit && 'site-footer--credit'].filter(Boolean).join(' ')}>
       <div className="site-footer__inner site-footer__inner--wide">
@@ -152,6 +161,8 @@ export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, cred
         </a>
       </div>
       {children}
+      {/* Martom's legal details, on every page once they are filled in (companyDetails.ts). */}
+      {company && <p className="site-footer__company">{company}</p>}
       {/* On wide screens the start notice carries the credit itself. */}
       {credit && (
         <p className="site-footer__credit">

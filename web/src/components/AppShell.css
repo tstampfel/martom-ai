@@ -184,6 +184,7 @@
 /* "Izradio i održava Stampfel Consulting": its own line at the bottom
    (web/6-privatnost.html), or inside the start notice
    (web/1-start.html), so the separate line is hidden there. */
+.site-footer__company,
 .site-footer__credit {
   max-width: var(--content-max);
   margin: 0 auto;
@@ -275,6 +276,7 @@
 
   /* Its own line on every phone footer (mobile/1-start.html, 6-privatnost.html),
      muted on the light page background. */
+  .site-footer__company,
   .site-footer__credit,
   .site-footer--notice .site-footer__credit {
     display: block;

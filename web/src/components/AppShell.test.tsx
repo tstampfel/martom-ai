@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { companyDetails, companyLine } from '../companyDetails'
 import { config } from '../config'
 import { copy, telHref } from '../copy'
-import { AppShell } from './AppShell'
+import { AppShell, SiteFooter } from './AppShell'
 
 describe('AppShell header categories', () => {
   it.each(copy.header.nav)('"%s" starts a chat with that category', (category) => {
@@ -109,5 +110,38 @@ describe('AppShell footer credit (M5-9)', () => {
     expect(creditLinks()[0]).toHaveAttribute('href', 'https://stampfelconsulting.com/')
     expect(creditLinks()[0]).toHaveAttribute('target', '_blank')
     expect(creditLinks()[0]).toHaveAttribute('rel', 'noopener')
+  })
+})
+
+describe('SiteFooter company details (#174)', () => {
+  it('shows nothing while the details are not filled in', () => {
+    expect(companyLine(companyDetails)).toBeNull()
+    const { container } = render(<SiteFooter />)
+    expect(container.querySelector('.site-footer__company')).toBeNull()
+  })
+
+  it('shows the full name, address, JIB and PDV number once they are', () => {
+    // Obviously fake values: the real ones come from Tomislav or Toni.
+    const line = companyLine({
+      legalName: 'Primjer d.o.o.',
+      address: 'Testna 1, Testgrad',
+      jib: '1234567890123',
+      vatRegistered: true,
+      vatNumber: '123456789012',
+    })
+    expect(line).toBe('Primjer d.o.o. · Testna 1, Testgrad · JIB: 1234567890123 · PDV broj: 123456789012')
+    render(<SiteFooter company={line} />)
+    expect(within(screen.getByRole('contentinfo')).getByText(line ?? '')).toHaveClass('site-footer__company')
+  })
+
+  it('leaves out the PDV number when Martom is not VAT-registered', () => {
+    const line = companyLine({
+      legalName: 'Primjer d.o.o.',
+      address: 'Testna 1, Testgrad',
+      jib: '1234567890123',
+      vatRegistered: false,
+      vatNumber: '',
+    })
+    expect(line).toBe('Primjer d.o.o. · Testna 1, Testgrad · JIB: 1234567890123')
   })
 })
