@@ -106,7 +106,10 @@ _LIST_MARKER = re.compile(r"^(\s*)\d{1,2}[.)](?=\s)", re.MULTILINE)
 # product titles ("1. EURO PANEL ZELENI"; #134 R1-1).
 _MARKER_CURRENCY = rf"(?:{_KM}|€|EUR\b|eura\b|eur(?:ima|om)\b)"
 _MARKER_PRICE = re.compile(
-    rf"^\s*(?P<amount>\d{{1,2}})[.)]\s*(?P<currency>{_MARKER_CURRENCY})(?![^\n]*\d)",
+    rf"^\s*(?P<amount>\d{{1,2}})[.)]\s*(?P<currency>{_MARKER_CURRENCY})"
+    # Only an amount right after the currency makes it a currency-first price ("1. KM
+    # 53,00"); a number later on the line ("85. KM (2 panela)") doesn't (#134 R2-1).
+    r"(?![^\S\n]*:?[^\S\n]*\d)",
     re.MULTILINE | re.IGNORECASE,
 )
 # "2 prijedloga", "dva prijedloga": how many suggestions the answer makes, not a quantity.
@@ -128,7 +131,10 @@ _PRODUCT_NOUN = re.compile(
     r"podlošk|podlosk|zatezač|zatezac|zatezn|podupirač|podupirac|potporn|upornj|"
     r"rol(?:a|e|i|u|n|ama)|kapij|vrata\b|vratnic|mrež|mrez|ograd|pločic|plocic|"
     r"šipk|sipk|cijev|profil|traka|trake|traku|sajl|lanac|lanc|beton|cement|vreć|vrec|"
-    r"kutij|paket|komad|kom\b|metar|metr|metara)\w*",
+    r"kutij|paket|komad|kom\b|metar|metr|metara|"
+    # BOM lines ("Zatezač (španer)", "Nosač nosive žice", "kolut 100 m"; R2-2) and
+    # catalogue hardware.
+    r"španer|spaner|nosač|nosac|kolut|obujmic|šark|sark|spojnic|kapic|tipl|brav|pletiv)\w*",
     re.IGNORECASE,
 )
 _JOIN_WORDS = frozenset(
@@ -497,7 +503,12 @@ def _check_number_words(text: str, known_prices: set[Decimal], allowed: set[Deci
     return problems
 
 
-_NEXT_WORD = re.compile(r"[^\S\n]+(\w+)")
+# A hyphenated word is one token ("T-stupova"); its last part is the noun (#134 R2-2).
+_NEXT_WORD = re.compile(r"[^\S\n]+(\w+(?:-\w+)*)")
+
+
+def _is_product_noun(word: str) -> bool:
+    return _PRODUCT_NOUN.fullmatch(word.rsplit("-", 1)[-1]) is not None
 
 
 def _product_noun_after(text: str, end: int) -> str | None:
@@ -505,12 +516,12 @@ def _product_noun_after(text: str, end: int) -> str | None:
     first = _NEXT_WORD.match(text, end)
     if first is None:
         return None
-    if _PRODUCT_NOUN.fullmatch(first.group(1)):
+    if _is_product_noun(first.group(1)):
         return first.group(1)
     if first.group(1).lower() in _JOIN_WORDS:
         return None
     second = _NEXT_WORD.match(text, first.end())
-    if second is not None and _PRODUCT_NOUN.fullmatch(second.group(1)):
+    if second is not None and _is_product_noun(second.group(1)):
         return f"{first.group(1)} {second.group(1)}"
     return None
 

@@ -712,3 +712,66 @@ def test_eurofence_title_with_a_number_is_not_a_euro_price() -> None:
         assert check_grounding(text, found).ok, check_grounding(text, found).problems
     assert not check_grounding("Panel je 3 eura.", found).ok
     assert not check_grounding("Panel je euro 3.", found).ok
+
+
+# --- #134 review round 2 -----------------------------------------------------------------
+
+
+# R2-1: only an amount right after the currency makes "1. KM" a currency-first price.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ukupno:\n85. KM (2 panela)",
+        "Ukupno:\n85. KM za 2 panela",
+        "Ukupno:\n85) KM, 2 panela",
+        "Ukupno:\n85. KM\n2. Stup",
+    ],
+)
+def test_marker_price_with_a_number_later_on_the_line_is_checked(text: str) -> None:
+    result = check_grounding(text, Facts(numbers=["2"]))
+    assert not result.ok
+    assert any("85" in problem and "price" in problem for problem in result.problems)
+
+
+@pytest.mark.parametrize("text", ["1. KM 53,00", "1. KM 53,00 za panel", "1. KM: 53,00"])
+def test_marker_before_a_currency_first_price_still_passes(text: str) -> None:
+    result = check_grounding(text, Facts(prices=["53.00"]))
+    assert result.ok, result.problems
+
+
+# R2-2: BOM items and catalogue hardware are products, hyphenated forms too.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Trebate desetak T-stupova.",
+        "Trebate 7 varijanti T-stupova.",
+        "Trebate par potpornih T-stupova.",
+        "Trebate par španera.",
+        "Trebate par spanera.",
+        "Imam pet opcija španera.",
+        "Trebate desetak nosača.",
+        "Trebate desetak nosaca.",
+        "Uzmite par koluta.",
+        "Trebate par šarki.",
+        "Trebate desetak spojnica.",
+        "Trebate desetak obujmica.",
+        "Trebate par kapica.",
+        "Trebate desetak tipli.",
+        "Trebate par brava.",
+        "Trebate desetak metara pletiva.",
+    ],
+)
+def test_rough_or_suggestion_count_of_bom_items_fails(text: str) -> None:
+    assert not check_grounding(text, Facts()).ok
+
+
+def test_every_bom_line_name_is_a_product_noun() -> None:
+    # A calculator line whose noun isn't in _PRODUCT_NOUN would let "desetak <it>" pass.
+    from bom_lines import all_bom_lines
+
+    missing = set()
+    for name in {line.name for line in all_bom_lines()}:
+        result = check_grounding(f"Trebate desetak {name}.", Facts())
+        if not any("rough count" in problem for problem in result.problems):
+            missing.add(name)
+    assert missing == set()
