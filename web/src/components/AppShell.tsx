@@ -15,8 +15,8 @@ type AppShellProps = {
   /** Shows the 90-day chat notice in the footer (start screen only, as on the canvas). */
   showPrivacyNotice?: boolean
   /**
-   * The privacy page. Until it exists (#129) the notice has no "Privatnost"
-   * link, so it never leads to a broken page; #129 passes its route here.
+   * The privacy page (App passes /privatnost). Without it the notice has no
+   * "Privatnost" link.
    */
   privacyHref?: string
 }
