@@ -39,7 +39,7 @@ def test_loads_the_toml_and_a_second_run_changes_nothing(
     assert "inserted 1, updated 0, unchanged 0, deleted 0" in capsys.readouterr().out
     assert cli.main(["load-manual-products"]) == 0
     assert "inserted 0, updated 0, unchanged 1, deleted 0" in capsys.readouterr().out
-    assert manual_rows(database_url) == [("anchor_m8x70", "Anker M8×70", False)]
+    assert manual_rows(database_url) == [("anchor_m8x70", "Anker vijak M8×70", False)]
 
 
 def test_a_given_file_replaces_the_rows(
@@ -86,7 +86,7 @@ def test_embed_syncs_the_manual_products_first_and_embeds_them(
     out = capsys.readouterr().out
     assert "manual products: inserted 1, updated 0, unchanged 0, deleted 0" in out
     assert "manual products: embedded 1, unchanged 0" in out
-    assert manual_rows(database_url) == [("anchor_m8x70", "Anker M8×70", True)]
+    assert manual_rows(database_url) == [("anchor_m8x70", "Anker vijak M8×70", True)]
 
 
 # --- martom migrate (R1-1) and a broken TOML in martom embed (R1-2) ---------------------
@@ -105,7 +105,7 @@ def test_migrate_syncs_the_manual_products_and_a_second_run_prints_only_nothing_
     assert cli.main(["migrate", "--dir", str(MIGRATIONS)]) == 0
     # CI's "migrate again" step needs exactly this output.
     assert capsys.readouterr().out == "nothing to apply\n"
-    assert manual_rows(database_url) == [("anchor_m8x70", "Anker M8×70", False)]
+    assert manual_rows(database_url) == [("anchor_m8x70", "Anker vijak M8×70", False)]
 
 
 def test_migrate_picks_up_a_changed_price(

@@ -204,7 +204,7 @@ async def test_keyword_search_finds_the_manual_anchor_without_a_link(
     assert manual[0].listing_id is None
     assert manual[0].slug is None
     assert manual[0].url is None
-    assert manual[0].title == "Anker M8×70"
+    assert manual[0].title == "Anker vijak M8×70"
     # OLX hits keep their source, listing id and link.
     olx = [hit for hit in hits if hit.source == "olx"]
     assert all(hit.listing_id and hit.manual_key is None for hit in olx)
@@ -280,7 +280,7 @@ async def test_retrieve_reranks_the_manual_anchor_by_its_search_text(
     result = await retrieve(
         conn, "Anker M8x70 za stup sa stopom", embedder=embedder, parser=None, reranker=reranker
     )
-    assert "Anker M8×70 M8x70" in reranker.documents
+    assert "Anker vijak M8×70 M8x70" in reranker.documents
     first = result.hits[0]
     assert (first.source, first.manual_key, first.listing_id, first.url) == (
         "manual",

@@ -131,7 +131,7 @@ def panel_fence_bom(
         BomLine(item=Item.PVC_CLIP, name="PVC kopča", quantity=clips),
         BomLine(
             item=Item.ANCHOR_M8X80,
-            name="Anker M8×80",
+            name="Tiplo anker M8×80",
             quantity=posts * ANCHORS_PER_POST,
             size="M8×80",
         ),

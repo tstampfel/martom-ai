@@ -11,9 +11,11 @@ from uuid import UUID
 
 import pytest
 from langchain_core.callbacks import AsyncCallbackHandler
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.outputs import ChatResult
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import Field
 from tests.agent_fakes import (
     ANCHOR_KEY,
     ANCHOR_NAME,
@@ -304,7 +306,7 @@ async def test_eurofence_100_uses_synced_heights() -> None:
 
 async def test_installation_note_is_added_after_the_grounded_answer() -> None:
     graph = make_graph(
-        Recorder(understanding(request="product", asks_installation=True)),
+        Recorder(understanding(request="fence_eurofence", asks_installation=True)),
         [AIMessage("Imamo panelne ograde.")],
     )
     result = await ask(graph, "Montirate li ograde?")
@@ -1012,3 +1014,192 @@ async def test_unreranked_hits_the_model_accepts_all_count() -> None:
     )
     result = await ask(graph, "Stup za ogradu")
     assert result["relevant_hits"] == 2
+
+
+# --- #171: gates, installation, anchors, drilling, "Iskustva kupaca" -------------------
+
+
+class RecordingChat(FakeChat):
+    """FakeChat that keeps the messages of every call, to read the system prompt."""
+
+    seen: list[list[BaseMessage]] = Field(default_factory=list)
+
+    def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> ChatResult:
+        self.seen.append(list(messages))
+        return super()._generate(messages, *args, **kwargs)
+
+
+def recording_graph(guard: Recorder, replies: Iterable[AIMessage]):
+    chat = RecordingChat(messages=iter(replies))
+    models = AgentModels(
+        guard=RunnableLambda(guard),
+        grade=RunnableLambda(Recorder(Grade(fits=True))),
+        rewrite=RunnableLambda(Recorder(Rewrite(query="ograda panel"))),
+        chat=chat,
+    )
+    deps = AgentDeps(
+        models=models, retriever=FakeRetriever(), catalogue=FakeCatalogue(PANEL, EUROFENCE)
+    )
+    return build_graph(deps, checkpointer=InMemorySaver()), chat
+
+
+def system_prompt(chat: RecordingChat) -> str:
+    first = chat.seen[0][0]
+    assert first.type == "system"
+    return first.text
+
+
+async def test_installation_question_gets_montaza_with_the_email() -> None:
+    graph = make_graph(Recorder(understanding(request="other", asks_installation=True)))
+    result = await ask(graph, "Radite li montažu ograde?")
+    assert result["answer"] == copy.INSTALLATION
+    assert "info@martom-bekaert.com" in result["answer"]
+    assert "036 651 427" in result["answer"]
+
+
+async def test_gate_question_flagged_out_of_scope_still_gets_the_gate_answer() -> None:
+    graph = make_graph(Recorder(understanding(in_scope=False, request="other", asks_gate=True)))
+    result = await ask(graph, "Pravite li kapije?")
+    assert result["answer"] == copy.GATE
+    assert "info@martom-bekaert.com" in result["answer"]
+
+
+async def test_a_priced_gate_sentence_still_fails_grounding() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product", asks_gate=True)),
+        [
+            tool_call("get_product", {"listing_id": PANEL_ID}),
+            AIMessage("Kapije radimo po narudžbi, 53,00 KM."),
+            AIMessage("Panel 153 × 250 je 53,00 KM."),
+        ],
+    )
+    result = await ask(graph, "Koliko je panel, a koliko kapija?")
+    assert result["grounding_problems"]
+    assert result["answer"] == f"Panel 153 × 250 je 53,00 KM.\n\n{copy.GATE}"
+
+
+async def test_anchors_question_without_a_list_says_they_are_sold_separately() -> None:
+    graph = make_graph(Recorder(understanding(request="other", asks_anchors_included=True)))
+    result = await ask(graph, "Dolaze li ankeri uz stupove?")
+    assert result["answer"] == copy.ANCHORS_SOLD_SEPARATELY
+
+
+async def test_anchors_question_with_a_panel_list_says_they_are_on_it() -> None:
+    graph = make_graph(
+        Recorder(
+            understanding(
+                height="153 cm", lengths=["25 m"], layout="straight", asks_anchors_included=True
+            )
+        ),
+        [tool_call("calculate_fence_bom"), AIMessage("Evo popisa za vašu ogradu.")],
+    )
+    result = await ask(graph, "Panelna ograda 25 m, 153 cm. Dolaze li ankeri uz stupove?")
+    assert result["answer"] == (
+        f"Evo popisa za vašu ogradu.\n\n{copy.ANCHORS_SOLD_SEPARATELY_IN_LIST}"
+    )
+
+
+async def test_anchors_question_in_a_later_turn_sees_the_earlier_list() -> None:
+    graph = make_graph(
+        Recorder(
+            understanding(height="153 cm", lengths=["25 m"], layout="straight"),
+            understanding(request="other", asks_anchors_included=True),
+        ),
+        [tool_call("calculate_fence_bom"), AIMessage("Evo popisa.")],
+    )
+    await ask(graph, "Panelna ograda 25 m, 153 cm")
+    result = await ask(graph, "Dolaze li ankeri uz stupove?")
+    assert result["answer"] == copy.ANCHORS_SOLD_SEPARATELY_IN_LIST
+
+
+async def test_anchors_question_with_a_t_post_list_has_no_anchors_on_it() -> None:
+    # T-posts take no anchors, so the list has none to point at.
+    graph = make_graph(
+        Recorder(
+            understanding(
+                request="fence_roll",
+                height="100 cm",
+                lengths=["25 m"],
+                layout="straight",
+                wants_concrete_posts=True,
+                asks_anchors_included=True,
+            )
+        ),
+        [tool_call("calculate_fence_bom"), AIMessage("Evo popisa.")],
+    )
+    result = await ask(graph, "Mreža u roli 100 cm, 25 m, u zemlju. Ankeri uz stupove?")
+    assert result["answer"] == f"Evo popisa.\n\n{copy.ANCHORS_SOLD_SEPARATELY}"
+
+
+@pytest.mark.parametrize(
+    ("request_kind", "expected"),
+    [("fence_panel", copy.DRILLING_PANEL), ("fence_roll", copy.DRILLING_FOOT_PLATE)],
+)
+async def test_drilling_question_names_the_anchor_and_bit_for_each_fence_type(
+    request_kind: str, expected: str
+) -> None:
+    # The model's first draft gives a bare bit size: grounding sends it back, the retry
+    # passes, and the fixed text naming the anchor type with its bit follows (#171).
+    graph, chat = recording_graph(
+        Recorder(
+            understanding(
+                request=request_kind,
+                height="100 cm",
+                lengths=["25 m"],
+                layout="straight",
+                asks_drilling=True,
+                search_query="ankeri svrdlo",
+            )
+        ),
+        [AIMessage("Uzmite svrdlo ø10 mm."), AIMessage("Evo što vam treba za bušenje.")],
+    )
+    answers = {"choices": {"posts": "foot_plate"}} if request_kind == "fence_roll" else None
+    result = await ask(graph, "Koje svrdlo za ankere, 8 ili 10 mm?", answers=answers)
+    assert any("anchor type" in problem for problem in result["grounding_problems"])
+    assert result["answer"] == f"Evo što vam treba za bušenje.\n\n{expected}"
+    prompt = system_prompt(chat)
+    assert "tiplo anker M8x80 → svrdlo ø10 mm SDS" in prompt
+    assert "anker vijak M8x70 ili M8x80 → svrdlo ø8 mm" in prompt
+
+
+async def test_iskustva_kupaca_are_martoms_statements_in_the_prompt() -> None:
+    graph, chat = recording_graph(
+        Recorder(understanding(request="product", search_query="panelna ograda")),
+        [AIMessage("Iz našeg iskustva, panelna ograda traje dugo.")],
+    )
+    result = await ask(graph, "Kakva su iskustva kupaca s panelnom ogradom?")
+    assert result["answer"] == "Iz našeg iskustva, panelna ograda traje dugo."
+    prompt = system_prompt(chat)
+    assert '"Iskustva kupaca" are Martom\'s own statements' in prompt
+    assert "never customer reviews" in prompt
+    assert '"kupci kažu"' in prompt
+
+
+async def test_the_prompt_no_longer_tells_the_model_gates_are_out_of_scope() -> None:
+    graph, chat = recording_graph(
+        Recorder(understanding(request="product", asks_gate=True)), [AIMessage("Imamo panele.")]
+    )
+    await ask(graph, "Imate li panele i kapije?")
+    prompt = system_prompt(chat)
+    assert "Gates (made to order)" in prompt
+    assert "Never say Martom doesn't do gates or installation" in prompt
+
+
+async def test_anchors_question_classed_as_a_product_still_gets_the_answer() -> None:
+    # Review R2-1: no fence in the chat, request "product".
+    graph = make_graph(
+        Recorder(
+            understanding(request="product", search_query="ankeri", asks_anchors_included=True)
+        ),
+        [AIMessage("Imamo ankere u ponudi.")],
+    )
+    result = await ask(graph, "Dolaze li ankeri uz stupove?")
+    assert result["answer"] == f"Imamo ankere u ponudi.\n\n{copy.ANCHORS_SOLD_SEPARATELY}"
+
+
+async def test_the_prompt_says_anchors_are_sold_separately() -> None:
+    graph, chat = recording_graph(
+        Recorder(understanding(request="product")), [AIMessage("Imamo panele.")]
+    )
+    await ask(graph, "Imate li panele?")
+    assert "Anchors are sold separately, never included with the posts" in system_prompt(chat)
