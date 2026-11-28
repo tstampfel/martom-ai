@@ -154,6 +154,9 @@ class RunStats:
     rolling_deferred: int = 0  # rolling-slice listings the request budget left for later
     oldest_detail_age_days: float | None = None
     detail_refresh_overdue: bool = False
+    # Raw OLX marker counts (#179, migration 012); None: the listing pages weren't read.
+    sponsored_count: int | None = None
+    pinned_count: int | None = None
     error: str | None = None
     run_id: int | None = field(default=None, compare=False)
 
@@ -162,6 +165,32 @@ class RunStats:
         values = asdict(self)  # dataclass -> dict, like `{...stats}` in JS
         del values["kind"], values["scheduled"], values["run_id"]
         return values
+
+
+@dataclass(frozen=True)
+class ListingMarkers:
+    """How many listing-page rows carry each raw OLX marker (#179)."""
+
+    sponsored: int  # rows with `sponsored` > 0
+    pinned: int  # rows with `pinned` = true
+
+
+def count_listing_markers(rows: Mapping[int, Mapping[str, Any]]) -> ListingMarkers:
+    """Count the raw `sponsored` and `pinned` markers over this run's listing-page rows.
+
+    Counted under the OLX field names on purpose: which field means a featured
+    ("Izdvojeno") listing is unconfirmed (22470828 has sponsored = 1, and Toni says it
+    isn't featured), so this never claims to count featured listings.
+    """
+    sponsored = 0
+    pinned = 0
+    for row in rows.values():
+        value = _as_int(row.get("sponsored"))
+        if value is not None and value > 0:
+            sponsored += 1
+        if row.get("pinned") is True:  # JSON true only, like OLX sends it
+            pinned += 1
+    return ListingMarkers(sponsored=sponsored, pinned=pinned)
 
 
 def rolling_slice_size(active_count: int, *, refresh_days: int) -> int:
@@ -586,6 +615,9 @@ async def _sync_steps(
     stats.shop_total = result.shop_total
     stats.coverage = result.coverage
     stats.seen = result.unique_count
+    markers = count_listing_markers(result.listings)
+    stats.sponsored_count = markers.sponsored
+    stats.pinned_count = markers.pinned
 
     stored = await store.load_listings(conn)
     # A full run pretends no hash is stored, so every listing is fetched again. A nightly
@@ -926,7 +958,7 @@ def _log_summary(stats: RunStats, olx: OlxCounters) -> None:
     log = logger.info if stats.status == "succeeded" else logger.error
     log(
         "sync run %s (%s) %s: seen %d, new %d, deactivated %d, reactivated %d, "
-        "fetched %d, changed %d, errors %d, coverage %s; "
+        "fetched %d, changed %d, errors %d, coverage %s, sponsored %s, pinned %s; "
         "OLX %d requests in %.0f s, %d x 429, OLX asked to wait %.0f s",
         stats.run_id,
         stats.kind,
@@ -939,6 +971,8 @@ def _log_summary(stats: RunStats, olx: OlxCounters) -> None:
         stats.changed,
         stats.errors,
         "n/a" if stats.coverage is None else f"{stats.coverage:.2%}",
+        "n/a" if stats.sponsored_count is None else stats.sponsored_count,
+        "n/a" if stats.pinned_count is None else stats.pinned_count,
         olx.requests_sent,
         olx.elapsed_seconds,
         olx.rate_limited,
@@ -955,10 +989,12 @@ def _log_summary(stats: RunStats, olx: OlxCounters) -> None:
 
 __all__ = [
     "GoneReason",
+    "ListingMarkers",
     "Recheck",
     "RunKind",
     "RunStats",
     "apply_skipped_run",
+    "count_listing_markers",
     "deactivation_allowed",
     "guard_allowlist",
     "recheck_allowed",
