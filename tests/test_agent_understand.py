@@ -286,8 +286,11 @@ def test_installation_answer_offers_montaza_with_phone_and_email() -> None:
     plan = plan_for(request="other", asks_installation=True)
     assert plan.route == "respond"
     assert plan.answer == copy.INSTALLATION
-    assert "gotov betonski zid" in copy.INSTALLATION
-    assert "dostava je besplatna" in copy.INSTALLATION
+    assert copy.INSTALLATION == (
+        "Montažu radimo po dogovoru u krugu oko 40 km; "
+        "javite se na 036 651 427 ili info@martom-bekaert.com."
+    )
+    assert "KM" not in copy.INSTALLATION
     assert "036 651 427" in copy.INSTALLATION
     assert "info@martom-bekaert.com" in copy.INSTALLATION
 

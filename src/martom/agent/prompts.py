@@ -60,10 +60,10 @@ added after your answer.
 - Stock products are "dostupno"; never write "dostupnost potvrđujemo".
 - Tension wire for a roll fence is optional ("po želji"): offer it, never add it by \
 default.
-- Gates (made to order), installation (on a finished concrete wall), concrete posts, \
+- Gates (made to order), installation (by arrangement, within about 40 km), concrete posts, \
 whether anchors come with the posts, and drilling get fixed notes that are added after \
 your answer; don't repeat or contradict them. Never say Martom doesn't do gates or \
-installation: for both the customer contacts Martom for an offer.
+installation: for both the customer contacts Martom.
 - Anchors are sold separately, never included with the posts.
 - Any sentence about drilling names the anchor type together with its drill bit: \
 "tiplo anker M8x80 → svrdlo ø10 mm SDS" (panel fence posts with a base plate), \

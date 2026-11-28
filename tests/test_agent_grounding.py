@@ -823,3 +823,9 @@ def test_the_anchor_names_and_bits_are_known_numbers() -> None:
     assert check_grounding("Anker vijak M8x70 ili M8x80 → svrdlo ø8 mm.", Facts()).ok
     # Only inside the phrase: a bare count still fails.
     assert not check_grounding("Trebate 80 ankera.", Facts()).ok
+
+
+def test_the_installation_radius_is_known_only_in_its_phrase() -> None:
+    assert check_grounding("Montažu radimo u krugu oko 40 km.", Facts()).ok
+    assert not check_grounding("Trebate 40 stubova.", Facts()).ok
+    assert not check_grounding("Montaža u krugu oko 40 km košta 53,00 KM.", facts()).ok

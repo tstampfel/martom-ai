@@ -218,11 +218,12 @@ _THOUSAND_WORDS = frozenset(
 )
 _WORD = re.compile(r"\w+")
 # The number phrases of agent/copy.py; `test_every_copy_text_passes` keeps them in step.
-# The anchor names and their drill bits (#171: "tiplo anker M8×80 → svrdlo ø10 mm") are
-# fixed facts too, so the model may follow the drilling rule; a bit without its anchor
-# still fails (`_drill_bit_without_anchor`).
+# Installation "u krugu oko 40 km", the anchor names and their drill bits (#171: "tiplo
+# anker M8×80 → svrdlo ø10 mm") are fixed facts too, so the model may follow the drilling
+# rule; a bit without its anchor still fails (`_drill_bit_without_anchor`).
 _COPY_PHRASES = re.compile(
     r"\b10\s*[\u2013-]\s*15\s+dan\w*|\bRAL\s*(?:7016|6005)\b|\bod\s+0\s*m\b"
+    r"|\bu\s+krugu\s+oko\s+40\s*km\b"
     r"|\bM8\s*[×xX]\s*(?:70|80)\b|(?:ø|Ø|⌀|\bfi)\s*(?:8|10)\s*mm\b",
     re.IGNORECASE,
 )

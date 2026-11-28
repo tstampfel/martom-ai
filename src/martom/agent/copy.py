@@ -26,12 +26,9 @@ BOM_NOTE = (
     "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. "
     "Dostava se potvrđuje."
 )
-# Tomislav, 28 Nov 2026 (#171): fence-rules.md, "Concrete, installation and availability".
-# Never a price: the price is always "po ponudi".
-INSTALLATION = (
-    "Nudimo montažu na gotov betonski zid, cijena po ponudi; uz našu montažu dostava je "
-    f"besplatna. Javite se: {CONTACT}"
-)
+# Toni, 28 Nov 2026 (#171): fence-rules.md, "Concrete, installation and availability".
+# By arrangement only, within about 40 km; never priced and never in the calculator.
+INSTALLATION = f"Montažu radimo po dogovoru u krugu oko 40 km; javite se na {CONTACT}."
 # Toni, 28 Nov 2026 (#171): anchors are "prateći materijal", sold separately. The second
 # form only when this chat's materials list has an anchor line.
 ANCHORS_SOLD_SEPARATELY = "Ne, ankeri se kupuju posebno."
