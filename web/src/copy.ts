@@ -259,7 +259,9 @@ export const copy = {
   },
   // The "Privatnost" page, canvas version 1795858888-a499 (Tomislav, 28 Nov
   // 2026: Claude's legal review plus Gemini's checklist, the final text,
-  // frozen until launch unless Tomislav sends changes):
+  // frozen until launch unless Tomislav sends changes; the transfer section
+  // from canvas 1795865366-4af4, #186, which names LangSmith only when it is
+  // on):
   // docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // Don't reword it here; change the canvas first.
   // PLACEHOLDER: `privacyPlaceholders.date` stays verbatim until Tomislav
@@ -278,7 +280,9 @@ export const copy = {
     // line breaks. A line is `lead` (plain), then `label` (bold), then
     // `text`; a `link` (opened in a new tab) and `textAfter` follow. A line
     // with `langSmith: true` is shown only when LangSmith tracing is on
-    // (VITE_LANGSMITH_ENABLED; the canvas marks it with an HTML comment).
+    // (VITE_LANGSMITH_ENABLED; the canvas marks it with an HTML comment). A
+    // line's `langSmithText` follows its `text` only when tracing is on (the
+    // canvas quotes those words in an HTML comment).
     sections: [
       {
         heading: 'Ko smo',
@@ -398,7 +402,12 @@ export const copy = {
         heading: 'Prijenos podataka izvan BiH',
         lines: [
           {
-            text: 'Serveri AWS-a i LangSmitha nalaze se u EU (Njemačka), dakle izvan BiH. Prema Zakonu o zaštiti ličnih podataka BiH smatra se da države članice EU osiguravaju odgovarajući nivo zaštite podataka, pa za taj prijenos nisu potrebne posebne dozvole. Eventualni udaljeni tehnički pristup matične firme AWS-a u SAD-u zasniva se na EU–US Data Privacy Framework i AWS-ovom ugovoru o obradi podataka sa standardnim ugovornim klauzulama.',
+            text: 'Serveri AWS-a',
+            // Canvas comment: add ' i LangSmitha' only if LangSmith is enabled
+            // at launch (VITE_LANGSMITH_ENABLED).
+            langSmithText: ' i LangSmitha',
+            textAfter:
+              ' nalaze se u EU (Njemačka), dakle izvan BiH. Prema Zakonu o zaštiti ličnih podataka BiH smatra se da države članice EU osiguravaju odgovarajući nivo zaštite podataka, pa za taj prijenos nisu potrebne posebne dozvole. Eventualni udaljeni tehnički pristup matične firme AWS-a u SAD-u zasniva se na EU–US Data Privacy Framework i AWS-ovom ugovoru o obradi podataka sa standardnim ugovornim klauzulama.',
           },
           {
             text: `Cloudflare, Inc. može vašu IP adresu i sigurnosne zapise obraditi u Sjedinjenim Američkim Državama i drugim državama izvan EU, a poruka preko WhatsAppa prolazi kroz Metine servere, koji mogu biti i u SAD-u. Ti prijenosi se zasnivaju na odluci EU o odgovarajućem nivou zaštite za američke firme uključene u EU–US Data Privacy Framework, koju primjenjujemo na osnovu Zakona o zaštiti ličnih podataka BiH; prijenos preko WhatsAppa i na tome što poruku s narudžbom šaljete sami. Za ostale države Cloudflare primjenjuje standardne ugovorne klauzule iz svog ugovora o obradi podataka. Kopiju tih zaštitnih mjera možete dobiti na zahtjev na ${shop.email}.`,
