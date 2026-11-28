@@ -271,8 +271,10 @@ async def test_a_damaged_cached_result_is_a_miss_and_the_search_still_runs(
     first = await retrieve(
         conn, QUESTION, embedder=embedder, parser=None, reranker=FakeReranker(), cache=cache
     )
-    damaged = {"hits": [{"listing_id": "not a number"}], "filters": [], "parsed": "maybe"}
+    # Every key present, one value of the wrong type: only the type check can catch it.
     async for key in cache.client.scan_iter(match=f"{cache.prefix}:result:*"):
+        damaged = json.loads(await cache.client.get(key))
+        damaged["hits"][0]["relevance"] = "high"
         await cache.client.set(key, json.dumps(damaged))
     again = await retrieve(
         conn, QUESTION, embedder=embedder, parser=None, reranker=FakeReranker(), cache=cache
