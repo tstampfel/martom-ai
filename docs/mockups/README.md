@@ -4,7 +4,7 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it; the two Privatnost screens (`web/` and `mobile/` `6-privatnost.html`) and the start and cart/order screens, whose "Privatnost" links now open them, from `1795850976-906d` (M6-5b), the only screens that changed in it; the two Privatnost screens again from `1795851325-40ff` (LangSmith and the transfer note), the only screens that changed in it.
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it; the two Privatnost screens (`web/` and `mobile/` `6-privatnost.html`) and the start and cart/order screens, whose "Privatnost" links now open them, from `1795850976-906d` (M6-5b), the only screens that changed in it; the two Privatnost screens again from `1795851325-40ff` (LangSmith and the transfer note), the only screens that changed in it; the start and Privatnost screens (`web/` and `mobile/` `1-start.html`, `6-privatnost.html`) from `1795853475-32a4` (M5-9: the footer credit "Izradio i održava Stampfel Consulting"), the only screens that changed in it.
 
 | Canvas | Repo |
 | --- | --- |
@@ -51,7 +51,7 @@ Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "St
 | Card | `#FFFFFF` with `1px #E2E2DE` border, radius 14–20 px | |
 | Strong border | `#D5D6D1` | Outlined icon buttons (phone button on mobile) |
 | Subtle divider / chip hover | `#ECECE8` | Quick-start chip hover (background and border), cart row dividers on web. Not in `tokens.css` yet; add it with the React issue that builds the chip hover |
-| Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Kako savjetnik radi" card) |
+| Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Kako savjetnik radi" card), and the footer credit link on the web footer (9.2:1 on charcoal; the credit on the light phone footer is muted text, 6.7:1) |
 | Small print on dark | `#A9AEB6` | The privacy notice in the web start footer (6.5:1 on charcoal) |
 | Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
