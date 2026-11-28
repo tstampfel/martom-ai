@@ -1,7 +1,6 @@
 // Launch check for the customer page: fails while the production build still
 // holds a "Privatnost" placeholder that has to be filled in before launch
-// (`privacyPlaceholders` in src/copy.ts: the date Tomislav sets at launch and
-// the order retention period Toni confirms).
+// (`privacyPlaceholders` in src/copy.ts: the date Tomislav sets at launch).
 //
 //   npm --prefix web run build
 //   npm --prefix web run check:launch      # scans web/dist
@@ -17,7 +16,7 @@ import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The start of each placeholder, as the canvas writes it. */
-const PLACEHOLDERS = ['[DATUM]', '[ROK ČUVANJA']
+const PLACEHOLDERS = ['[DATUM]']
 
 /** Build files that can carry page text. */
 const TEXT_FILE = /\.(html|js|mjs|css|json|txt)$/

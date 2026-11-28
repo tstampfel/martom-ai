@@ -6,7 +6,7 @@ import { config } from '../config'
 import { copy, privacyPlaceholders, telHref } from '../copy'
 import { PrivacyPage } from './PrivacyPage'
 
-// The canvas text, as synced into docs/mockups (canvas 1795856792-66d8).
+// The canvas text, as synced into docs/mockups (canvas 1795857199-6573).
 const mockup = (variant: 'web' | 'mobile') =>
   readFileSync(join(import.meta.dirname, '../../../docs/mockups', variant, '6-privatnost.html'), 'utf8')
 
@@ -81,10 +81,8 @@ describe('PrivacyPage', () => {
     render(<PrivacyPage />)
     const main = screen.getByRole('main')
     expect(main).toHaveTextContent(privacyPlaceholders.date)
-    expect(main).toHaveTextContent(privacyPlaceholders.orderRetention)
     expect(privacyPlaceholders).toEqual({
       date: '[DATUM]',
-      orderRetention: '[ROK ČUVANJA – potvrđuje Martom]',
     })
   })
 

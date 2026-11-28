@@ -13,15 +13,13 @@ const shop = {
 } as const
 
 /**
- * PLACEHOLDERS on the "Privatnost" page, copied from the canvas as written.
- * Tomislav sets the date at launch; the order retention period waits on
- * Martom (Toni). Replace them here, and PrivacyPage.test.tsx tells you to
- * update it. `npm run check:launch` (web/scripts/check-launch.mjs) fails while
- * either one is still in the production build.
+ * PLACEHOLDER on the "Privatnost" page, copied from the canvas as written:
+ * Tomislav sets the date at launch. Replace it here, and PrivacyPage.test.tsx
+ * tells you to update it. `npm run check:launch` (web/scripts/check-launch.mjs)
+ * fails while it is still in the production build.
  */
 export const privacyPlaceholders = {
   date: '[DATUM]',
-  orderRetention: '[ROK ČUVANJA – potvrđuje Martom]',
 } as const
 
 /** Builds a `tel:` link in international form (+387) from a BiH number. */
@@ -254,14 +252,14 @@ export const copy = {
     credit: 'Stampfel Consulting',
     creditUrl: 'https://stampfelconsulting.com/',
   },
-  // The "Privatnost" page, canvas version 1795856792-66d8 (Tomislav, 28 Nov
+  // The "Privatnost" page, canvas version 1795857199-6573 (Tomislav, 28 Nov
   // 2026, after the #149 provider decision, Amazon Bedrock in eu-central-1,
-  // with the legal bases, the rights, the right to object and the complaint
-  // and court sections):
+  // with the legal bases, the rights, the right to object, the complaint and
+  // court sections, and orders kept 30 days):
   // docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // Don't reword it here; change the canvas first.
-  // PLACEHOLDERS: `privacyPlaceholders` (`.date`, `.orderRetention`) stay
-  // verbatim until they are confirmed; PrivacyPage.test.tsx finds them.
+  // PLACEHOLDER: `privacyPlaceholders.date` stays verbatim until Tomislav
+  // sets it at launch; PrivacyPage.test.tsx finds it.
   privacyPage: {
     // document.title while the page is open; index.html keeps the site title.
     documentTitle: 'Privatnost · Martom savjetnik',
@@ -291,11 +289,11 @@ export const copy = {
           { label: 'Razgovor sa savjetnikom:', text: ' pitanja koja upišete i odgovore savjetnika.' },
           {
             label: 'Narudžba:',
-            text: ' ime, telefon, adresu za dostavu i napomenu, samo ako pošaljete zahtjev za narudžbu.',
+            text: ' ime, telefon, adresu za dostavu i napomenu, samo ako pošaljete zahtjev za narudžbu. Bez tih podataka ne možemo obraditi narudžbu; za pitanja savjetniku ne trebaju.',
           },
           {
             label: 'Tehnički podaci:',
-            text: ' IP adresu i zapise o greškama, radi zaštite od zloupotrebe i ispravljanja grešaka.',
+            text: ' IP adresu i zapise o greškama, radi zaštite od zloupotrebe i ispravljanja grešaka. Čuvaju se 30 dana.',
           },
           {
             label: 'Statistika posjeta:',
@@ -327,7 +325,10 @@ export const copy = {
             label: 'Razgovori:',
             text: ' 90 dana, zatim se automatski brišu. Primjeri koje koristimo za poboljšanje savjetnika prije toga se očiste od imena, telefona i adresa.',
           },
-          { label: 'Narudžbe:', text: ` ${privacyPlaceholders.orderRetention}.` },
+          {
+            label: 'Narudžbe:',
+            text: ' zahtjev za narudžbu čuvamo 30 dana, da možemo riješiti eventualne nejasnoće, zatim se automatski briše. Martom ne vodi bazu kupaca. Ako kupovina završi računom, račun se čuva onoliko koliko propisuje zakon.',
+          },
         ],
       },
       {
@@ -337,7 +338,7 @@ export const copy = {
             text: 'Podatke vidi Martom. Za rad savjetnika koristimo pružaoce usluga koji ih obrađuju samo u naše ime i po našim uputama. Amazon Web Services (AWS): serveri i baza podataka u EU (Frankfurt). Preko AWS-a, također u EU, rade i AI modeli koji razumiju pitanja i pretražuju artikle (Anthropic Claude i Cohere); proizvođači tih modela ne dobijaju vaše podatke i ne koriste ih za treniranje. ',
             langSmith: 'LangSmith nam pomaže pratiti rad savjetnika (podaci u EU, čuvaju se najviše 14 dana). ',
             textAfter:
-              'Cloudflare štiti stranicu od botova. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete.',
+              'Cloudflare štiti stranicu od botova. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete. Podaci se obrađuju u EU, dakle izvan Bosne i Hercegovine, na osnovu ugovora o obradi podataka s tim pružaocima i zaštitnih mjera za prijenos podataka koje propisuje zakon. Cloudflare može IP adresu obrađivati i izvan EU.',
           },
         ],
       },
@@ -373,7 +374,7 @@ export const copy = {
         heading: 'Savjet',
         lines: [
           {
-            text: 'Savjetnik je umjetna inteligencija, ne osoba, i može pogriješiti. Cijene, količine i stanje uvijek potvrđuje Martom prije narudžbe. Ne upisujte u razgovor lične podatke koji nisu potrebni za pitanje (JMBG, broj kartice i slično).',
+            text: 'Savjetnik je umjetna inteligencija, ne osoba, i može pogriješiti. Cijene, količine i stanje uvijek potvrđuje Martom prije narudžbe. Savjetnik ne donosi odluke o vama koje imaju pravne ili slično važne posljedice. Ne upisujte u razgovor lične podatke koji nisu potrebni za pitanje (JMBG, broj kartice i slično).',
           },
         ],
       },
