@@ -6,15 +6,15 @@ import { config } from '../config'
 import { copy, privacyPlaceholders, telHref } from '../copy'
 import { PrivacyPage } from './PrivacyPage'
 
-// The canvas text, as synced into docs/mockups (canvas 1795857694-7d1b).
+// The canvas text, as synced into docs/mockups (canvas 1795858888-a499).
 const mockup = (variant: 'web' | 'mobile') =>
   readFileSync(join(import.meta.dirname, '../../../docs/mockups', variant, '6-privatnost.html'), 'utf8')
 
 const MOCKUP_PHONE = '036 651 427'
 
-// The canvas marks the LangSmith sentence with an HTML comment: the comment
-// and the sentence after it, up to its full stop and the following space.
-const LANGSMITH_SENTENCE = /<!--[^>]*LangSmith[^>]*-->[^.]*\.\s*/
+// The canvas marks the LangSmith line with an HTML comment: the comment and
+// the line after it, up to and including its line break.
+const LANGSMITH_SENTENCE = /<!--[^>]*LangSmith[^>]*-->[\s\S]*?<br>/
 
 /**
  * The visible text of a mockup's <main>: the indentation between tags and the
@@ -60,17 +60,20 @@ describe('PrivacyPage', () => {
     })
   })
 
-  it('names LangSmith only when it is on', () => {
+  // The processor line names LangChain, Inc. The canvas's transfer section
+  // ("Serveri AWS-a i LangSmitha ...") names LangSmith either way, so the
+  // test looks for the processor line only.
+  it('lists LangSmith among the processors only when it is on', () => {
     const { unmount } = render(<PrivacyPage langSmith />)
-    expect(screen.getByRole('main')).toHaveTextContent('LangSmith')
+    expect(screen.getByRole('main')).toHaveTextContent('LangChain, Inc.')
     unmount()
     render(<PrivacyPage langSmith={false} />)
-    expect(screen.getByRole('main')).not.toHaveTextContent('LangSmith')
+    expect(screen.getByRole('main')).not.toHaveTextContent('LangChain, Inc.')
   })
 
   it('follows VITE_LANGSMITH_ENABLED by default', () => {
     render(<PrivacyPage />)
-    const shown = (screen.getByRole('main').textContent ?? '').includes('LangSmith')
+    const shown = (screen.getByRole('main').textContent ?? '').includes('LangChain, Inc.')
     expect(shown).toBe(config.langSmithEnabled)
   })
 

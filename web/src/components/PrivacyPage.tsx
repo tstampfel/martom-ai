@@ -53,20 +53,22 @@ export function PrivacyPage({ langSmith = config.langSmithEnabled }: { langSmith
           <section key={section.heading} className="privacy-page__section">
             <h2 className="privacy-page__heading">{section.heading}</h2>
             <p className="privacy-page__text">
-              {section.lines.map((line, i) => (
-                <span key={i}>
-                  {i > 0 && <br />}
-                  {'label' in line && <b>{line.label}</b>}
-                  {line.text}
-                  {langSmith && 'langSmith' in line && line.langSmith}
-                  {'link' in line && (
-                    <a className="privacy-page__link" href={line.link.href} target="_blank" rel="noopener">
-                      {line.link.label}
-                    </a>
-                  )}
-                  {'textAfter' in line && line.textAfter}
-                </span>
-              ))}
+              {section.lines
+                .filter((line) => langSmith || !('langSmith' in line))
+                .map((line, i) => (
+                  <span key={i}>
+                    {i > 0 && <br />}
+                    {'lead' in line && line.lead}
+                    {'label' in line && <b>{line.label}</b>}
+                    {line.text}
+                    {'link' in line && (
+                      <a className="privacy-page__link" href={line.link.href} target="_blank" rel="noopener">
+                        {line.link.label}
+                      </a>
+                    )}
+                    {'textAfter' in line && line.textAfter}
+                  </span>
+                ))}
               {'contact' in section && (
                 <>
                   <a className="privacy-page__link" href={`mailto:${copy.shop.email}`}>
@@ -76,7 +78,7 @@ export function PrivacyPage({ langSmith = config.langSmithEnabled }: { langSmith
                   <a className="privacy-page__link" href={telHref(copy.shop.phone)}>
                     {copy.shop.phone}
                   </a>
-                  {'.'}
+                  {section.contactAfter}
                 </>
               )}
             </p>
