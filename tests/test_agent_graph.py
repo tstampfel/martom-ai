@@ -315,14 +315,11 @@ async def test_add_to_cart_records_the_database_price() -> None:
     graph = make_graph(
         Recorder(understanding(request="product")),
         [
-            tool_call(
-                "add_to_cart",
-                {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 10},
-            ),
-            AIMessage("Dodao sam 10 panela u korpu."),
+            tool_call("add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250"}),
+            AIMessage("Dodao sam panel u korpu."),
         ],
     )
-    result = await ask(graph, "Dodaj 10 panela 153 u korpu")
+    result = await ask(graph, "Dodaj panel 153 u korpu")
     assert result["cart"] == [
         {
             "source": "olx",
@@ -331,51 +328,113 @@ async def test_add_to_cart_records_the_database_price() -> None:
             "title": PANEL.title,
             "url": "https://martom.olx.ba/artikal/panel-3d-ograda-63996799",
             "variant_label": "153 × 250",
-            "quantity": 10,
+            "quantity": 1,  # not on a materials list: 1 piece (#147)
             "unit_price": "53.00",
         }
     ]
-    assert result["answer"] == "Dodao sam 10 panela u korpu."
+    assert result["answer"] == f"Dodao sam panel u korpu.\n\n{copy.CART_QUANTITY}"
+
+
+# --- add_to_cart quantity (#147; Tomislav, 28 Nov 2026): only from tool output -------
+
+ADD_PANEL = {"listing_id": PANEL_ID, "variant_label": "153 × 250"}
+GRINDER = ProductInfo(
+    listing_id=12345678,
+    title="BRUSILICA KUTNA",
+    slug="brusilica-kutna-12345678",
+    product_type="brusilica",
+    colours=[],
+    listing_price=Decimal("89.00"),
+    variants=[],
+)
+
+
+def cart_tool_errors(result: dict[str, Any]) -> list[str]:
+    return [
+        m.text
+        for m in result["messages"]
+        if isinstance(m, ToolMessage) and m.name == "add_to_cart" and m.status == "error"
+    ]
+
+
+async def test_a_fence_item_takes_the_materials_lists_quantity_and_price() -> None:
+    # "ograda 25 m, visina 153": 10 panels from the BOM, never 153 or 25.
+    graph = make_graph(
+        Recorder(understanding(height="153 cm", lengths=["25 m"], layout="straight")),
+        [
+            tool_call("calculate_fence_bom"),
+            tool_call("add_to_cart", ADD_PANEL),
+            AIMessage("Dodao sam panele s popisa u korpu."),
+        ],
+        pricer=FakePricer(),
+    )
+    result = await ask(graph, "Ograda 25 m, visina 153, dodaj panele u korpu")
+    panel = next(line for line in result["bom"]["lines"] if line["item"] == "panel")
+    assert panel["quantity"] == 10
+    assert [(line["quantity"], line["unit_price"]) for line in result["cart"]] == [
+        (10, panel["unit_price"])
+    ]
+    assert result["answer"] == "Dodao sam panele s popisa u korpu."  # no "change it" note
+
+
+@pytest.mark.parametrize("quantity", [153, 25, 37])
+async def test_any_quantity_from_the_model_is_a_tool_error(quantity: int) -> None:
+    # The height, the length, the reviewer's 37 x 53.00: the model never sets a quantity.
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [
+            tool_call("add_to_cart", {**ADD_PANEL, "quantity": quantity}),
+            AIMessage("Koliko komada želite?"),
+        ],
+    )
+    result = await ask(graph, "Ograda 25 m, visina 153, dodaj 37 panela")
+    assert result["cart"] == []
+    errors = cart_tool_errors(result)
+    assert errors == ["error: invalid arguments: quantity"]
+
+
+async def test_a_product_off_the_list_is_one_piece_and_the_reply_says_how_to_change_it() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product", search_query="brusilica")),
+        [
+            tool_call("add_to_cart", {"listing_id": GRINDER.listing_id}),
+            AIMessage("Dodao sam brusilicu u korpu."),
+        ],
+        catalogue=FakeCatalogue(PANEL, EUROFENCE, GRINDER),
+    )
+    result = await ask(graph, "Trebam 3 brusilice, dodaj u korpu")
+    assert [(line["quantity"], line["unit_price"]) for line in result["cart"]] == [(1, "89.00")]
+    assert result["answer"] == f"Dodao sam brusilicu u korpu.\n\n{copy.CART_QUANTITY}"
 
 
 async def test_a_grounding_retry_never_adds_a_cart_line_twice() -> None:
     # Review R1-2: the retry keeps `cart`, and the model may call add_to_cart again.
-    add = {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 3}
     graph = make_graph(
         Recorder(understanding(request="product")),
         [
-            tool_call("add_to_cart", add),
+            tool_call("add_to_cart", ADD_PANEL),
             AIMessage("Dodao sam 37 panela u korpu."),  # 37: fails grounding, retry
-            tool_call("add_to_cart", add),
-            AIMessage("Dodao sam 3 panela u korpu."),
+            tool_call("add_to_cart", ADD_PANEL),
+            AIMessage("Dodao sam panel u korpu."),
         ],
     )
-    result = await ask(graph, "Dodaj 3 panela 153 u korpu")
-    assert result["answer"] == "Dodao sam 3 panela u korpu."
-    assert [line["quantity"] for line in result["cart"]] == [3]
+    result = await ask(graph, "Dodaj panel 153 u korpu")
+    assert result["answer"].startswith("Dodao sam panel u korpu.")
+    assert [line["quantity"] for line in result["cart"]] == [1]
 
 
 async def test_a_second_call_for_the_same_variant_replaces_its_line() -> None:
     graph = make_graph(
         Recorder(understanding(request="product")),
         [
-            tool_call(
-                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 3}
-            ),
-            tool_call(
-                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "103 × 250", "quantity": 2}
-            ),
-            tool_call(
-                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 5}
-            ),
+            tool_call("add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250"}),
+            tool_call("add_to_cart", {"listing_id": PANEL_ID, "variant_label": "103 × 250"}),
+            tool_call("add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250"}),
             AIMessage("Gotovo."),
         ],
     )
     result = await ask(graph, "Dodaj 5 panela 153 i 2 panela 103")
-    assert [(line["variant_label"], line["quantity"]) for line in result["cart"]] == [
-        ("153 × 250", 5),
-        ("103 × 250", 2),
-    ]
+    assert [line["variant_label"] for line in result["cart"]] == ["153 × 250", "103 × 250"]
 
 
 async def test_a_too_large_tool_result_clears_no_list_when_none_was_shown(
@@ -402,9 +461,7 @@ async def test_tool_errors_go_back_to_the_model() -> None:
     graph = make_graph(
         Recorder(understanding(request="product")),
         [
-            tool_call(
-                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "999", "quantity": 1}
-            ),
+            tool_call("add_to_cart", {"listing_id": PANEL_ID, "variant_label": "999"}),
             tool_call("calculate_fence_bom"),
             tool_call("no_such_tool"),
             AIMessage("Koju varijantu želite?"),
@@ -733,13 +790,15 @@ async def test_agent_finds_prices_and_carts_the_anchor_without_an_olx_link() -> 
         [
             tool_call("search_products", {"query": "anker m8x70"}),
             tool_call("get_product", {"manual_key": ANCHOR_KEY}),
-            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY, "quantity": 20}),
-            AIMessage("Anker M8×70 je 0,80 KM po komadu. Dodao sam 20 komada u korpu."),
+            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY}),
+            AIMessage("Anker M8×70 je 0,80 KM po komadu. Dodao sam ga u korpu."),
         ]
     )
-    result = await ask(graph, "Dodaj 20 ankera M8x70 u korpu")
+    result = await ask(graph, "Dodaj ankere M8x70 u korpu")
     assert result["fallback"] is False
-    assert result["answer"] == "Anker M8×70 je 0,80 KM po komadu. Dodao sam 20 komada u korpu."
+    assert result["answer"] == (
+        f"Anker M8×70 je 0,80 KM po komadu. Dodao sam ga u korpu.\n\n{copy.CART_QUANTITY}"
+    )
     assert result["cart"] == [
         {
             "source": "manual",
@@ -748,7 +807,7 @@ async def test_agent_finds_prices_and_carts_the_anchor_without_an_olx_link() -> 
             "title": ANCHOR_NAME,
             "url": None,
             "variant_label": None,
-            "quantity": 20,
+            "quantity": 1,
             "unit_price": "0.80",
         }
     ]
@@ -776,14 +835,14 @@ async def test_manual_price_comes_from_the_toml_entry() -> None:
     changed = {ANCHOR_KEY: replace(toml[ANCHOR_KEY], price_km=Decimal("0.95"))}
     graph = anchor_graph(
         [
-            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY, "quantity": 5}),
-            AIMessage("Dodao sam 5 ankera po 0,95 KM."),
+            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY}),
+            AIMessage("Dodao sam anker po 0,95 KM."),
         ],
         manual_products=changed,
     )
-    result = await ask(graph, "Dodaj 5 ankera")
+    result = await ask(graph, "Dodaj anker")
     assert result["cart"][0]["unit_price"] == "0.95"
-    assert result["answer"] == "Dodao sam 5 ankera po 0,95 KM."
+    assert result["answer"].startswith("Dodao sam anker po 0,95 KM.")
 
 
 async def test_manual_product_priced_zero_is_on_request() -> None:
@@ -819,10 +878,8 @@ async def test_bad_manual_product_calls_go_back_to_the_model() -> None:
             tool_call("get_product", {"manual_key": "no_such_product"}),
             tool_call("get_product", {}),
             tool_call("get_product", {"listing_id": PANEL_ID, "manual_key": ANCHOR_KEY}),
-            tool_call(
-                "add_to_cart", {"manual_key": ANCHOR_KEY, "variant_label": "x", "quantity": 1}
-            ),
-            tool_call("add_to_cart", {"manual_key": "no_such_product", "quantity": 1}),
+            tool_call("add_to_cart", {"manual_key": ANCHOR_KEY, "variant_label": "x"}),
+            tool_call("add_to_cart", {"manual_key": "no_such_product"}),
             AIMessage("Koji proizvod želite?"),
         ]
     )

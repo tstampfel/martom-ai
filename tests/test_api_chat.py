@@ -31,6 +31,7 @@ from tests.agent_fakes import (
     understanding,
 )
 
+from martom.agent.copy import CART_QUANTITY
 from martom.agent.graph import AgentDeps, AgentModels, build_graph
 from martom.agent.prompts import Grade, Rewrite
 from martom.api import chat, chat_copy, threads
@@ -168,28 +169,32 @@ def test_a_clarify_turn_sends_chips_and_matches_the_schema() -> None:
     assert "bom" not in kinds
 
 
-def test_a_cart_turn_sends_a_cart_event_with_tool_quantities_and_prices(
+ADD_PANEL = {"listing_id": PANEL_ID, "variant_label": "153 × 250"}
+
+
+def test_a_fence_cart_turn_takes_quantity_and_price_from_the_bom(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # Tomislav, 28 Nov 2026 (#147): "ograda 25 m, visina 153" -> 10 panels from the BOM,
+    # never 153 (the height) or 25 (the length).
     service = make_service(
-        Recorder(understanding(request="product", search_query="panel 153")),
+        Recorder(understanding(height="153 cm", lengths=["25 m"], layout="straight")),
         [
-            tool_call("get_product", {"listing_id": PANEL_ID}),
-            tool_call(
-                "add_to_cart",
-                {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 3},
-            ),
-            AIMessage("Dodao sam panele u korpu."),
+            tool_call("calculate_fence_bom"),
+            tool_call("add_to_cart", ADD_PANEL),
+            AIMessage("Dodao sam panele s popisa u korpu."),
         ],
     )
     with caplog.at_level(logging.INFO, logger="martom.api"):
-        events = post(client(service), {"message": "Dodaj 3 panela 153 u korpu"})
+        events = post(client(service), {"message": "Ograda 25 m, visina 153, dodaj u korpu"})
     finished = next(r for r in caplog.records if r.getMessage() == "chat turn finished")
     assert finished.cart_lines == 1  # type: ignore[attr-defined]
     for event in events:
         jsonschema.validate(event, SCHEMA)
     kinds = [event["type"] for event in events]
-    assert kinds[-2:] == ["cart", "done"]
+    assert kinds[-3:] == ["bom", "cart", "done"]
+    bom = next(e for e in events if e["type"] == "bom")
+    panel = next(line for line in bom["lines"] if line["item"] == "panel")
     cart = next(e for e in events if e["type"] == "cart")
     assert cart["lines"] == [
         {
@@ -199,15 +204,15 @@ def test_a_cart_turn_sends_a_cart_event_with_tool_quantities_and_prices(
             "url": PANEL.url,
             "title": PANEL.title,
             "variant_label": "153 × 250",
-            "quantity": 3,
-            "unit_price": "53.00",
-            "line_total": "159.00",
+            "quantity": 10,
+            "unit_price": panel["unit_price"],
+            "line_total": panel["line_total"],
         }
     ]
+    assert panel["quantity"] == 10
 
 
-def cart_probe(message: str, *answers: AIMessage, quantity: int) -> list[dict[str, Any]]:
-    add = {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": quantity}
+def cart_probe(message: str, *answers: AIMessage, add: dict[str, Any]) -> list[dict[str, Any]]:
     replies: list[AIMessage] = []
     for answer in answers:  # each answer follows its own add_to_cart call (a retry calls again)
         replies += [tool_call("add_to_cart", add), answer]
@@ -218,42 +223,52 @@ def cart_probe(message: str, *answers: AIMessage, quantity: int) -> list[dict[st
     return events
 
 
-def test_a_cart_quantity_nobody_gave_sends_no_cart_event() -> None:
-    # Review R1-1 repro A: no number in the answer, so grounding passes; 37 x 53.00
-    # must still never reach the korpa.
+def test_a_product_off_the_list_goes_in_as_one_piece_with_the_change_note() -> None:
     events = cart_probe(
-        "Dodaj panel 153 u korpu", AIMessage("Dodao sam panele u korpu."), quantity=37
+        "Trebam 3 panela 153, dodaj u korpu", AIMessage("Dodao sam panel u korpu."), add=ADD_PANEL
+    )
+    cart = next(event for event in events if event["type"] == "cart")
+    assert [(line["quantity"], line["line_total"]) for line in cart["lines"]] == [(1, "53.00")]
+    text = "".join(e["text"] for e in events if e["type"] == "token")
+    assert text.endswith(CART_QUANTITY)
+
+
+@pytest.mark.parametrize("quantity", [37, 153, 25])
+def test_a_quantity_from_the_model_sends_no_cart_event(quantity: int) -> None:
+    # The reviewer's 37 x 53.00, the height, the length: add_to_cart refuses any quantity.
+    events = cart_probe(
+        "Ograda 25 m, visina 153, dodaj panel 153",
+        AIMessage("Dodao sam panele u korpu."),
+        add={**ADD_PANEL, "quantity": quantity},
     )
     assert "cart" not in [event["type"] for event in events]
-    assert "".join(e["text"] for e in events if e["type"] == "token") == (
-        "Dodao sam panele u korpu."
-    )
 
 
 def test_a_grounding_fallback_turn_sends_no_cart_event() -> None:
     # Review R1-1 repro B: grounding rejects "37 panela" twice; the fallback list goes out
-    # and the rejected 37 x 53.00 must not go into the korpa.
+    # and nothing goes into the korpa, even though add_to_cart itself succeeded.
     events = cart_probe(
         "Dodaj panel 153 u korpu",
         AIMessage("Dodao sam 37 panela u korpu."),
         AIMessage("Dodao sam 37 panela u korpu."),
-        quantity=37,
+        add=ADD_PANEL,
     )
     assert "cart" not in [event["type"] for event in events]
     text = "".join(e["text"] for e in events if e["type"] == "token")
     assert "37" not in text
+    assert CART_QUANTITY not in text
 
 
 def test_a_grounding_retry_sends_each_cart_line_once() -> None:
-    # Review R1-2 repro C: the retry calls add_to_cart(3) again; 3 panels, not 6.
+    # Review R1-2 repro C: the retry calls add_to_cart again; one line, not two.
     events = cart_probe(
-        "Dodaj 3 panela 153 u korpu",
+        "Dodaj panel 153 u korpu",
         AIMessage("Dodao sam 37 panela u korpu."),
-        AIMessage("Dodao sam 3 panela u korpu."),
-        quantity=3,
+        AIMessage("Dodao sam panel u korpu."),
+        add=ADD_PANEL,
     )
     cart = next(event for event in events if event["type"] == "cart")
-    assert [line["quantity"] for line in cart["lines"]] == [3]
+    assert [line["quantity"] for line in cart["lines"]] == [1]
 
 
 def test_a_chain_link_turn_offers_contact_martom(caplog: pytest.LogCaptureFixture) -> None:

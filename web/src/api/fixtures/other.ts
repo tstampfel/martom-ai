@@ -65,12 +65,13 @@ export const manualProduct: ChatEvent[] = [
 ]
 
 /**
- * Reply to "Dodaj 3 panela 153 i 8 ankera u korpu": the advisor added both to
- * the cart (add_to_cart). Prices come from the tool; the anchor is "na upit".
+ * Reply to "Dodaj panele s popisa i anker u korpu": the panels come with the
+ * materials list's quantity and price; the anchor is not on the list, so it is
+ * 1 piece (the customer changes it in the korpa), here "na upit".
  */
 export const cartAdded: ChatEvent[] = [
   { type: 'step', id: 'parse', text: 'Razumio: panel 153 cm', status: 'done' },
-  { type: 'token', text: 'Dodao sam panele i ankere u korpu.' },
+  { type: 'token', text: 'Dodao sam panele i anker u korpu. Količinu možete promijeniti u korpi.' },
   {
     type: 'cart',
     lines: [
@@ -81,9 +82,9 @@ export const cartAdded: ChatEvent[] = [
         url: 'https://martom.olx.ba/artikal/panelna-ograda-3d-63996799',
         title: 'Panelna ograda 3D (Nylofor)',
         variant_label: '153 × 250',
-        quantity: 3,
+        quantity: 10,
         unit_price: '53.00',
-        line_total: '159.00',
+        line_total: '530.00',
       },
       {
         source: 'manual',
@@ -92,7 +93,7 @@ export const cartAdded: ChatEvent[] = [
         url: null,
         title: 'Anker M8×70',
         variant_label: null,
-        quantity: 8,
+        quantity: 1,
         unit_price: null,
         line_total: null,
       },

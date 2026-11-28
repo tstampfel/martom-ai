@@ -423,10 +423,13 @@ upit") is worked out by the server. A manual product (`source` `"manual"`) has
 `listing_id` and `url` `null` and its `manual_key`, as on a product card. Prices are
 illustrative.
 
-The quantity is grounded like any number in an answer: a line is sent only when its
-quantity is a whole number the customer wrote, the quantity of a line of the current
-materials list, or 1 when the customer's message had no number at all; any other line is
-left out. A turn whose answer failed the grounding check (the plain search list) sends no
+Quantities and prices come only from tool output, never from a number in the chat
+(Tomislav, 28 Nov 2026; `src/martom/agent/cart_quantity.py`): a product on the current
+materials list goes in with that `bom` line's `quantity` and `unit_price`; any other
+product goes in as 1 piece at the catalogue price, and the answer ends with the fixed
+sentence "Količinu možete promijeniti u korpi." The advisor's `add_to_cart` takes no
+quantity at all (one sent anyway is refused), and the endpoint checks every line against
+the materials list again and leaves out any that doesn't follow the rule. A turn whose answer failed the grounding check (the plain search list) sends no
 `cart`. The same product variant added twice in one turn (a retry) is one line, with the
 last quantity.
 
@@ -441,9 +444,9 @@ last quantity.
       "url": "https://martom.olx.ba/artikal/panelna-ograda-3d-63996799",
       "title": "Panelna ograda 3D (Nylofor)",
       "variant_label": "153 × 250",
-      "quantity": 3,
+      "quantity": 10,
       "unit_price": "53.00",
-      "line_total": "159.00"
+      "line_total": "530.00"
     },
     {
       "source": "manual",
@@ -452,7 +455,7 @@ last quantity.
       "url": null,
       "title": "Anker M8×70",
       "variant_label": null,
-      "quantity": 8,
+      "quantity": 1,
       "unit_price": null,
       "line_total": null
     }

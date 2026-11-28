@@ -240,6 +240,7 @@ def test_no_list_change_sends_no_cleared_event() -> None:
     assert "bom_cleared" not in [e.type for e in final_events(state(bom=BOM, bom_changed=True))]
 
 
+# A panel on the BOM above: the list's quantity (10) and price (null, "na upit").
 CART_LINE = {
     "source": "olx",
     "listing_id": 63996799,
@@ -248,28 +249,33 @@ CART_LINE = {
     "url": "https://martom.olx.ba/artikal/panel-3d-ograda-63996799",
     "variant_label": "153 × 250",
     "quantity": 10,
-    "unit_price": "53.00",
+    "unit_price": None,
+}
+# A product off the list: 1 piece at the catalogue price.
+ANCHOR_CART_LINE = {
+    "source": "manual",
+    "listing_id": None,
+    "manual_key": "anchor_m8x70",
+    "title": "Anker M8×70",
+    "url": None,
+    "variant_label": None,
+    "quantity": 1,
+    "unit_price": "0.80",
 }
 
 
+def cart_quantities(**fields: Any) -> list[int]:
+    events = final_events(state(**fields))
+    return [line.quantity for e in events if isinstance(e, CartEvent) for line in e.lines]
+
+
 def test_this_turns_cart_additions_are_one_cart_event_with_tool_prices() -> None:
-    manual = {
-        "source": "manual",
-        "listing_id": None,
-        "manual_key": "anchor_m8x70",
-        "title": "Anker M8×70",
-        "url": None,
-        "variant_label": None,
-        "quantity": 4,
-        "unit_price": None,
-    }
-    messages = [HumanMessage("Dodaj 10 panela i 4 ankera u korpu")]
-    events = final_events(state(messages=messages, cart=[CART_LINE, manual]))
+    events = final_events(state(bom=BOM, cart=[CART_LINE, ANCHOR_CART_LINE]))
     carts = [event for event in events if isinstance(event, CartEvent)]
     assert len(carts) == 1
     assert [(line.quantity, line.unit_price, line.line_total) for line in carts[0].lines] == [
-        (10, "53.00", "530.00"),
-        (4, None, None),
+        (10, None, None),
+        (1, "0.80", "0.80"),
     ]
 
 
@@ -279,65 +285,43 @@ def test_no_cart_additions_send_no_cart_event() -> None:
 
 
 def test_a_cart_line_that_fails_the_contract_is_skipped() -> None:
-    broken = {**CART_LINE, "url": "https://olx.ba/artikal/63996799"}
-    events = final_events(state(messages=[HumanMessage("10 panela")], cart=[broken, CART_LINE]))
-    cart = next(event for event in events if isinstance(event, CartEvent))
-    assert len(cart.lines) == 1
+    broken = {**ANCHOR_CART_LINE, "url": "https://olx.ba/artikal/63996799"}
+    assert cart_quantities(cart=[broken, ANCHOR_CART_LINE]) == [1]
 
 
-# R1-1: a cart quantity is the model's own add_to_cart argument, so it must be grounded.
+# Second guard (Tomislav, 28 Nov 2026): the cart is checked against the materials list,
+# never against numbers in the chat.
 
 
-def cart_quantities(**fields: Any) -> list[int]:
-    events = final_events(state(**fields))
-    return [line.quantity for e in events if isinstance(e, CartEvent) for line in e.lines]
+def test_a_bom_product_must_carry_the_lists_quantity() -> None:
+    assert cart_quantities(bom=BOM, cart=[CART_LINE]) == [10]
+    assert cart_quantities(bom=BOM, cart=[{**CART_LINE, "quantity": 153}]) == []  # a height
+    assert cart_quantities(bom=BOM, cart=[{**CART_LINE, "quantity": 25}]) == []  # a length
 
 
-def test_a_quantity_nobody_gave_never_reaches_the_cart() -> None:
-    # The reviewer's repro: "Dodaj panel 153 u korpu", the model adds 37 (37 x 53.00).
-    line = {**CART_LINE, "quantity": 37}
-    messages = [HumanMessage("Dodaj panel 153 u korpu")]
-    assert cart_quantities(messages=messages, cart=[line]) == []
+def test_a_bom_product_must_carry_the_lists_price() -> None:
+    assert cart_quantities(bom=BOM, cart=[{**CART_LINE, "unit_price": "53.00"}]) == []
 
 
-def test_a_quantity_the_customer_wrote_is_sent() -> None:
-    line = {**CART_LINE, "quantity": 37}
-    messages = [HumanMessage("Dodaj 37 panela 153 u korpu")]
-    assert cart_quantities(messages=messages, cart=[line]) == [37]
-
-
-def test_a_quantity_from_an_earlier_customer_message_is_sent() -> None:
-    messages = [HumanMessage("Treba mi 12 panela"), AIMessage("Evo."), HumanMessage("Dodaj ih")]
-    assert cart_quantities(messages=messages, cart=[{**CART_LINE, "quantity": 12}]) == [12]
-
-
-def test_a_quantity_from_the_current_materials_list_is_sent() -> None:
-    # BOM's panel line has quantity 10; the customer never wrote 10.
-    messages = [HumanMessage("Dodaj sve u korpu")]
-    assert cart_quantities(messages=messages, bom=BOM, cart=[CART_LINE]) == [10]
-
-
-def test_one_is_the_default_only_when_the_customer_gave_no_number() -> None:
-    no_number = [HumanMessage("Dodaj panel u korpu")]
-    assert cart_quantities(messages=no_number, cart=[{**CART_LINE, "quantity": 1}]) == [1]
-    assert cart_quantities(messages=no_number, cart=[{**CART_LINE, "quantity": 2}]) == []
-    with_number = [HumanMessage("Dodaj panel 153 u korpu")]
-    assert cart_quantities(messages=with_number, cart=[{**CART_LINE, "quantity": 1}]) == []
+def test_a_product_off_the_list_is_one_piece() -> None:
+    # The reviewer's repro: 37 x 53.00 never reaches the korpa.
+    off_list = {**CART_LINE, "quantity": 37, "unit_price": "53.00"}
+    assert cart_quantities(cart=[off_list]) == []
+    assert cart_quantities(cart=[{**off_list, "quantity": 1}]) == [1]
 
 
 @pytest.mark.parametrize("flag", ["fallback", "generate_failed"])
 def test_a_fallback_turn_never_sends_a_cart(flag: str) -> None:
-    messages = [HumanMessage("Dodaj 10 panela")]
-    assert cart_quantities(messages=messages, cart=[CART_LINE], **{flag: True}) == []
+    assert cart_quantities(bom=BOM, cart=[CART_LINE], **{flag: True}) == []
 
 
-def test_ungrounded_lines_are_logged_by_count_only(caplog: pytest.LogCaptureFixture) -> None:
-    messages = [HumanMessage("Dodaj panel 153 u korpu")]
+def test_dropped_lines_are_logged_by_count_only(caplog: pytest.LogCaptureFixture) -> None:
+    line = {**ANCHOR_CART_LINE, "quantity": 37}
     with caplog.at_level(logging.INFO, logger="martom.api"):
-        final_events(state(messages=messages, cart=[{**CART_LINE, "quantity": 37}]))
+        final_events(state(cart=[line]))
     record = next(r for r in caplog.records if r.getMessage() == "cart lines dropped")
     assert record.ungrounded == 1  # type: ignore[attr-defined]
-    assert "153" not in caplog.text and "Dodaj" not in caplog.text
+    assert all("37" not in r.getMessage() for r in caplog.records)
 
 
 def test_contact_martom_is_offered_after_the_text() -> None:

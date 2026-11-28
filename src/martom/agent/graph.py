@@ -142,6 +142,9 @@ class AgentState(TypedDict, total=False):
     bom_facts: dict[str, Any]  # grounding.Facts of `bom` only; replaced with each new list
     rewrite_failed: bool
     cart: list[dict[str, Any]]
+    # A product went into the cart as 1 piece (not from the materials list): the answer
+    # gets copy.CART_QUANTITY, "change the quantity in the korpa" (#147).
+    cart_note: bool
     chips: dict[str, Any] | None
     notes: list[str]
     extra_lines: list[dict[str, Any]]  # chat_events.ExtraLine
@@ -245,6 +248,7 @@ def build_graph(
             # large makes the old list wrong, so it is cleared and must be recalculated (R2-1).
             **_bom_update(state, previous, plan.spec, clear=plan.contact_martom),
             "cart": [],
+            "cart_note": False,
             "rewrite_failed": False,
             "chips": plan.chips.model_dump(mode="json") if plan.chips else None,
             "notes": plan.notes,
@@ -353,8 +357,10 @@ def build_graph(
         cart = list(state.get("cart", []))
         contact = state.get("contact_martom", False)
         results: list[ToolMessage] = []
+        cart_note = state.get("cart_note", False)
         for call in call_message.tool_calls:
             name, call_id = call["name"], call["id"] or ""
+            ctx.bom = bom  # a list made earlier in this round counts too
             try:
                 output = await _run_tool(name, call["args"], ctx)
             except FenceTooLargeToolError as exc:
@@ -381,6 +387,7 @@ def build_graph(
                 facts = facts.merge(facts_from_output(output, skip_keys=skip))
             if name == "add_to_cart":
                 cart = _with_cart_line(cart, output["cart_line"])
+                cart_note = cart_note or output["quantity_from"] == "default"
             content = json.dumps(output, ensure_ascii=False)
             results.append(ToolMessage(content, tool_call_id=call_id, name=name))
         return {
@@ -390,6 +397,7 @@ def build_graph(
             "bom_changed": bom_changed,
             "bom_facts": bom_facts.model_dump(),
             "cart": cart,
+            "cart_note": cart_note,
             "contact_martom": contact,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
         }
@@ -402,7 +410,10 @@ def build_graph(
         facts = _facts(state).merge(_bom_facts(state))
         result = check_grounding(text, facts, known_numbers=_customer_numbers(state))
         if text and not last.tool_calls and result.ok:
-            return {"answer": _join(text, *state.get("notes", []))}
+            notes = list(state.get("notes", []))
+            if state.get("cart_note"):
+                notes.append(copy.CART_QUANTITY)
+            return {"answer": _join(text, *notes)}
         problems = result.problems or ["the answer was empty or still calling tools"]
         logger.warning(
             "grounding check failed",
