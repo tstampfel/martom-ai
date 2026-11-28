@@ -69,7 +69,7 @@ Notes:
   - Retention is controlled per Region by the account's `data_retention_mode`. A Region we haven't configured stays at `inherit` and falls back to each model's own default. Under `default`, "AWS may retain the data for safety and abuse-prevention purposes" [A15].
   - Setting `data_retention_mode: none` means "No request or response data is written to durable storage by AWS or shared with the model provider". A model that needs retention is then blocked with an error instead of keeping the data. The setting is per Region and doesn't carry over to other Regions [A15].
   - Today's list of models that keep traffic for abuse detection covers most OpenAI models (flagged traffic, up to 30 days) and Claude Fable 5, 5.1 and 5.2 (all traffic, up to 30 days). Haiku 5.5, Sonnet 5.5 and the Cohere models aren't on it [A16]. The list can change. With `none` set, a model that starts needing retention fails instead of quietly keeping data.
-  - For geo profiles, it is **unconfirmed** whether the eu-central-1 setting governs a request that runs in another EU destination Region. [A15] says the setting governs every request in the Region where it is set. Set `none` in eu-central-1 and confirm the effective mode before launch.
+  - For geo profiles, the mode "is evaluated in the source AWS Region of your request … You don't need to set the retention mode in every destination Region". With `none` in the source Region, a model that needs retention is blocked "at the source, before the request is ever routed to a destination Region" [A20]. So the eu-central-1 setting covers our requests even when they run in another EU Region. If a model did retain data, it "might be retained in the destination Region where the inference is processed" [A20][A13], which here is still inside the EU. [A20] is an AWS Security Blog post, not the user guide. Confirm the effective mode before launch.
   - "Amazon Bedrock does not share your content with model providers for any current mode" [A15][A13].
   - Anthropic says the Bedrock endpoint runs on AWS-managed infrastructure with no operator access by Anthropic staff [N4]. That page covers `bedrock-mantle`. The `bedrock-runtime` page says 5.5 models are "served by the same infrastructure" [N3].
 - **Billing.** Both Claude models and both Cohere models are AWS Marketplace products, billed on the AWS invoice under the model provider [A1][A2][A5][A6].
@@ -213,7 +213,7 @@ These are facts for the decision, not a plan. Each item would be its own follow-
 - **Infra (Terraform, `infra/`):**
   - The ECS task role needs `bedrock:InvokeModel` on the EU inference profile and on the foundation model in **every destination Region**: eu-central-1, eu-north-1, eu-south-1, eu-south-2, eu-west-1 and eu-west-3. A deny SCP on any one of them fails the whole request, unless the deny is scoped with the `bedrock:InferenceProfileArn` condition key [A10][A17].
   - The Anthropic and Cohere API-key secrets go away. Credentials come from the task role.
-  - Set `data_retention_mode: none` in eu-central-1, and confirm the effective mode for each of our four models before launch [A15].
+  - Set `data_retention_mode: none` in eu-central-1 (it also covers requests served in the other EU Regions [A20]), and confirm the effective mode for each of our four models before launch [A15].
 - **Audit evidence:** CloudTrail logs every cross-region call in the source Region. `additionalEventData.inferenceRegion` records the Region that actually processed each request [A18]. The Privatnost text or a DPA answer can rely on that.
 - **Evals and data:**
   - A full re-embed under a new `embedding_model` name, unless the cosine check proves the vectors equal (see [How the eval would run](#how-the-eval-would-run-next-step-after-the-decision)).
@@ -249,6 +249,7 @@ AWS:
 - [A16] Amazon Bedrock abuse detection (models that retain traffic) — https://docs.aws.amazon.com/bedrock/latest/userguide/abuse-detection.html
 - [A17] Geographic cross-Region inference (SCP and IAM requirements for all destination Regions) — https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html
 - [A18] Securing Amazon Bedrock cross-Region inference: Geographic and global (AWS ML blog; CloudTrail `additionalEventData.inferenceRegion`) — https://aws.amazon.com/blogs/machine-learning/securing-amazon-bedrock-cross-region-inference-geographic-and-global/
+- [A20] Enforce zero data retention on Amazon Bedrock with Bedrock Projects and service control policies (AWS Security Blog, updated 13 Aug 2026; section "Data retention and cross-Region inference") — https://aws.amazon.com/blogs/security/enforce-zero-data-retention-on-amazon-bedrock-with-bedrock-projects-and-service-control-policies/
 - [A19] Demystifying Amazon Bedrock Pricing for a Chatbot Assistant (AWS ML blog; Cohere Embeddings $0.0001 per 1,000 input tokens; date not shown in the copy read) — https://aws.amazon.com/blogs/machine-learning/demystifying-amazon-bedrock-pricing-for-a-chatbot-assistant/
 
 Anthropic:
