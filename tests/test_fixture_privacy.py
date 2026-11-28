@@ -2,11 +2,13 @@
 
 The repo is public, and `tests/fixtures/` and `evals/` hold real OLX listing text. This guard
 scans every file under them and fails on what must never be committed: phone numbers,
-email addresses, seller/user fields, oversized files and files with more than 20 listings.
+email addresses, street addresses (#158), seller/user fields, oversized files and files
+with more than 20 listings.
 
 Only Martom's public contacts pass: the shop number 036 651 427, the martom-bekaert.com
-addresses, the fake 060 000 000 that stands in for private numbers, and Martom's own public
-OLX shop identity (user id 17193, username "martom", type "shop").
+addresses, the fake 060 000 000 that stands in for private numbers, the shop's address
+(Tromeđa BB, Međugorje) and Martom's own public OLX shop identity (user id 17193, username
+"martom", type "shop").
 
 It scans every file on disk under those folders, untracked and git-ignored ones included, so
 a problem shows up before the file is committed. Every text file (UTF-8 or UTF-16) gets the
@@ -29,6 +31,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from martom.evals.scrub import address_matches
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_ROOTS = (REPO_ROOT / "tests" / "fixtures", REPO_ROOT / "evals")
 
@@ -39,6 +43,9 @@ MAX_LISTINGS_PER_FILE = 20
 # Phone numbers in E.164 form. The fake 060 000 000 replaces private numbers in fixtures.
 ALLOWED_PHONES = {"+38736651427", "+38760000000"}
 ALLOWED_EMAIL_DOMAIN = "martom-bekaert.com"
+# Martom's own public shop address (Međugorje), which its listings print; compared without
+# case or accents. Any other street address fails (#158).
+ALLOWED_ADDRESSES = {"tromeda bb", "medugorje tromeda bb"}
 # Martom's own public OLX shop identity, which GET /listings/{id} sends as the owner.
 MARTOM_SHOP_VALUES = {"17193", "martom", "shop"}
 
@@ -136,7 +143,19 @@ def contact_findings(text: str) -> dict[str, str]:
         for match in EMAIL_RE.finditer(normalised):
             if match.group(1).lower() != ALLOWED_EMAIL_DOMAIN:
                 findings.setdefault(match.group().lower(), f"email {match.group()!r}")
+        # #158: a street with a house number (or "bb"), a delivery or living phrase with
+        # one, an "Adresa:" label, a postal code with its town. The scrub's own patterns
+        # (martom.evals.scrub.address_matches), so the guard and the scrub can't drift.
+        for address in address_matches(normalised):
+            if is_martom_address(address):
+                continue
+            findings.setdefault(f"address:{address.lower()}", f"street address {address!r}")
     return findings
+
+
+def is_martom_address(address: str) -> bool:
+    plain = address.lower().replace("đ", "d").translate(str.maketrans("čćšž", "ccsz"))
+    return " ".join(plain.split()) in ALLOWED_ADDRESSES
 
 
 def is_seller_key(key: str) -> bool:
@@ -817,3 +836,72 @@ def test_nul_bytes_that_are_not_utf16_text_fail(tmp_path: Path, raw: bytes) -> N
 
     assert len(problems) == 1
     assert "can't be checked" in problems[0]
+
+
+# --- street addresses (#158): evals/ holds no real customer street ----------------------
+
+
+def write_eval_case(tmp_path: Path, question: str) -> Path:
+    case = {"id": "x-1", "question": question, "expected_listing_ids": [61234567]}
+    path = tmp_path / "retrieval.jsonl"
+    path.write_text(json.dumps({**case, "source": "seed"}, ensure_ascii=False) + "\n")
+    return path
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Treba mi ograda, dostava na Izmišljenu 12 u Čitluku",
+        "Imate li panele? Ulica Kralja Izmišljenog 5a",
+        "Ul. Izmišljena bb, trebam 10 stubova",
+        "stanujem u Izmišljenoj 4b, koliko košta dostava",
+        "Izmišljena bb, Čitluk",
+        "pošaljite na Trg izmišljenih 3",
+        "Adresa: Izmišljena 7, Čitluk",
+        "Panel 153 cm, Izmišljena 1, 88000 Mostar",
+    ],
+)
+def test_planted_street_address_fails(tmp_path: Path, question: str) -> None:
+    problems = scan_file(write_eval_case(tmp_path, question))
+
+    assert any("street address" in problem for problem in problems), problems
+
+
+def test_street_address_in_a_plain_text_file_fails(tmp_path: Path) -> None:
+    path = tmp_path / "notes.md"
+    path.write_text("Kupac: dostava na Izmišljenu 12, Čitluk.\n", encoding="utf-8")
+
+    assert any("street address" in problem for problem in scan_file(path))
+
+
+def test_json_escaped_street_address_fails(tmp_path: Path) -> None:
+    # ensure_ascii=True writes "Izmi\u0161ljenu": the parsed value is scanned too.
+    path = tmp_path / "case.json"
+    path.write_text(json.dumps({"question": "dostava na Izmišljenu 12"}), encoding="utf-8")
+
+    assert any("street address" in problem for problem in scan_file(path))
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Panel Nylofor 3D 153 cm",
+        "Panel 153 x 250, antracit",
+        "ograda 2D 103x250 RAL 7016 i 12 stubova",
+        "panel 153/250, 20 m ograde",
+        "Kolica Tačke 85 L",
+        "dostava u Mostar 3 dana?",
+        "prvi put kupujem 3 panela",
+        "Stub 60/40 cm, 2000 mm",
+        "Martom, Tromeđa BB, Međugorje",
+    ],
+)
+def test_product_sizes_and_the_shop_address_pass(tmp_path: Path, question: str) -> None:
+    assert scan_file(write_eval_case(tmp_path, question)) == []
+
+
+def test_phone_and_email_in_an_eval_case_fail(tmp_path: Path) -> None:
+    problems = scan_file(write_eval_case(tmp_path, "pozovite 061 000 001 ili ana@example.com"))
+
+    assert any("phone number" in problem for problem in problems)
+    assert any("email" in problem for problem in problems)

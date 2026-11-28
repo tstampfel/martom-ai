@@ -6,7 +6,7 @@ names and streets): this repo is public.
 
 import pytest
 
-from martom.evals.scrub import scrub_personal_data
+from martom.evals.scrub import address_matches, introduced_names, scrub_personal_data
 
 # --- phones -------------------------------------------------------------------------
 
@@ -384,3 +384,53 @@ def test_scrubbing_twice_changes_nothing_more() -> None:
     once = scrub_personal_data("Zovem se Pero, 060 000 000, Adresa: Izmišljena 1")
 
     assert scrub_personal_data(once) == once
+
+
+# --- address_matches: the same patterns, for the evals/ privacy guard (#158) ---------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Dostava na Izmišljenu 12, Čitluk.",
+        "ulica Kralja Izmišljenog 5a",
+        "Ul. Izmišljena bb",
+        "Trg izmišljenih 3",
+        "stanujem u Izmišljenoj 4b",
+        "Izmišljena bb, Čitluk",
+        "Adresa: Izmišljena 7, Čitluk",
+    ],
+)
+def test_address_matches_finds_street_and_house_number(text: str) -> None:
+    assert address_matches(text) != []
+    # Whatever it finds, the scrub removes: the two can't drift.
+    assert "[adresa]" in scrub_personal_data(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Panel Nylofor 3D 153 cm",
+        "Panel 153 x 250, antracit",
+        "ograda 2D 103x250 RAL 7016",
+        "Kolica Tačke 85 L",
+        "dostava u Mostar 3 dana",
+        "prvi put kupujem 3 panela",
+    ],
+)
+def test_address_matches_ignores_product_text(text: str) -> None:
+    assert address_matches(text) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Zovem se Pero Perić i trebam ogradu", ["Pero Perić"]),
+        ("Ja sam Ana Anić.", ["Ana Anić"]),
+        ("Ime: Marko Marić, Čitluk", ["Marko Marić"]),
+        ("ja sam iz Čitluka", []),
+        ("Panel 3D 153 cm", []),
+    ],
+)
+def test_introduced_names(text: str, expected: list[str]) -> None:
+    assert introduced_names(text) == expected
