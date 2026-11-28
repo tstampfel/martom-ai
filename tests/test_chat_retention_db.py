@@ -38,7 +38,7 @@ async def write_checkpoint(saver: AsyncPostgresSaver, thread: str, ts: datetime)
 
 def threads_in(database_url: str, table: str) -> set[str]:
     with psycopg.connect(database_url) as conn:
-        rows = conn.execute(f"SELECT DISTINCT thread_id FROM {table}").fetchall()  # noqa: S608
+        rows = conn.execute(f"SELECT DISTINCT thread_id FROM {table}").fetchall()
     return {row[0] for row in rows}
 
 
