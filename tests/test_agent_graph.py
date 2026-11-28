@@ -783,3 +783,26 @@ async def test_fallback_lists_manual_products_without_a_link() -> None:
     assert f"- {ANCHOR_NAME}" in lines
     assert "- PANEL 3D OGRADA: https://martom.olx.ba/artikal/panel-3d-ograda-63996799" in lines
     assert "KM" not in result["answer"]
+
+
+async def test_retrieve_hit_facts_carry_source_and_manual_key() -> None:
+    # R1-2 (#132 review): the answer cites a manual key known only from the Retrieve hits
+    # (no tool call), so dropping manual_key from _hit_facts fails this test.
+    graph = anchor_graph([AIMessage(f"Imamo {ANCHOR_NAME} (šifra {ANCHOR_KEY}).")])
+    result = await ask(graph, "Imate li anker?")
+    assert result["fallback"] is False
+    assert result["grounding_problems"] == []
+    assert result["facts"]["manual_keys"] == [ANCHOR_KEY]
+
+
+async def test_invented_link_for_a_manual_product_fails_grounding() -> None:
+    # R1-1 (#132 review): a manual product has no OLX listing, so a link is invented.
+    graph = anchor_graph(
+        [
+            AIMessage(f"{ANCHOR_NAME}: https://martom.olx.ba/artikal/anker-m8x70"),
+            AIMessage(f"Imamo {ANCHOR_NAME}."),
+        ]
+    )
+    result = await ask(graph, "Imate li anker?")
+    assert result["answer"] == f"Imamo {ANCHOR_NAME}."
+    assert any("link" in problem for problem in result["grounding_problems"])

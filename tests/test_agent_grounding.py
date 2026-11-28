@@ -384,3 +384,50 @@ def test_unknown_manual_key_fails_like_a_listing_id() -> None:
     result = check_grounding("Šifra: anchor_m10x90.", facts)
     assert not result.ok
     assert any("anchor_m10x90" in problem for problem in result.problems)
+
+
+# --- links (#132 R1-1) ---------------------------------------------------------------
+
+OLX_OUTPUT = {
+    "results": [
+        {
+            "source": "olx",
+            "listing_id": 63996799,
+            "title": "PANEL 3D OGRADA",
+            "url": "https://martom.olx.ba/artikal/panel-3d-ograda-63996799",
+        },
+        MANUAL_OUTPUT,
+    ]
+}
+
+
+def test_facts_collect_tool_urls() -> None:
+    facts = facts_from_output(OLX_OUTPUT)
+    assert facts.urls == ["https://martom.olx.ba/artikal/panel-3d-ograda-63996799"]
+
+
+def test_link_a_tool_returned_passes() -> None:
+    facts = facts_from_output(OLX_OUTPUT)
+    text = "Panel: https://martom.olx.ba/artikal/panel-3d-ograda-63996799."
+    assert check_grounding(text, facts).ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A manual product has no OLX listing: any link for it is invented.
+        "Anker: https://martom.olx.ba/artikal/anker-m8x70",
+        "Anker: martom.olx.ba/artikal/anchor_m8x70",
+        "Anker: olx.ba/artikal/anker-m8x70",
+        "Anker: www.olx.ba/artikal/anker",
+        # An OLX link no tool returned, even for a known listing id.
+        "Panel: https://olx.ba/artikal/63996799",
+        "Panel: https://martom.olx.ba/artikal/drugi-panel-63996799",
+        "Pogledajte https://example.com/anker",
+    ],
+)
+def test_link_no_tool_returned_fails(text: str) -> None:
+    facts = facts_from_output(OLX_OUTPUT)
+    result = check_grounding(text, facts)
+    assert not result.ok
+    assert any("link" in problem for problem in result.problems)
