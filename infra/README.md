@@ -20,6 +20,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
         └── job task: `martom sync` → `martom extract` → `martom embed`
               started by EventBridge Scheduler at 01:00 Europe/Sarajevo, every night (the sync's rolling refresh replaced the weekly full run, #135)
         └── job task: `martom purge-chats` (chats idle > 90 days), at 00:15 Europe/Sarajevo, every night (#129)
+        └── chat export task (by hand only): `martom export-chats` → private S3 bucket, objects deleted after 90 days (#158)
 ```
 
 | File | What it holds |
@@ -33,6 +34,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
 | `secrets.tf` | Secrets Manager: the RDS-managed master password (Terraform knows only its ARN), `app` (JSON, set by hand) |
 | `ecr.tf`, `ecs.tf` | Image repository, cluster, API service, job task definition, env var mapping |
 | `scheduler.tf` | The nightly sync and chat clean-up schedules, their dead-letter queue |
+| `chat_export.tf` | The private bucket for scrubbed chat exports (EU, no public access, SSE-S3, 90-day expiry), the export task and its write-only role |
 
 Agents only write and validate this code (`terraform fmt -check`, `terraform init -backend=false`, `terraform validate`). Tomislav runs `init`, `plan` and `apply` with his own SSO profile; `terraform apply` is blocked for agents in `.claude/settings.json`.
 
@@ -65,6 +67,8 @@ terraform plan -var api_desired_count=0 -out "$HOME/martom.tfplan"
 terraform apply "$HOME/martom.tfplan"
 rm "$HOME/martom.tfplan"
 ```
+
+Before the first plan, copy `terraform.tfvars.example` to `terraform.tfvars` and set `chat_export_admin_arns` to your own IAM user (and SSO role) ARNs; it has no default (see "Exporting chats"). Leave `schedules_enabled` at `false` until step 6.
 
 `api_desired_count=0` for the first apply, because ECR is still empty: the API service starts no task until an image exists (step 4). The schedules are created **disabled** (`schedules_enabled` defaults to `false`), so no job runs against an empty database; step 6 turns them on.
 
@@ -162,6 +166,7 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `AGENT_MODEL` | `claude-sonnet-5-5` (read from M4) | not set | plain |
 | `EXTRACTION_CONCURRENCY` | not set | `4` | plain |
 | `CHAT_RETENTION_DAYS` | not set | `90` (`martom purge-chats`; the privacy notice promises 90 days) | plain |
+| `CHAT_EXPORT_BUCKET` | not set | not set; only the chat export task: the export bucket's name | plain |
 | `EMBEDDING_PROVIDER` | `cohere` | `cohere` | plain |
 | `EMBEDDING_MODEL` | `embed-multilingual-v3.0` | `embed-multilingual-v3.0` | plain |
 | `COHERE_API_KEY` | `app` → `COHERE_API_KEY` | same | secret (by hand) |
@@ -188,6 +193,7 @@ On-demand eu-central-1 list prices, checked 27 Nov 2026 from memory of the AWS p
 | CloudWatch Logs | ~1 GB ingested | ~$1 |
 | ECR | ≤ 10 images | ~$0.50 |
 | CloudFront | always-free tier: 1 TB and 10 M requests | $0 |
+| S3, chat export bucket | a few MB of JSON, deleted after 90 days | ~$0 |
 | **Total** | | **~$56** |
 
 What isn't here: NAT gateway (~$35, avoided with public IPs on the tasks), Multi-AZ RDS (double the RDS line), Container Insights, WAF. Claude, Cohere and LangSmith are billed separately (see `docs/PLAN.md`, Running costs).
@@ -307,6 +313,37 @@ Tomislav's decision (#129, 27 Nov 2026), and what the start screen's privacy not
    - Automation rules on the production project must keep every **Extend Data Retention** toggle off (note: the "Add to Annotation Queue" action has it **on** by default), and online evaluators their retention option off: LangSmith upgrades every matching trace (with a thread rule, every trace in the thread) to 180 days. Never add the "Extend Data Retention" action itself. Feedback (thumbs) and notes added in the UI don't change a trace's retention.
    - **Datasets are kept until deleted**, whatever the trace retention. Never "Add to dataset" from a production trace by hand: anything kept longer than the traces' 14 days (a dataset, a feedback example, a private export) goes through `martom.evals.scrub.scrub_personal_data` first. A scrubbed real chat is never committed to the public repo, not even to `evals/` (Tomislav, 28 Nov 2026): it goes only to a private location (an S3 bucket in our AWS account or a private repo), and `evals/` holds only hand-written or hand-reviewed cases approved by Tomislav or Toni, with no real customer wording, street or village.
    - Check: the project's **Retention** shows **Base**, Settings → Rules lists no rule on the project with an extend-retention toggle on, and the retention control says 14 days, and a trace from the first day is gone after 14 days (open its link on day 15: "not found"). Changing the setting applies only to traces ingested afterwards, so set it **before** the first real customer conversation.
+
+## Exporting chats
+
+Real customer chats are never committed to the public repo, even scrubbed (Tomislav, 28 Nov 2026). To study chosen chats, export them, scrubbed, to the private bucket in `chat_export.tf` (#158):
+
+- the bucket is in `eu-central-1` like the rest of the stack, so exports never leave the EU;
+- all public access is blocked, objects are encrypted (SSE-S3), and the bucket policy refuses any request that isn't HTTPS;
+- every object is deleted **90 days** after it was written. The Privatnost page promises "Očišćeni primjeri razgovora: najduže 90 dana", so the expiry is a literal in `chat_export.tf`, and `tests/test_infra_chat_export.py` fails if it is ever above 90. Versioning is off; if someone turns it on, old versions are deleted after 1 day;
+- only the principals in `chat_export_admin_arns` (terraform.tfvars) and the export task role may use the bucket; the bucket policy denies everyone else, whatever their IAM policies say. List your IAM user ARN and, if you sign in with SSO, the permission set's role ARN (`aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/`), because `aws:PrincipalArn` is the role, not the session. **The principal that runs `terraform apply` must be in the list**, or Terraform itself is refused on the bucket. If you lock yourself out, sign in as the account root user and delete the bucket policy (S3 always allows the root user to do that), then fix the list and apply again;
+- the export task role may only `PutObject` under `chats/`: it can't list, read or delete earlier exports.
+
+The database is reachable only inside the VPC, so the export runs as a one-off task. Each run takes the thread ids to export (from the chat's LangSmith trace metadata, for example); a thread id lets its holder continue that chat, so keep them out of tickets and chats:
+
+```sh
+aws ecs run-task \
+  --cluster "$(terraform -chdir=infra output -raw ecs_cluster)" \
+  --task-definition "$(terraform -chdir=infra output -raw chat_export_task_definition)" \
+  --launch-type FARGATE \
+  --network-configuration "$(terraform -chdir=infra output -raw job_network_configuration)" \
+  --overrides "$(jq -nc --args '{containerOverrides: [{name: "chat-export", command: (["martom", "export-chats"] + $ARGS.positional)}]}' THREAD_ID_1 THREAD_ID_2)"
+```
+
+Add `--name "<name>"` / `--address "<address>"` after the ids when the chat has an order form, so those values are scrubbed too. The task prints only counts (`exported 2 chats to s3://... (0 not found)`), never ids or chat text; its log is in `/ecs/martom-production/job` under the `chat-export` prefix. Each chat lands in `s3://<chat_export_bucket>/chats/<date>/<thread hash>.json` with the customer's and the advisor's messages only.
+
+Then download and **read** an export before you use it: the scrub has known misses (listed in `src/martom/evals/scrub.py`):
+
+```sh
+aws s3 cp --recursive "s3://$(terraform -chdir=infra output -raw chat_export_bucket)/chats/" "$HOME/martom-chat-exports/"
+```
+
+Keep the copy outside every git checkout (the command refuses `--out` inside one for the same reason) and delete it when you're done. A case worth keeping in the eval set is rewritten by hand and approved before it goes into `evals/` (`evals/README.md`). Against a local database, `uv run martom export-chats THREAD_ID --out ~/martom-chat-exports` writes to a folder instead.
 
 ## Notes
 
