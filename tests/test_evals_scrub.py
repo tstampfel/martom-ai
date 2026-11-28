@@ -432,6 +432,11 @@ def test_address_matches_ignores_product_text(text: str) -> None:
         # R1-2: only the name, never the words after it.
         ("Zovem se Ivan zanima me cijena za 20 metara ograde", ["Ivan"]),
         ("zovem se pero i trebam panel", ["pero"]),
+        # Security review: hyphenated names and lower-case surnames are kept.
+        ("Zovem se Ana-Marija Anić", ["Ana-Marija Anić"]),
+        ("zovem se pero perić", ["pero perić"]),
+        ("zovem se ivan zanima me cijena", ["ivan"]),
+        ("Ja sam Ivo O'Brien", ["Ivo O'Brien"]),
         ("Ime: Marko Marić trebam panel 153 cm", ["Marko Marić"]),
         ("Ime: [ime]", []),
         ("Panel 3D 153 cm", []),

@@ -281,6 +281,51 @@ def address_matches(text: str) -> list[str]:
     return [address for address in found if address.strip() and address.strip() != ADDRESS]
 
 
+# A name word: 3+ letters, or parts joined by "-" or "'" ("Ana-Marija", "D'Angelo").
+_NAME_WORD_RE = re.compile(r"[^\W\d_]+(?:[-'\u2019][^\W\d_]+)*")
+# Words that follow a lower-case intro but are not a name ("zovem se pero zanima me ...").
+_NOT_NAME_WORDS = frozenset(
+    {
+        "i",
+        "a",
+        "ali",
+        "te",
+        "pa",
+        "iz",
+        "sa",
+        "s",
+        "je",
+        "sam",
+        "zanima",
+        "zanimaju",
+        "trebam",
+        "treba",
+        "trebao",
+        "trebala",
+        "hoću",
+        "hocu",
+        "želim",
+        "zelim",
+        "imam",
+        "molim",
+        "pozdrav",
+        "evo",
+        "me",
+        "mi",
+        "cijena",
+        "ograda",
+        "ogradu",
+        "panel",
+        "panele",
+        "mrežu",
+        "mreza",
+        "mreža",
+        "stub",
+        "stubove",
+    }
+)
+
+
 def introduced_names(text: str) -> list[str]:
     """The names a customer introduces in `text` ("Zovem se Pero Perić", "Ime: Ana").
 
@@ -289,21 +334,34 @@ def introduced_names(text: str) -> list[str]:
 
     Every word returned is matched in every message, so only words that look like a name
     are kept (R1-2): the intro's first word (customers type "zovem se pero" in lower
-    case), then the capitalised words right after it, each of 3+ letters. "Zovem se
+    case), then the capitalised words right after it (lower-case ones too when the first
+    was lower case), each of 3+ letters or joined by "-" / "'" ("Ana-Marija"). "Zovem se
     Ivan zanima me cijena" gives "Ivan", never "zanima me", and "Ime: Marko Marić trebam
     panel 153 cm" gives "Marko Marić", so "panel" and "153 cm" survive elsewhere.
     """
     found: list[str] = []
     for pattern in (_INTRO_RE, _JA_SAM_RE, _NAME_LABEL_RE):
         for match in pattern.finditer(text):
-            words = match.group(0)[len(match.group(1)) :].split()
+            # The words after the intro, read from the text itself: the intro patterns stop
+            # at a "-" or "'", which would cut "Ana-Marija" to "Ana".
+            words = text[match.end(1) :].split(maxsplit=3)
             name: list[str] = []
-            for word in words[:3]:
-                word = word.strip(".,;:!?")
-                plain_word = re.fullmatch(r"[^\W\d_]{3,}", word) is not None
-                if not plain_word or (name and not word[0].isupper()):
+            for raw in words[:3]:
+                word = raw.rstrip(".,;:!?")
+                letters = sum(char.isalpha() for char in word)
+                if (
+                    not _NAME_WORD_RE.fullmatch(word)
+                    or letters < 3
+                    or word.lower() in _NOT_NAME_WORDS
+                ):
+                    break
+                # After the first word: capitalised, or lower case when the customer typed
+                # the first word in lower case too ("zovem se pero perić").
+                if name and not (word[0].isupper() or name[0][0].islower()):
                     break
                 name.append(word)
+                if word != raw:  # "Marić," ends the name: a comma or full stop follows
+                    break
             if name:
                 found.append(" ".join(name))
     return found

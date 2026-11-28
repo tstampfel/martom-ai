@@ -332,3 +332,14 @@ def test_a_thread_id_starting_with_a_dash_parses_after_double_dash(
 
     assert main(["export-chats", "--out", str(tmp_path), "--name", "Ana", "--", dash_id]) == 0
     assert seen["ids"] == [dash_id]
+
+
+def test_a_hyphenated_introduced_name_is_scrubbed_across_the_chat() -> None:
+    record = export_record(
+        [HumanMessage("Zovem se Ana-Marija Anić"), AIMessage("Ana-Marija, evo ponude.")],
+        thread_id=THREAD_ID,
+        exported_at=EXPORTED_AT,
+    )
+
+    assert "Ana" not in json.dumps(record, ensure_ascii=False)
+    assert record["messages"][1]["text"] == "[ime], evo ponude."
