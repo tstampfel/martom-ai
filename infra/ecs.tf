@@ -58,6 +58,12 @@ locals {
     EMBEDDING_MODEL    = "embed-multilingual-v3.0"
     LANGSMITH_TRACING  = "true"
     LANGSMITH_PROJECT  = var.langsmith_project
+    # The production LangSmith organization is in the EU region (Tomislav, 28 Nov 2026: the
+    # privacy page says LangSmith data stays in the EU). EU API URL from LangSmith's
+    # "Regions" table: https://docs.langchain.com/langsmith/cloud#regions. An EU API key
+    # only works against this endpoint. Both tasks trace (the API's chats, the job's
+    # extraction), so both get it.
+    LANGSMITH_ENDPOINT = "https://eu.api.smith.langchain.com"
   }
 
   api_environment = merge(local.common_environment, {
@@ -85,6 +91,10 @@ locals {
     OLX_NIGHTLY_REQUEST_BUDGET = "950"
     OLX_ROLLING_REFRESH_DAYS   = "7"
     EXTRACTION_CONCURRENCY     = "4"
+    # Chats are kept 90 days after their last message, then `martom purge-chats` deletes
+    # them (Tomislav, #129). The site's privacy notice promises 90 days: never raise it
+    # without changing that text.
+    CHAT_RETENTION_DAYS = "90"
   })
 
   # ECS wants lists of {name, value} / {name, valueFrom}; build them from the maps above.

@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from martom.api.admin import AdminTokenError, check_admin_token
 from martom.bom.manual_products import DEFAULT_PATH as MANUAL_PRODUCTS_PATH
 from martom.bom.manual_products import load_manual_products
-from martom.checkpointer import setup_checkpointer
+from martom.checkpointer import CheckpointerNotReadyError, setup_checkpointer
 from martom.embed_job import EmbedStats, run_embedding
 from martom.embeddings import EmbeddingError, make_embedder
 from martom.extract.extractor import (
@@ -31,6 +31,7 @@ from martom.log import configure_logging, logging_config
 from martom.migrate import MigrationError, run_migrations
 from martom.olx.client import OlxClient
 from martom.olx.job import RunKind, RunStats, apply_skipped_run, run_sync
+from martom.retention import purge_old_chats
 from martom.review.report import ReportIssue, format_report, load_open_issues
 from martom.search.manual import ManualSyncStats, sync_manual_products
 from martom.settings import Settings
@@ -133,7 +134,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="print Toni's open review issues in Bosnian, by priority, with OLX links",
     )
 
+    commands.add_parser(
+        "purge-chats",
+        help="delete customer chats idle longer than CHAT_RETENTION_DAYS (nightly)",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "purge-chats":
+        return run_purge_chats_command()
 
     if args.command == "report":
         return run_report_command()
@@ -305,6 +314,32 @@ def run_embed_command() -> int:
         f"unchanged {stats.manual_unchanged}"
     )
     return 0 if manual else 1
+
+
+def run_purge_chats_command() -> int:
+    """`martom purge-chats`: exit 0 after the purge, 1 when it could not run.
+
+    Prints and logs the number of deleted threads only, never ids or chat text.
+    """
+    try:
+        settings = Settings()
+    except ValidationError as exc:
+        print(f"invalid settings: {exc}", file=sys.stderr)
+        return 1
+    configure_logging(settings.log_level)
+    days = settings.chat_retention_days
+    try:
+        stats = asyncio.run(purge_old_chats(settings.database_url, retention_days=days))
+    except CheckpointerNotReadyError as exc:
+        print(f"purge-chats failed: {exc}", file=sys.stderr)
+        return 1
+    except psycopg.Error as exc:
+        # libpq errors span several lines; keep the reason on one.
+        reason = " ".join(str(exc).split())
+        print(f"purge-chats failed: database error: {reason}", file=sys.stderr)
+        return 1
+    print(f"purge-chats: deleted {stats.deleted_threads} threads idle for more than {days} days")
+    return 0
 
 
 def run_report_command() -> int:

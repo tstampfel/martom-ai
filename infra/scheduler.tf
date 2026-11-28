@@ -1,6 +1,11 @@
-# EventBridge Scheduler starts the job task (ecs.tf) once a night, at 01:00 Europe/Sarajevo:
+# EventBridge Scheduler starts the job task (ecs.tf) twice a night, Europe/Sarajevo time:
 #
-#   every night (nightly-sync):  sync --scheduled -> extract -> embed
+#   00:15 (purge-chats):   martom purge-chats   (delete chats idle > 90 days, #129)
+#   01:00 (nightly-sync):  sync --scheduled -> extract -> embed
+#
+# purge-chats takes seconds (a few DELETEs on the checkpointer tables). Its start retries
+# end after 30 min and the task is killed after 15 min, so it is always gone before the
+# sync chain starts at 01:00; the two never run at the same time.
 #
 # There is no weekly full run (#135): the nightly sync re-fetches the oldest 1/7 of the
 # listing details itself (rolling refresh), so every listing is refreshed within 7 nights.
@@ -134,6 +139,57 @@ resource "aws_scheduler_schedule" "sync" {
     # sync that ran and failed; a re-run of a whole sync is never automatic.
     retry_policy {
       maximum_event_age_in_seconds = 3600
+      maximum_retry_attempts       = 2
+    }
+  }
+}
+
+# Nightly chat clean-up (#129): the same job task, with its command overridden to
+# `martom purge-chats`. Same role, network and dead-letter queue as the sync schedule.
+resource "aws_scheduler_schedule" "purge_chats" {
+  name                         = "${local.prefix}-purge-chats"
+  description                  = "Delete customer chats idle for more than 90 days (martom purge-chats)"
+  schedule_expression          = var.purge_chats_cron
+  schedule_expression_timezone = var.schedule_timezone
+  # DISABLED until the first deploy is done, and while the stack is paused (README).
+  state = var.schedules_enabled ? "ENABLED" : "DISABLED"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_ecs_cluster.main.arn
+    role_arn = aws_iam_role.scheduler.arn
+
+    # The RunTask overrides: run `martom purge-chats` instead of the sync pipeline,
+    # killed after 15 min.
+    input = jsonencode({
+      containerOverrides = [{
+        name    = "job"
+        command = ["timeout", "900", "martom", "purge-chats"]
+      }]
+    })
+
+    ecs_parameters {
+      task_definition_arn = aws_ecs_task_definition.job.arn_without_revision # always the latest revision
+      launch_type         = "FARGATE"
+      task_count          = 1
+
+      network_configuration {
+        subnets          = aws_subnet.public[*].id
+        security_groups  = [aws_security_group.job.id]
+        assign_public_ip = true # no NAT gateway (network.tf)
+      }
+    }
+
+    dead_letter_config {
+      arn = aws_sqs_queue.scheduler_dlq.arn
+    }
+
+    # 30 min of start retries at most: with the 15 min timeout the task is gone by 01:00.
+    retry_policy {
+      maximum_event_age_in_seconds = 1800
       maximum_retry_attempts       = 2
     }
   }

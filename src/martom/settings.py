@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     # never stops commands that don't serve /admin (sync, extract, scripts).
     admin_token: SecretStr | None = None
 
+    # Days a customer chat (a checkpointer thread) is kept after its last message; the
+    # nightly `martom purge-chats` deletes older ones (Tomislav, #129: 90 days). The site's
+    # privacy notice promises 90 days, so never raise it without changing that text.
+    chat_retention_days: int = Field(default=90, ge=1)
+
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")
     @classmethod

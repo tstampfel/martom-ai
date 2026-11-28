@@ -19,6 +19,7 @@ ENV_VARS = [
     "OLX_REQUEST_INTERVAL",
     "OLX_NIGHTLY_REQUEST_BUDGET",
     "OLX_ROLLING_REFRESH_DAYS",
+    "CHAT_RETENTION_DAYS",
 ]
 
 
@@ -63,6 +64,21 @@ def test_rejects_a_negative_cap_or_zero_refresh_days(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str
 ) -> None:
     monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_chats_are_kept_90_days_by_default() -> None:
+    # Tomislav, #129; the site's privacy notice promises 90 days.
+    assert Settings().chat_retention_days == 90
+
+
+@pytest.mark.parametrize("value", ["0", "-5"])
+def test_rejects_a_chat_retention_below_one_day(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("CHAT_RETENTION_DAYS", value)
 
     with pytest.raises(ValidationError):
         Settings()
