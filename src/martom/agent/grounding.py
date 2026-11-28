@@ -13,8 +13,9 @@ answer and asks where it came from:
 - A listing id (7–9 digits) must be one a tool or the Retrieve step returned, and so
   must a manual product's key (a `manual_products.toml` key such as "anchor_m8x70",
   #132): a product without an OLX listing is identified by that key instead.
-- A link (any http(s):// or www. address, and any olx.ba address even without one) must
-  be a `url` a tool or the Retrieve step returned, exactly. A manual product has no OLX
+- A link (any http(s):// or www. address, and any olx.ba address with a path even
+  without one) must be a `url` a tool or the Retrieve step returned, exactly; markdown,
+  quotes and brackets around it are not part of it. A manual product has no OLX
   listing (#132), so any link written for it fails, and so does an olx.ba/artikal/{id}
   link, which doesn't open.
 - Bosnian number words ("pedeset tri KM", "dvanaest stubova") are read as numbers and
@@ -32,7 +33,7 @@ The check is deliberately strict: a false alarm costs a retry (and at worst the 
 search results); a missed one would show the customer an invented price or quantity.
 """
 
-# ruff: noqa: RUF002, RUF003
+# ruff: noqa: RUF001, RUF002, RUF003
 
 import re
 from collections.abc import Iterable, Mapping
@@ -60,10 +61,17 @@ _PRICE = re.compile(
 _DASH_PRICE = re.compile(r"(?<![\d.,])(\d+(?:[.\u00a0 ]\d{3})*),-")
 # OLX listing ids have 7 to 9 digits.
 _LISTING_ID = re.compile(r"(?<![\d.,])\d{7,9}(?!\d|[.,]\d)")
-# A link: "https://…", "www.…", or a bare "olx.ba/…" / "martom.olx.ba/…" (R1-1).
-_URL = re.compile(r"(?:https?://|www\.)\S+|(?<![\w.-])(?:[\w-]+\.)*olx\.ba(?:/\S*)?", re.I)
+# A link: "https://…", "www.…", or a bare "olx.ba/…" / "martom.olx.ba/…" (R1-1). A link
+# stops at whitespace and at the characters a model wraps one in: markdown bold, code and
+# [text](url), <autolinks>, quotes (also Bosnian „…“) and an ellipsis (A1-1). The bare
+# form needs a path, so naming the site ("na OLX.ba") is not a link.
+_URL_CHAR = r"[^\s<>`*\"'“”„‘’\[\]()…]"
+_URL = re.compile(
+    rf"(?:https?://|www\.){_URL_CHAR}+|(?<![\w.-])(?:[\w-]+\.)*olx\.ba/{_URL_CHAR}+",
+    re.IGNORECASE,
+)
 # Sentence punctuation after a link is not part of it.
-_URL_TRAILING = ".,;:!?)]}»\"'"
+_URL_TRAILING = ".,;:!?»"
 # A manual product's key (manual_products.toml table name = BOM item key): "anchor_m8x70".
 _MANUAL_KEY = re.compile(r"(?<![\w-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w-])")
 # Any other number: "25", "25,5", "2.70".

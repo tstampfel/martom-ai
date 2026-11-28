@@ -406,10 +406,46 @@ def test_facts_collect_tool_urls() -> None:
     assert facts.urls == ["https://martom.olx.ba/artikal/panel-3d-ograda-63996799"]
 
 
-def test_link_a_tool_returned_passes() -> None:
+PANEL_URL = "https://martom.olx.ba/artikal/panel-3d-ograda-63996799"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"Panel: {PANEL_URL}",
+        f"Panel: {PANEL_URL}.",
+        f"Panel ({PANEL_URL}).",
+        # A1-1: the same link in the wrappers a model writes.
+        f"Panel: **{PANEL_URL}**",
+        f"Panel: <{PANEL_URL}>",
+        f"Panel: `{PANEL_URL}`",
+        f"Panel: „{PANEL_URL}“",
+        f"Panel: “{PANEL_URL}”",
+        f"Panel: '{PANEL_URL}'",
+        f"Panel: {PANEL_URL}…",
+        f"[PANEL 3D OGRADA]({PANEL_URL})",
+        f"[PANEL 3D OGRADA]({PANEL_URL}).",
+        f"[{PANEL_URL}]({PANEL_URL})",
+        f"**[PANEL 3D OGRADA]({PANEL_URL})**",
+    ],
+)
+def test_link_a_tool_returned_passes(text: str) -> None:
     facts = facts_from_output(OLX_OUTPUT)
-    text = "Panel: https://martom.olx.ba/artikal/panel-3d-ograda-63996799."
-    assert check_grounding(text, facts).ok
+    result = check_grounding(text, facts)
+    assert result.ok, result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sve artikle imamo na OLX.ba.",
+        "Pogledajte oglas na olx.ba ili nas nazovite.",
+        "Martom je na OLX.ba, a i u Međugorju.",
+    ],
+)
+def test_naming_olx_ba_without_a_link_passes(text: str) -> None:
+    # A1-1: the site's name alone is not a link.
+    assert check_grounding(text, facts_from_output(OLX_OUTPUT)).ok
 
 
 @pytest.mark.parametrize(
@@ -424,6 +460,12 @@ def test_link_a_tool_returned_passes() -> None:
         "Panel: https://olx.ba/artikal/63996799",
         "Panel: https://martom.olx.ba/artikal/drugi-panel-63996799",
         "Pogledajte https://example.com/anker",
+        # Wrappers never turn a wrong link into a right one.
+        "Anker: **https://martom.olx.ba/artikal/anker-m8x70**",
+        "Anker: <martom.olx.ba/artikal/anker-m8x70>",
+        "[Anker](https://martom.olx.ba/artikal/anker-m8x70)",
+        f"[{PANEL_URL}](https://martom.olx.ba/artikal/anker-m8x70)",
+        f"Panel: `{PANEL_URL}/`",
     ],
 )
 def test_link_no_tool_returned_fails(text: str) -> None:
