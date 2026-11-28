@@ -163,6 +163,13 @@ describe('AI notice (M5-3b)', () => {
     expect(form).toHaveTextContent(text(start.short))
   })
 
+  it('describes the question box with the start-screen notice, so screen readers hear it before the first message', () => {
+    render(<App />)
+    const box = screen.getByLabelText(copy.start.inputLabel)
+    expect(box).toHaveAccessibleDescription(expect.stringContaining(text(start.wide)))
+    expect(box).toHaveAccessibleDescription(expect.stringContaining(text(start.short)))
+  })
+
   it.each([
     [
       'the question box',
@@ -193,7 +200,7 @@ describe('AI notice (M5-3b)', () => {
     expect(within(notice as HTMLElement).getAllByText(chat.wide.lead)[0].tagName).toBe('STRONG')
   })
 
-  it('is announced once, with the chat region, never as a live region', () => {
+  it('is announced when the chat opens, not as a live region', () => {
     render(<App />)
     fireEvent.click(screen.getByRole('button', { name: 'Dvorište' }))
     const region = screen.getByRole('region', { name: copy.chat.label })
@@ -207,7 +214,7 @@ describe('AI notice (M5-3b)', () => {
     render(<App chatClient={createFakeChatClient({ wait: async () => {} })} />)
     fireEvent.click(screen.getByRole('button', { name: 'Dvorište' }))
     const region = screen.getByRole('region', { name: copy.chat.label })
-    await waitFor(() => expect(region.querySelector('[aria-busy="true"]')).toBeNull(), )
+    await waitFor(() => expect(region.querySelector('[aria-busy="true"]')).toBeNull())
     expect(region).toHaveTextContent(text(chat.wide))
   })
 })

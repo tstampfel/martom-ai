@@ -17,6 +17,7 @@ type QuestionFormProps = {
  */
 export function QuestionForm({ onSubmit, focusOnMount = false }: QuestionFormProps) {
   const inputId = useId()
+  const noticeId = useId()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [question, setQuestion] = useState('')
   const [focused, setFocused] = useState(false)
@@ -74,6 +75,8 @@ export function QuestionForm({ onSubmit, focusOnMount = false }: QuestionFormPro
           rows={1}
           value={question}
           placeholder={placeholder}
+          // The AI notice is read with the box, before the first message.
+          aria-describedby={noticeId}
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
@@ -84,8 +87,9 @@ export function QuestionForm({ onSubmit, focusOnMount = false }: QuestionFormPro
           <ArrowIcon />
         </button>
       </div>
-      {/* EU AI Act Art. 50 (#151): said before the first message. */}
-      <AiNotice text={copy.aiNotice.start} tone="on-brand" />
+      {/* EU AI Act Art. 50 (#151): said before the first message, also to
+          screen readers, through the box's aria-describedby. */}
+      <AiNotice id={noticeId} text={copy.aiNotice.start} tone="on-brand" />
     </form>
   )
 }

@@ -46,7 +46,8 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
 
   // The control that opened the chat is gone, so move focus here; screen
   // readers then announce the chat region instead of losing their place,
-  // and with it, once, the AI notice it is described by.
+  // and with it the AI notice it is described by (when the chat opens, not
+  // as a live region; reading through the region reaches it again).
   useEffect(() => {
     sectionRef.current?.focus()
   }, [])

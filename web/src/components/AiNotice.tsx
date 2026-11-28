@@ -17,8 +17,8 @@ type AiNoticeProps = {
  * "Odgovara AI savjetnik…" / "Razgovarate s AI savjetnikom…" (EU AI Act
  * Art. 50, #151). Both wordings are rendered and CSS shows one per
  * breakpoint, so screen readers read only the visible one. It is plain text,
- * never a live region: it is read once, in reading order or with the region
- * it describes.
+ * never a live region: it is read in reading order and with the element it
+ * describes (aria-describedby), never again on each new message.
  */
 export function AiNotice({ text, tone, id }: AiNoticeProps) {
   return (
