@@ -181,9 +181,10 @@ _BB = r"(?:b\.\s?b\.?|bb)(?!\w)"
 _HOUSE_RANGE = r"(?:\s?[\u2013-]\s?\d{1,4}[a-zA-Z]?(?!\w))?"
 _HOUSE_NUMBER = (
     r"(?:(?:\d\s?/\s?\d{3}[a-zA-Z]?(?!\w)"
-    # "5 A": a spaced letter is upper case only and never a unit or "x" (R5-1: every
-    # regex using this is case-insensitive, so "20 m ograde" was read as "20 M").
-    rf"|\d{{1,4}}(?:[a-zA-Z](?!\w)|\s(?!(?i:{_whole_words(_UNIT_WORDS)}|x))(?-i:[A-Z])(?!\w))?"
+    # "5 A": a spaced letter is upper case only, never "X" ("12 X 3" is a size). Every
+    # regex using this is case-insensitive, so the case is pinned: "20 m ograde" is a
+    # length (R5-1), while "5 L" or "5 M" is a building letter.
+    r"|\d{1,4}(?:[a-zA-Z](?!\w)|\s(?-i:(?!X)[A-Z])(?!\w))?"
     rf"{_HOUSE_RANGE}"
     r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2})"
     rf"{_HOUSE_RANGE}(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"
