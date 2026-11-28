@@ -165,21 +165,26 @@ def _whole_words(words: str) -> str:
 _NOT_HOUSE_NUMBER = (
     rf"(?!\s*(?i:{_whole_words(_UNIT_WORDS)})"
     # "15. decembra" (a date), "54,90" (a price), "153x250" (a size: a digit must
-    # follow, so "5 xanadu" stays a house number). A "/" or "-" and a digit still left
-    # after the house number below is a size or a count: "153/250", "5-7 dana".
+    # follow, so "5 xanadu" stays a house number). What is left after a shorter house
+    # number is a count or a size only when it looks like one: a range with a unit
+    # ("5-7 dana"), a slash part of 3+ digits ("153/250", "60/40/2000") or a slash part with a unit
+    # ("60/40 cm"). Anything else ("5-12a") keeps the house number, so the street goes.
     rf"|\.\s*(?i:{_whole_words(_MONTH_WORDS)})|[,.]\d|\s*[x\u00d7*]\s*\d"
-    r"|\s?[/\u2013-]\s?\d)"
+    rf"|\s?[/\u2013-]\s?\d+\s*(?i:{_whole_words(_UNIT_WORDS)})|(?:\s?/\s?\d+)*?\s?/\s?\d{{3}})"
 )
 # "bb" (bez broja), also written "b.b." or "B.B.".
 _BB = r"(?:b\.\s?b\.?|bb)(?!\w)"
 # "5", "5a", "5 A", "5-7", and up to two entrance or flat parts after a slash (R4-1):
 # "24/14", "7 / 3", "7/III", "24/14a", "12/4/2". A slash part longer than 2 digits
 # ("153/250", "60/40/2000") is a size; "60/40 cm" is one through the unit word after it.
+# A one-digit number takes a 3-digit flat ("7/123"); a size has a longer first part.
+_HOUSE_RANGE = r"(?:\s?[\u2013-]\s?\d{1,4}[a-zA-Z]?(?!\w))?"
 _HOUSE_NUMBER = (
-    r"(?:\d{1,4}(?:[a-zA-Z](?!\w)|\s[A-Z](?!\w))?"
-    r"(?:\s?[\u2013-]\s?\d{1,4}(?!\d))?"
-    r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2}"
-    rf"(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"
+    r"(?:(?:\d\s?/\s?\d{3}[a-zA-Z]?(?!\w)"
+    r"|\d{1,4}(?:[a-zA-Z](?!\w)|\s[A-Z](?!\w))?"
+    rf"{_HOUSE_RANGE}"
+    r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2})"
+    rf"{_HOUSE_RANGE}(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"
 )
 _STREET_WORDS = rf"(?:{_WORD}\.?\s+)"
 # "ulici Izmišljenoj 5a", "Ul. Izmišljena bb", "Trg izmišljenih 3". No "put": it also
