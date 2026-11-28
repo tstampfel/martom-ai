@@ -7,7 +7,7 @@ import { config } from './config'
 const shop = {
   name: 'Željezarija Martom',
   phone: config.shopPhone,
-  email: 'zeljezarija@martom-bekaert.com',
+  email: 'info@martom-bekaert.com',
   address: 'Krstine 106, Međugorje',
   hours: 'Pon–pet 07–16 · sub 07–14',
 } as const

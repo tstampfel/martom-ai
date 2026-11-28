@@ -200,9 +200,9 @@ def test_leaves_product_text_sizes_prices_ids_and_dates_alone(text: str) -> None
 
 
 def test_removes_customer_email_but_keeps_martoms() -> None:
-    text = "Pišite na pero.peric@example.com ili zeljezarija@martom-bekaert.com."
+    text = "Pišite na pero.peric@example.com ili info@martom-bekaert.com."
 
-    assert scrub_personal_data(text) == "Pišite na [email] ili zeljezarija@martom-bekaert.com."
+    assert scrub_personal_data(text) == "Pišite na [email] ili info@martom-bekaert.com."
 
 
 # --- names --------------------------------------------------------------------------
