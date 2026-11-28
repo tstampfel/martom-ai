@@ -191,7 +191,7 @@ resource "aws_ecs_task_definition" "chat_export" {
   cpu                      = 256
   memory                   = 512
   execution_role_arn       = aws_iam_role.task_execution.arn
-  # The only task with AWS permissions: PUT under chats/ in the export bucket.
+  # The only task with AWS permissions: PUT under chats/, get and delete under requests/.
   task_role_arn = aws_iam_role.chat_export_task.arn
 
   runtime_platform {
