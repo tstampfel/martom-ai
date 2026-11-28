@@ -834,7 +834,19 @@
   color: var(--color-on-dark);
 }
 
-/* Composer */
+/* Composer and the AI notice under it (web/2-clarify.html). */
+
+.composer-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-area .ai-notice {
+  margin-left: 20px;
+  max-width: 740px;
+}
+
 
 .composer {
   display: flex;
@@ -967,13 +979,25 @@
     font-size: 20px;
   }
 
-  .composer {
+  /* The input and the AI notice under it are pinned together (mobile/2-clarify.html). */
+  .composer-area {
     position: sticky;
     bottom: 0;
     margin: 0 calc(-1 * var(--gutter));
     padding: 12px var(--gutter) 20px;
-    border: 0;
+    gap: 8px;
     border-top: 1px solid var(--color-border);
+    background: var(--color-card);
+  }
+
+  .composer-area .ai-notice {
+    margin: 0 4px;
+    max-width: none;
+  }
+
+  .composer {
+    padding: 0;
+    border: 0;
     border-radius: 0;
     gap: 8px;
   }

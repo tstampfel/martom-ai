@@ -446,6 +446,11 @@
     gap: 16px;
   }
 
+  /* 10 px under the box, as in mobile/1-start.html. */
+  .ask .ai-notice {
+    margin-top: -6px;
+  }
+
   .ask__box {
     flex-direction: column;
     align-items: stretch;

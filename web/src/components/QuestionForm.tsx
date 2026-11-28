@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { copy } from '../copy'
 import { usePrefersReducedMotion, useTypingPlaceholder } from '../hooks'
+import { AiNotice } from './AiNotice'
 import { ArrowIcon } from './Icons'
 
 type QuestionFormProps = {
@@ -83,6 +84,8 @@ export function QuestionForm({ onSubmit, focusOnMount = false }: QuestionFormPro
           <ArrowIcon />
         </button>
       </div>
+      {/* EU AI Act Art. 50 (#151): said before the first message. */}
+      <AiNotice text={copy.aiNotice.start} tone="on-brand" />
     </form>
   )
 }

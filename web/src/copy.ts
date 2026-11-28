@@ -121,6 +121,30 @@ export const copy = {
       },
     ],
   },
+  // AI notice (EU AI Act Art. 50, #151), canvas version 1795853807-d861
+  // (Tomislav, 28 Nov 2026). `start` sits under the question box before the
+  // first message (docs/mockups/{web,mobile}/1-start.html), `chat` under the
+  // chat input from the first message on (2-clarify.html). `lead` is bold;
+  // `wide` is the web wording, `short` the phone one.
+  aiNotice: {
+    start: {
+      wide: {
+        lead: 'Odgovara AI savjetnik',
+        rest: ' (umjetna inteligencija), ne osoba. Cijene i količine potvrđuje Martom.',
+      },
+      short: { lead: 'Odgovara AI savjetnik', rest: ', ne osoba. Cijene potvrđuje Martom.' },
+    },
+    chat: {
+      wide: {
+        lead: 'Razgovarate s AI savjetnikom',
+        rest: ' (umjetna inteligencija), ne s osobom. Može pogriješiti, a cijene i količine potvrđuje Martom prije narudžbe.',
+      },
+      short: {
+        lead: 'Razgovarate s AI savjetnikom',
+        rest: ', ne s osobom. Može pogriješiti, cijene i količine potvrđuje Martom.',
+      },
+    },
+  },
   // The conversation (docs/mockups/{web,mobile}/2-clarify.html and 3-results.html).
   chat: {
     label: 'Razgovor sa savjetnikom',
