@@ -52,7 +52,7 @@ ITEM_NAMES: dict[Item, str] = {
     Item.PANEL: "Panel",
     Item.POST_BASE_PLATE: "Stup s pločicom",
     Item.PVC_CLIP: "PVC kopča",
-    Item.ANCHOR_M8X80: "Anker M8×80",
+    Item.ANCHOR_M8X80: "Tiplo anker M8×80",
     Item.ROLL_WELDED: "Varena ograda u roli",
     Item.POST_T: "T-stup",
     Item.POST_FOOT_PLATE: "Stup sa stopom",
@@ -60,7 +60,7 @@ ITEM_NAMES: dict[Item, str] = {
     Item.TENSIONER: "Zatezač (španer)",
     Item.TENSION_WIRE: "Nosiva žica (kolut 100 m)",
     Item.WIRE_HOLDER: "Nosač nosive žice",
-    Item.ANCHOR_M8X70: "Anker M8×70",
+    Item.ANCHOR_M8X70: "Anker vijak M8×70",
 }
 
 ROLL_LENGTH_M = 25  # fence-rules.md: a roll is 25 m

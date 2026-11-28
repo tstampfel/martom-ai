@@ -9,9 +9,12 @@ Martom's public phone number (036 651 427) is never mistaken for a model-made nu
 # ruff: noqa: RUF001, RUF003
 
 MARTOM_PHONE = "036 651 427"
+MARTOM_EMAIL = "info@martom-bekaert.com"
+CONTACT = f"{MARTOM_PHONE} ili {MARTOM_EMAIL}"
 
-# Toni, 26 Nov 2026: gates are out of scope; no gate line, no price.
-GATE = f"Za kapije se javite direktno Martomu: {MARTOM_PHONE}"
+# Tomislav, 28 Nov 2026 (#171, replaces Toni's 26 Nov "out of scope"): Martom makes gates
+# to order. Never a price, and no gate line in the BOM.
+GATE = f"Kapije radimo po narudžbi, javite se za ponudu: {CONTACT}"
 # Tomislav, 26 Nov 2026: a side over 300 m or a total over 1000 m gets no materials list.
 FENCE_TOO_LARGE = f"Za ograde ove veličine javite se direktno Martomu: {MARTOM_PHONE}"
 # Toni, 26 Nov 2026 14:52: concrete-in-soil posts are not in the BOM.
@@ -23,9 +26,20 @@ BOM_NOTE = (
     "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. "
     "Dostava se potvrđuje."
 )
-# fence-rules.md, "Concrete, installation and availability".
-INSTALLATION = (
-    "Martom montira ograde samo na postojeći betonski zid; cijena montaže je uvijek na upit."
+# Toni, 28 Nov 2026 (#171): fence-rules.md, "Concrete, installation and availability".
+# By arrangement only, within about 40 km; never priced and never in the calculator.
+INSTALLATION = f"Montažu radimo po dogovoru u krugu oko 40 km; javite se na {CONTACT}."
+# Toni, 28 Nov 2026 (#171): anchors are "prateći materijal", sold separately. The second
+# form only when this chat's materials list has an anchor line.
+ANCHORS_SOLD_SEPARATELY = "Ne, ankeri se kupuju posebno."
+ANCHORS_SOLD_SEPARATELY_IN_LIST = "Ne, ankeri se kupuju posebno; za vaš popis smo ih već uračunali."
+# Toni, 28 Nov 2026 (#171, "Anchors, final"): a drilling answer always names the anchor
+# type with its bit, never a bare "8 mm" or "10 mm".
+DRILLING_PANEL = "Stupovi panelne ograde (s pločicom): tiplo anker M8×80 – svrdlo ø10 mm SDS."
+# fence-rules.md, "Posts: two models": T-posts go into soil or concrete, no anchors.
+DRILLING_T_POST = "T-stupovi idu u zemlju ili u beton i ne trebaju ankere."
+DRILLING_FOOT_PLATE = (
+    "Stupovi sa stopom (ograda u roli): anker vijak M8×70 (može i M8×80) – svrdlo ø8 mm."
 )
 NO_CONCRETE_SALES = "Martom ne prodaje beton i ne izvodi građevinske radove; beton nabavljate sami."
 # fence-rules.md, "Welded roll fence": chain link rules are still pending from Toni.

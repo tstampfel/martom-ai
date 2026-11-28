@@ -8,6 +8,7 @@ sources:
   - "fence-rules.md: Welded roll fence > Bracing: support T-posts (potporni T-stupovi)"
   - "fence-rules.md: Still open (don't invent values)"
   - "Toni, 26.11.2026 14:52 (stupovi za betoniranje nisu u spisku materijala)"
+  - "Tomislav, 28.11.2026 (kapije po narudžbi, javite se za ponudu)"
 status: draft
 ---
 
@@ -26,7 +27,8 @@ status: draft
 
 ## Kapije
 
-- Kapije savjetnik ne računa. Kaže: **"Za kapije se javite direktno Martomu: 036 651 427"**.
+- Kapije se rade **po narudžbi** i savjetnik ih ne računa niti navodi cijenu. Kaže: **"Kapije radimo po narudžbi, javite se za ponudu: 036 651 427 ili info@martom-bekaert.com."**
+- Detalji o kapijama uz 3D panele: vidi "3D panelna ograda – kapije po narudžbi".
 
 ## Još nepotvrđeno: pitajte Martom
 

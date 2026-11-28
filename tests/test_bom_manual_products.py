@@ -37,7 +37,7 @@ def test_committed_config_has_the_m8x70_anchor_at_0_80_km() -> None:
     products = load_manual_products()
 
     anchor = products["anchor_m8x70"]
-    assert anchor.name == "Anker M8×70"
+    assert anchor.name == "Anker vijak M8×70"
     assert anchor.price_km == Decimal("0.80")
     assert anchor.source == "Toni 26.11.2026"
     assert anchor.last_confirmed == date(2026, 11, 26)

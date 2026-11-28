@@ -30,7 +30,8 @@ answer and asks where it came from:
 
 A sentence that names a price together with something that never has one (a gate,
 installation, "po narudžbi", "na upit", concrete posts, or an unpriced BOM line) fails
-even when the amount itself is known.
+even when the amount itself is known. A sentence that names a drill bit size ("svrdlo
+8 mm") without an anchor type fails too (#171): the bit depends on the anchor.
 
 The check is deliberately strict: a false alarm costs a retry (and at worst the plain
 search results); a missed one would show the customer an invented price or quantity.
@@ -217,9 +218,25 @@ _THOUSAND_WORDS = frozenset(
 )
 _WORD = re.compile(r"\w+")
 # The number phrases of agent/copy.py; `test_every_copy_text_passes` keeps them in step.
+# Installation "u krugu oko 40 km", the anchor names and their drill bits (#171: "tiplo
+# anker M8×80 → svrdlo ø10 mm") are fixed facts too, so the model may follow the drilling
+# rule; each counts only inside its own phrase (an anchor name, "svrdlo ø10 mm"), never as
+# a free size ("Žica ø8 mm" fails, review R1-2). `_check_drill_bits` checks the pairing.
+_M8 = r"M8\s*[×xX]\s*(?:70|80)\b"
 _COPY_PHRASES = re.compile(
-    r"\b10\s*[\u2013-]\s*15\s+dan\w*|\bRAL\s*(?:7016|6005)\b|\bod\s+0\s*m\b", re.IGNORECASE
+    r"\b10\s*[\u2013-]\s*15\s+dan\w*|\bRAL\s*(?:7016|6005)\b|\bod\s+0\s*m\b"
+    r"|\bu\s+krugu\s+oko\s+40\s*km\b"
+    r"|\bsvrdl\w*\s+(?:od\s+)?(?:ø|Ø|⌀|fi)\s*(?:8|10)\s*mm\b",
+    re.IGNORECASE,
 )
+# "tiplo anker M8×80", "anker vijak M8×70 (može i M8×80)": only the sizes are taken out,
+# so the anchor words stay for the rough-count check ("desetak tiplo ankera").
+_ANCHOR_NAME = re.compile(
+    rf"\banker\w*(?:\s+|-)(?:vij[a-z]*\s+)?{_M8}"
+    rf"(?:\s*\(?\s*(?:ili|može\s+i|moze\s+i|/)\s*{_M8}\s*\)?)?",
+    re.IGNORECASE,
+)
+_M8_SIZE = re.compile(_M8, re.IGNORECASE)
 # A currency after a vague amount ("pedesetak KM", "stotinjak maraka", "pola KM", "par
 # maraka", "nekoliko KM"): a price no tool gave (R3-2). A currency after any other word,
 # as in "Sve cijene su u KM.", is not a price.
@@ -338,14 +355,20 @@ def parse_km(text: str) -> Decimal | None:
 
 
 def check_grounding(
-    text: str, facts: Facts, *, known_numbers: Iterable[Decimal] = ()
+    text: str,
+    facts: Facts,
+    *,
+    known_numbers: Iterable[Decimal] = (),
+    drilling: bool = False,
 ) -> GroundingResult:
     """Each problem is one short English line, for the retry prompt and the logs.
 
     `known_numbers`: numbers from the customer (their messages and the fence spec), which
-    the answer may repeat, but never as a price.
+    the answer may repeat, but never as a price. `drilling`: the customer asked about
+    drilling for fence posts, so any anchor-bit size must name its anchor (#171).
     """
-    problems: list[str] = []
+    # On the raw text: the steps below strip the phrases this check reads (review R1-1).
+    problems: list[str] = _check_drill_bits(text, drilling=drilling)
     text = text.replace(copy.MARTOM_PHONE, " ")
     # Links first, then taken out: the digits of a slug aren't counts or prices.
     known_urls = set(facts.urls)
@@ -357,6 +380,7 @@ def check_grounding(
     # The numbers of the fixed copy count only inside their own phrase ("10–15 dana",
     # "RAL 7016"), never as a free count: "Trebate 10 stubova" must fail (R3a-1).
     text = _COPY_PHRASES.sub(" ", text)
+    text = _ANCHOR_NAME.sub(lambda match: _M8_SIZE.sub(" ", match.group(0)), text)
     text = _PER_ONE.sub(" ", text)
     known_prices = facts.price_set()
     for match in _MARKER_PRICE.finditer(text):
@@ -569,6 +593,82 @@ def _priced_never_priced(text: str, unpriced_names: Iterable[str]) -> list[str]:
                 "never priced (gate, installation, made to order or on request)"
             )
     return problems
+
+
+# An anchor drill bit: 8 or 10 mm, written "8 mm", "ø10", "ø 10 mm", "fi 8 mm".
+_ANCHOR_BIT = re.compile(
+    r"(?:(?:ø|Ø|⌀|\bfi)\s*(?P<marked>8|10)\b(?:\s*mm\b)?|\b(?P<plain>8|10)\s*mm\b)",
+    re.IGNORECASE,
+)
+# A sentence about fence posts or their anchors (so "svrdlo za beton 8 mm" is not).
+# "stube" (stairs) is not a post.
+_ANCHOR_CONTEXT = re.compile(
+    r"anker|tipl|\bstup|\bstub(?!e\b)|ograd|pločic|plocic|\bstop", re.IGNORECASE
+)
+# Anchor mentions, by type: the words first; a bare M8×70 / M8×80 counts only in a sentence
+# without them ("anker vijak M8×70 ili M8×80" is one vijak, not a vijak and a tiplo).
+_TIPLO_WORD = re.compile(r"\btipl\w*", re.IGNORECASE)
+_VIJAK_WORD = re.compile(r"\bvija?k\w*|\bvij[ck]\w*|anker-vij\w*", re.IGNORECASE)
+_TIPLO_SIZE = re.compile(r"M8\s*[×xX]\s*80\b", re.IGNORECASE)
+_VIJAK_SIZE = re.compile(r"M8\s*[×xX]\s*70\b", re.IGNORECASE)
+# The bit each anchor takes (Toni, 28 Nov 2026): tiplo anker M8×80 → ø10 mm SDS, anker
+# vijak M8×70 / M8×80 → ø8 mm.
+_TIPLO_BIT = "10"
+_VIJAK_BIT = "8"
+
+
+def _check_drill_bits(text: str, *, drilling: bool) -> list[str]:
+    """A drill bit for the anchors names its anchor, and the right one (#171, review R1-1).
+
+    Per sentence with "svrdl" and an 8 or 10 mm bit: in a fence or anchor sentence (or on
+    a drilling turn) the anchor type must be named, and a named anchor must take that bit
+    ("Tiplo anker M8×80 → svrdlo ø8 mm" fails). Other drill bits ("Svrdlo za beton 6 mm",
+    or 8 mm with no fence in sight on a product turn) are a product answer and pass
+    (review R1-3).
+    """
+    problems = []
+    for sentence in _SENTENCE_END.split(text):
+        if "svrdl" not in sentence.lower():
+            continue
+        bits = [
+            (m.start(), m.group("marked") or m.group("plain"))
+            for m in _ANCHOR_BIT.finditer(sentence)
+        ]
+        if not bits:
+            continue
+        mentions = _anchor_mentions(sentence)
+        quoted = sentence.strip()
+        if not mentions:
+            if drilling or _ANCHOR_CONTEXT.search(sentence):
+                problems.append(
+                    f"sentence '{quoted}' gives a drill bit size without the anchor type "
+                    "(tiplo anker M8x80 → ø10 mm, anker vijak M8x70 → ø8 mm)"
+                )
+            continue
+        for position, bit in bits:
+            # Each bit belongs to the nearest anchor named before it (or the first after
+            # it), so "tiplo … ø10 mm; anker vijak … ø8 mm" is checked pair by pair
+            # (review note on R2).
+            before = [kind for at, kind in mentions if at < position]
+            kind = before[-1] if before else mentions[0][1]
+            right = _TIPLO_BIT if kind == "tiplo" else _VIJAK_BIT
+            if bit != right:
+                anchor = "tiplo anker M8x80" if kind == "tiplo" else "anker vijak M8x70/M8x80"
+                problems.append(
+                    f"sentence '{quoted}' gives the wrong drill bit: {anchor} takes ø{right} mm"
+                )
+    return problems
+
+
+def _anchor_mentions(sentence: str) -> list[tuple[int, str]]:
+    """(position, "tiplo" | "vijak") for each anchor the sentence names, in order."""
+    words = [(m.start(), "tiplo") for m in _TIPLO_WORD.finditer(sentence)]
+    words += [(m.start(), "vijak") for m in _VIJAK_WORD.finditer(sentence)]
+    if words:
+        return sorted(words)
+    sizes = [(m.start(), "tiplo") for m in _TIPLO_SIZE.finditer(sentence)]
+    sizes += [(m.start(), "vijak") for m in _VIJAK_SIZE.finditer(sentence)]
+    return sorted(sizes)
 
 
 def _decimal(value: Any) -> Decimal | None:

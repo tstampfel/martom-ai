@@ -8,7 +8,7 @@
 #   last_confirmed  date of the last confirmation; after 90 days Toni reconfirms it
 
 [anchor_m8x70]
-name = "Anker M8×70"
+name = "Anker vijak M8×70"
 price_km = "0.80"
 source = "Toni 26.11.2026"
 last_confirmed = 2026-11-26

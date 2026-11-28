@@ -275,7 +275,7 @@ RUN_COLUMNS = frozenset(
         "applied_run_ids", "recheck_skipped", "retried_count", "failed_listing_ids",
         "final_request_interval", "error", "extracted", "allowlist_warnings",
         "rolling_refreshed", "rolling_deferred", "oldest_detail_age_days",
-        "detail_refresh_overdue",
+        "detail_refresh_overdue", "sponsored_count", "pinned_count",
     }
 )  # fmt: skip
 

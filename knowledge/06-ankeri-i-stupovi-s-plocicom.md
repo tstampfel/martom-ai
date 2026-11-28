@@ -8,7 +8,7 @@ sources:
   - "fence-rules.md: Panel fence > Concrete-in-soil posts (stupovi za betoniranje)"
   - "fence-rules.md: Welded roll fence > Posts: two models"
   - "Toni, 26.11.2026 14:29 (Tiplo anker FI 10 / M8×80)"
-  - "Toni, 26.11.2026 14:32 (svrdlo 8 mm SDS-plus za oba ankera)"
+  - "Toni, 28.11.2026 (tiplo anker M8×80: čahura ø10 s vijkom M8, svrdlo ø10 mm SDS; anker vijak M8×70 ili M8×80 bez čahure, svrdlo ø8 mm)"
 status: draft
 ---
 
@@ -17,19 +17,20 @@ status: draft
 ## Panelna ograda: stup s pločicom
 
 - Po stupu **4 ankera "Tiplo anker FI 10 / M8×80"**, i na kutnom stupu.
-- PVC klipse po stupu: **3** (paneli 83, 103 i 123 cm), **4** (153 cm), **5** (203 cm). Kutni stup ima duplo klipsi: 6 / 8 / 10. Krajnji stup ima isto kao obični stup.
+- Kutni stup ima duplo PVC klipsi od običnog stupa; krajnji stup ima isto kao obični stup. Broj klipsi po visini panela: vidi "3D panelna ograda – PVC kopče i samourezujući vijci".
 - Stupovi za betoniranje (bez pločice) **nemaju ankere**.
 
 ## Varena ograda u roli: stup sa stopom
 
-- Po stupu **3 ankera M8×70**. To nisu isti ankeri kao za panelnu ogradu.
+- Po stupu sa stopom (OLX 81645615, stopa s 3 rupe) **3 anker vijka M8×70** (bez čahure); kao zamjena može i anker vijak M8×80. To nisu isti ankeri kao tiplo anker za panelnu ogradu.
 - Boja stupa: zelena ili antracit.
 - T-stupovi idu u zemlju ili beton i ne trebaju ankere.
 
 ## Bušenje
 
-- Za oba ankera (M8×80 i M8×70) treba **svrdlo Ø 8 mm sa SDS-plus prihvatom**, dakle i **SDS-plus udarna bušilica**.
+- **Tiplo anker M8×80** (stup s pločicom, panelna ograda) je čahura ø10 s vijkom M8 unutra: **svrdlo ø10 mm, SDS**, dakle i SDS udarna bušilica.
+- **Anker vijak M8×70** (ili M8×80, stup sa stopom kod role) nema čahuru: **svrdlo ø8 mm**.
 
 ## Napomena
 
-Ankeri i klipse su pribor: posebne stavke koje kupac može izbaciti ako ih već ima.
+Ankeri se kupuju posebno, ne dolaze uz stupove. Ankeri i klipse su pribor: posebne stavke koje kupac može izbaciti ako ih već ima.

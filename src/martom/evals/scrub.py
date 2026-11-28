@@ -6,7 +6,9 @@ in our AWS account or a private repo), never to `evals/`, which holds only hand-
 or hand-reviewed cases that Tomislav or Toni approved, rewritten so no real customer
 wording, street or village remains. Every path that copies a customer chat into
 something kept longer than the chats themselves (a LangSmith dataset, a feedback
-example or a private export) must still pass it through `scrub_personal_data` first.
+example or a private export, `martom export-chats` in `export.py`) must still pass it
+through `scrub_personal_data` first. `address_matches` exposes the address patterns to the
+privacy guard on `evals/`, and `introduced_names` the intro patterns to the export.
 It replaces:
 
 - phone numbers with "[telefon]": BiH and HR numbers with a leading 0, "(061)", "+387",
@@ -222,6 +224,16 @@ _BB_STREET_RE = re.compile(
 # "..., 88000 Mostar"), so "Kod 12345 Panel" stays.
 _POSTAL_RE = re.compile(rf"(?m)(?:(?<=,)|(?<=, )|^)\d{{5}}\s+{_CAPITALISED}")
 
+# The address patterns that need no order form, in the order the scrub applies them after
+# the label: (pattern, keeps its first group). `address_matches` reuses them, so the
+# privacy guard on `evals/` (tests/test_fixture_privacy.py) and the scrub can't drift.
+_CONTEXT_ADDRESS_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
+    (_STREET_KEYWORD_RE, False),
+    (_STREET_AFTER_VERB_RE, True),
+    (_BB_STREET_RE, False),
+    (_POSTAL_RE, False),
+)
+
 # --- known names and addresses from the order form ----------------------------------
 
 # Letters a customer may type without their accent; "đ" is also written "dj" or "d".
@@ -253,6 +265,120 @@ def scrub_personal_data(
     return _scrub(value, name_res, address_res)
 
 
+def address_matches(text: str) -> list[str]:
+    """The addresses in `text` that the scrub would replace without an order form.
+
+    A labelled address ("Adresa: ..."), a street word with a house number, a street after
+    a delivery or living verb, a street ending in "bb" and a postal code with its town,
+    found by the same patterns `scrub_personal_data` uses (only the address part, never
+    the label or the verb). Used by the privacy guard on the committed eval files (#158).
+    """
+    found = [match.group(0)[len(match.group(1)) :] for match in _ADDRESS_LABEL_RE.finditer(text)]
+    for pattern, keeps_prefix in _CONTEXT_ADDRESS_PATTERNS:
+        for match in pattern.finditer(text):
+            prefix = match.group(1) if keeps_prefix else ""
+            found.append(match.group(0)[len(prefix) :])
+    return [address for address in found if address.strip() and address.strip() != ADDRESS]
+
+
+# A name word: 3+ letters, or parts joined by "-" or "'" ("Ana-Marija", "D'Angelo").
+_NAME_WORD_RE = re.compile(r"[^\W\d_]+(?:[-'\u2019][^\W\d_]+)*")
+# Words that follow a lower-case intro but are not a name ("zovem se pero zanima me ...").
+_NOT_NAME_WORDS = frozenset(
+    {
+        "i",
+        "a",
+        "ali",
+        "te",
+        "pa",
+        "iz",
+        "sa",
+        "s",
+        "je",
+        "sam",
+        "zanima",
+        "zanimaju",
+        "trebam",
+        "treba",
+        "trebao",
+        "trebala",
+        "hoću",
+        "hocu",
+        "želim",
+        "zelim",
+        "imam",
+        "molim",
+        "pozdrav",
+        "evo",
+        "me",
+        "mi",
+        "cijena",
+        "ograda",
+        "ogradu",
+        "panel",
+        "panele",
+        "mrežu",
+        "mreza",
+        "mreža",
+        "stub",
+        "stubove",
+    }
+)
+
+
+# A lower-case word after a name is kept only with a typical surname ending: -ić / -ic
+# (which covers -ović and -ević), with or without the accent.
+_SURNAME_ENDING_RE = re.compile(r"(?i)i[cć]$")
+
+
+def introduced_names(text: str) -> list[str]:
+    """The names a customer introduces in `text` ("Zovem se Pero Perić", "Ime: Ana").
+
+    A whole chat is scrubbed with these as `names`, so the advisor's "Pero, ..." two
+    turns later goes too, not only the intro itself (#158, the private chat export).
+
+    Every word returned is matched in every message, so only words that look like a name
+    are kept (R1-2): the intro's first word (customers type "zovem se pero" in lower
+    case), then the words right after it that are capitalised or, in lower case, end like
+    a surname (-ić / -ic, so -ović and -ević too), each of 3+ letters or joined by "-" /
+    "'" ("Ana-Marija"). "Zovem se Ivan zanima me cijena" gives "Ivan", "zovem se pero
+    kupujem nylofor panele" gives "pero", and "Ime: Marko Marić trebam panel 153 cm" gives
+    "Marko Marić", so product words survive elsewhere in the chat.
+
+    It prefers missing a rare surname to mangling product text (R3-1), so it misses a
+    lower-case surname with another ending ("zovem se ana kovač", "ivo jurina",
+    "pero babić-zovko") and a name with no intro at all; the intro message itself
+    is still scrubbed by `scrub_personal_data`, only the name's later mentions can stay.
+    """
+    found: list[str] = []
+    for pattern in (_INTRO_RE, _JA_SAM_RE, _NAME_LABEL_RE):
+        for match in pattern.finditer(text):
+            # The words after the intro, read from the text itself: the intro patterns stop
+            # at a "-" or "'", which would cut "Ana-Marija" to "Ana".
+            words = text[match.end(1) :].split(maxsplit=3)
+            name: list[str] = []
+            for raw in words[:3]:
+                word = raw.rstrip(".,;:!?")
+                letters = sum(char.isalpha() for char in word)
+                if (
+                    not _NAME_WORD_RE.fullmatch(word)
+                    or letters < 3
+                    or word.lower() in _NOT_NAME_WORDS
+                ):
+                    break
+                # After the first word: a capitalised word, or a lower-case one only when it
+                # ends like a BiH/HR surname ("zovem se pero perić"); anything else ends the
+                # name (R3-1), so "zovem se pero kupujem nylofor panele" gives "pero".
+                if name and not (word[0].isupper() or _SURNAME_ENDING_RE.search(word)):
+                    break
+                name.append(word)
+                if word != raw:  # "Marić," ends the name: a comma or full stop follows
+                    break
+            if name:
+                found.append(" ".join(name))
+    return found
+
+
 def _scrub(
     value: JsonValue, names: list[re.Pattern[str]], addresses: list[re.Pattern[str]]
 ) -> JsonValue:
@@ -277,10 +403,8 @@ def _scrub_text(text: str, names: list[re.Pattern[str]], addresses: list[re.Patt
     text = _NAME_LABEL_RE.sub(rf"\g<1>{NAME}", text)
     for address in addresses:
         text = address.sub(ADDRESS, text)
-    text = _STREET_KEYWORD_RE.sub(ADDRESS, text)
-    text = _STREET_AFTER_VERB_RE.sub(rf"\g<1>{ADDRESS}", text)
-    text = _BB_STREET_RE.sub(ADDRESS, text)
-    text = _POSTAL_RE.sub(ADDRESS, text)
+    for pattern, keeps_prefix in _CONTEXT_ADDRESS_PATTERNS:
+        text = pattern.sub(rf"\g<1>{ADDRESS}" if keeps_prefix else ADDRESS, text)
     text = _INTRO_RE.sub(rf"\g<1>{NAME}", text)
     text = _JA_SAM_RE.sub(rf"\g<1>{NAME}", text)
     for name in names:

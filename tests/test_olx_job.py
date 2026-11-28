@@ -27,6 +27,7 @@ from martom.olx.client import OlxClient
 from martom.olx.job import (
     RunStats,
     apply_skipped_run,
+    count_listing_markers,
     deactivation_allowed,
     recheck_allowed,
     recheck_listings,
@@ -328,6 +329,85 @@ async def test_a_changed_summary_fetches_the_detail_again(conn: psycopg.AsyncCon
     assert (await listings(conn))[2]["title"] == "Stup 120"
     run = await last_run(conn)
     assert (run["fetched"], run["changed"]) == (1, 1)
+
+
+async def test_an_olx_renewal_alone_costs_no_detail_request(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    """#179 (Toni, 28 Nov): normal listings are renewed ("Obnovi") every 7 days, featured
+    ones every 8 h or 24 h, and each renewal moves the OLX `date`. A renewal is not a
+    content change, so it must not put the listing into the run's must-do detail GETs."""
+    server = FakeShop({1: "Panel 83", 2: "Stup 100"})
+    await sync(conn, server)
+    hashes_before = {i: row["summary_hash"] for i, row in (await listings(conn)).items()}
+    server.requests.clear()
+    renewed = server.summary_row(1)
+    server.recorded[1] = {
+        **renewed,
+        "date": renewed["date"] + 24 * 3600,  # a 24 h featured renewal
+        "sponsored": 1,
+        "pinned": True,
+        "premium_badges": ["izdvojeno"],
+        "score": 9.5,
+        "refresh_available": True,
+    }
+
+    stats = await sync(conn, server)
+
+    assert server.detail_requests() == []
+    assert (stats.fetched, stats.changed) == (0, 0)
+    stored = await listings(conn)
+    assert {i: row["summary_hash"] for i, row in stored.items()} == hashes_before
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        ([], (0, 0)),
+        ([{"sponsored": 0}, {"sponsored": 1}, {"sponsored": 2}], (2, 0)),
+        ([{"sponsored": "1"}, {"sponsored": "0"}], (1, 0)),  # OLX sends some ints as text
+        ([{"pinned": True}, {"pinned": None}, {"pinned": False}, {}], (0, 1)),
+        ([{"pinned": 1}, {"pinned": "1"}, {"pinned": 0}, {"sponsored": True}], (1, 2)),
+        ([{"sponsored": 1, "pinned": True}, {"sponsored": None, "pinned": "true"}], (1, 1)),
+        ([{"sponsored": False}, {"sponsored": "x"}, {"sponsored": -1}], (0, 0)),
+    ],
+)
+def test_count_listing_markers(rows: list[dict[str, Any]], expected: tuple[int, int]) -> None:
+    """#179: raw OLX counts (sponsored > 0, pinned = true), never a guess at 'featured'."""
+    counts = count_listing_markers({i: row for i, row in enumerate(rows)})
+    assert (counts.sponsored, counts.pinned) == expected
+
+
+async def test_a_run_records_and_logs_its_sponsored_and_pinned_counts(
+    conn: psycopg.AsyncConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    server = FakeShop({1: "Panel 83", 2: "Stup 100", 3: "Kopča"})
+    server.recorded[1] = {**server.summary_row(1), "sponsored": 1, "pinned": True}
+    server.recorded[2] = {**server.summary_row(2), "sponsored": 2}
+    server.recorded[3] = {**server.summary_row(3), "sponsored": 0}
+
+    with caplog.at_level(logging.INFO, logger="martom.olx.job"):
+        stats = await sync(conn, server)
+
+    assert (stats.sponsored_count, stats.pinned_count) == (2, 1)
+    run = await last_run(conn)
+    assert (run["sponsored_count"], run["pinned_count"]) == (2, 1)
+    [summary] = [r for r in caplog.records if getattr(r, "event", None) == "sync_run"]
+    assert (summary.sponsored_count, summary.pinned_count) == (2, 1)
+    assert "sponsored 2, pinned 1" in summary.getMessage()
+
+
+async def test_a_run_that_never_read_the_listing_pages_records_no_counts(
+    conn: psycopg.AsyncConnection,
+) -> None:
+    server = FakeShop({1: "Panel 83"})
+    server.abort_on = "/users/martom/listings"
+
+    stats = await sync(conn, server)
+
+    assert stats.status == "partial"
+    run = await last_run(conn)
+    assert (run["sponsored_count"], run["pinned_count"]) == (None, None)
 
 
 async def test_full_run_fetches_every_detail_even_when_unchanged(

@@ -33,6 +33,9 @@
 # | LANGSMITH_API_KEY        | secret app:LANGSMITH_API_KEY      | secret app:LANGSMITH_API_KEY|
 #
 # AGENT_MODEL (Settings.agent_model, M4-3) is the advisor's Sonnet model; only the API reads it.
+#
+# CHAT_EXPORT_BUCKET (#158) is set only in the chat export task, in chat_export.tf, next to
+# the bucket it names; neither the API nor the job reads it.
 
 data "aws_caller_identity" "current" {}
 
@@ -204,7 +207,9 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
   policy = data.aws_iam_policy_document.read_secrets.json
 }
 
-# The app itself calls no AWS API, so the tasks get no task role (no AWS permissions).
+# The API and the job call no AWS API, so they get no task role (no AWS permissions).
+# The one exception is the chat export task (chat_export.tf), whose role may only PUT
+# into the private export bucket.
 
 # --- API service ---
 

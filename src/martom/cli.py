@@ -14,11 +14,21 @@ import uvicorn
 from pydantic import ValidationError
 
 from martom.api.admin import AdminTokenError, check_admin_token
+from martom.api.threads import is_wellformed_thread_id
 from martom.bom.manual_products import DEFAULT_PATH as MANUAL_PRODUCTS_PATH
 from martom.bom.manual_products import load_manual_products
 from martom.checkpointer import CheckpointerNotReadyError, setup_checkpointer
 from martom.embed_job import EmbedStats, run_embedding
 from martom.embeddings import EmbeddingError, make_embedder
+from martom.evals.export import (
+    ExportRequestError,
+    ExportTarget,
+    LocalDirTarget,
+    OutputInsideRepoError,
+    S3Target,
+    export_chats,
+    take_export_request,
+)
 from martom.extract.extractor import (
     Extractor,
     MissingApiKeyError,
@@ -139,10 +149,51 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="delete customer chats idle longer than CHAT_RETENTION_DAYS (nightly)",
     )
 
+    export_parser = commands.add_parser(
+        "export-chats",
+        help="export chosen chats, scrubbed, to the private S3 bucket (or a folder outside git)",
+    )
+    # A thread id may start with "-" (token_urlsafe): put the ids after "--" (R1-3).
+    export_parser.add_argument("thread_ids", nargs="*", metavar="THREAD_ID")
+    export_parser.add_argument(
+        "--request",
+        metavar="KEY",
+        help=(
+            "read the thread ids, names and addresses from this requests/ object in "
+            "CHAT_EXPORT_BUCKET and delete it (production: keeps them out of CloudTrail)"
+        ),
+    )
+    export_parser.add_argument(
+        "--out",
+        type=Path,
+        help="write to this folder instead of CHAT_EXPORT_BUCKET (refused inside a git checkout)",
+    )
+    export_parser.add_argument(
+        "--name",
+        action="append",
+        default=[],
+        help="a name from the order form to scrub (repeatable)",
+    )
+    export_parser.add_argument(
+        "--address",
+        action="append",
+        default=[],
+        help="an address from the order form to scrub (repeatable)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "purge-chats":
         return run_purge_chats_command()
+
+    if args.command == "export-chats":
+        return run_export_chats_command(
+            args.thread_ids,
+            request=args.request,
+            out=args.out,
+            names=args.name,
+            addresses=args.address,
+        )
 
     if args.command == "report":
         return run_report_command()
@@ -339,6 +390,88 @@ def run_purge_chats_command() -> int:
         print(f"purge-chats failed: database error: {reason}", file=sys.stderr)
         return 1
     print(f"purge-chats: deleted {stats.deleted_threads} threads idle for more than {days} days")
+    return 0
+
+
+def run_export_chats_command(
+    thread_ids: Sequence[str],
+    *,
+    request: str | None = None,
+    out: Path | None,
+    names: Sequence[str] = (),
+    addresses: Sequence[str] = (),
+) -> int:
+    """`martom export-chats`: exit 0 when every found chat was written, 1 otherwise.
+
+    The threads come from the command line or, with `--request`, from a request object
+    in the export bucket (production; see `take_export_request`). Prints counts and the
+    target only, never a thread id, a name or chat text.
+    """
+    if bool(thread_ids) == bool(request):
+        print("export-chats: give THREAD_IDs or --request KEY (one of the two)", file=sys.stderr)
+        return 1
+    try:
+        settings = Settings()
+    except ValidationError as exc:
+        print(f"invalid settings: {exc}", file=sys.stderr)
+        return 1
+    configure_logging(settings.log_level)
+    if request is not None and (out is not None or not settings.chat_export_bucket):
+        print("export-chats: --request reads from CHAT_EXPORT_BUCKET, not --out", file=sys.stderr)
+        return 1
+    if out is not None:
+        try:
+            target: ExportTarget = LocalDirTarget(out)
+        except OutputInsideRepoError as exc:
+            print(f"export-chats refused: {exc}", file=sys.stderr)
+            return 1
+        where = str(target.directory)
+        client = None
+    elif settings.chat_export_bucket:
+        # Imported here so every other command (the API included) starts without boto3.
+        import boto3
+
+        client = boto3.client("s3")
+        target = S3Target(client, settings.chat_export_bucket)
+        where = f"s3://{settings.chat_export_bucket}"
+    else:
+        print("export-chats: set CHAT_EXPORT_BUCKET or pass --out", file=sys.stderr)
+        return 1
+    # Also imported here, not at the top, so other commands never load botocore (R1-10).
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    if request is not None and client is not None and settings.chat_export_bucket:
+        try:
+            wanted = take_export_request(client, settings.chat_export_bucket, request)
+        except ExportRequestError as exc:
+            print(f"export-chats: invalid request: {exc}", file=sys.stderr)
+            return 1
+        except (BotoCoreError, ClientError) as exc:
+            print(f"export-chats failed: could not read the request: {exc}", file=sys.stderr)
+            return 1
+        thread_ids = wanted.thread_ids
+        names = [*names, *wanted.names]
+        addresses = [*addresses, *wanted.addresses]
+    if not all(is_wellformed_thread_id(thread_id) for thread_id in thread_ids):
+        print("export-chats: every THREAD_ID must be a server-issued thread id", file=sys.stderr)
+        return 1
+    try:
+        stats = asyncio.run(
+            export_chats(
+                settings.database_url, thread_ids, target, names=names, addresses=addresses
+            )
+        )
+    except CheckpointerNotReadyError as exc:
+        print(f"export-chats failed: {exc}", file=sys.stderr)
+        return 1
+    except psycopg.Error as exc:
+        reason = " ".join(str(exc).split())
+        print(f"export-chats failed: database error: {reason}", file=sys.stderr)
+        return 1
+    except (BotoCoreError, ClientError, OSError) as exc:
+        print(f"export-chats failed: could not write to {where}: {exc}", file=sys.stderr)
+        return 1
+    print(f"export-chats: exported {stats.exported} chats to {where} ({stats.missing} not found)")
     return 0
 
 
