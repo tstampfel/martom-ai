@@ -53,11 +53,11 @@ PRICE_KEYS = frozenset({"price", "unit_price", "line_total", "total"})
 # One amount: "1.234,50" / "1 234,50" (grouped thousands), "53,00", "24.90", "53", "49,-".
 _AMOUNT = r"(?:\d{1,3}(?:[.\u00a0 ]\d{3})+(?:,\d{1,2}|,-)?|\d+(?:[.,]\d{1,2})?(?:,-)?)"
 _KM = r"(?:KM\b|BAM\b|konvertibiln\w*\s+mar\w*|mar(?:ka|aka|ke|ki)\b)"
-_EURO = r"(?:€|EUR\b|eur[ao]?\b|euro\w*)"
+# "Eurofence" is a product line (copy.EUROFENCE_*), not a euro amount (#134 R1-1).
+_EURO = r"(?:€|EUR\b|eur[ao]?\b|euro(?!fenc)\w*)"
 _CURRENCY = rf"(?:{_KM}|{_EURO})"
 _PRICE = re.compile(
-    # "12. KM" / "12) KM": a list-marker dot or bracket between amount and currency (#134).
-    rf"(?<![\d.,])(?P<after>{_AMOUNT})(?:[.)](?=\s))?\s*(?P<cur_after>{_CURRENCY})"
+    rf"(?<![\d.,])(?P<after>{_AMOUNT})\s*(?P<cur_after>{_CURRENCY})"
     rf"|(?P<cur_before>{_CURRENCY})\s*(?P<before>{_AMOUNT})(?![\d.,]*\d)",
     re.IGNORECASE,
 )
@@ -98,9 +98,16 @@ NEVER_PRICED = (
 )
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 # A numbered list marker at the start of a line ("1. PANEL", "2) Stup"): not a claim (R2-3).
-# A number with a currency after it ("Ukupno:\n12. KM") is a price, never a marker (#134).
-_LIST_MARKER = re.compile(
-    rf"^(\s*)\d{{1,2}}[.)](?=\s)(?!\s*{_CURRENCY})", re.MULTILINE | re.IGNORECASE
+_LIST_MARKER = re.compile(r"^(\s*)\d{1,2}[.)](?=\s)", re.MULTILINE)
+# ... unless a currency follows it directly and no other number follows on that line: then
+# it is a price ("Ukupno:\n12. KM", #134). "1. KM 53,00" (the price is 53,00) and
+# "1. Eurofence panel" (a product line, not a euro) stay markers, so the euro form here is
+# word-bounded instead of `_EURO`'s "euro\w*", and leaves out "euro" itself, which starts
+# product titles ("1. EURO PANEL ZELENI"; #134 R1-1).
+_MARKER_CURRENCY = rf"(?:{_KM}|€|EUR\b|eura\b|eur(?:ima|om)\b)"
+_MARKER_PRICE = re.compile(
+    rf"^\s*(?P<amount>\d{{1,2}})[.)]\s*(?P<currency>{_MARKER_CURRENCY})(?![^\n]*\d)",
+    re.MULTILINE | re.IGNORECASE,
 )
 # "2 prijedloga", "dva prijedloga": how many suggestions the answer makes, not a quantity.
 _SUGGESTION_NOUN = re.compile(
@@ -108,26 +115,53 @@ _SUGGESTION_NOUN = re.compile(
     r"mogucnost\w*|načina|nacina)\b",
     re.IGNORECASE,
 )
-# What may follow the suggestion noun for the count to stay exempt (#134): punctuation, the
-# end, or a joining word ("dva prijedloga za vašu ogradu", "... koja odgovaraju"). Any other
-# word may be a product noun ("7 varijanti panela", "pet opcija stubova"), so it is checked.
-_AFTER_SUGGESTION = re.compile(
-    r"\s*(?:[^\w\s]|$)|\s+(?:za|kako|koj\w*|što|sto|i|ili|ali|a|su)\b", re.IGNORECASE
-)
 MAX_SUGGESTIONS = 10
+# Products and materials Martom sells, as Bosnian stems (#134, manager's decision): a count
+# of suggestions followed by one of them ("7 varijanti panela", "pet opcija stubova") is
+# checked like any count, and a rough count before one ("desetak stubova") fails. Before
+# any other word both pass ("tri opcije iz naše ponude", "par savjeta", "par rukavica").
+# One word may stand between them ("petnaestak dodatnih kopči"), unless it is a joining
+# word ("dva prijedloga za stubove" is about suggestions). Add a product here when the
+# advisor starts selling one.
+_PRODUCT_NOUN = re.compile(
+    r"(?:stub|stup|panel|kopč|kopc|žic|zic|anker|vijak|vijk|vijc|šaraf|saraf|matic|"
+    r"podlošk|podlosk|zatezač|zatezac|zatezn|podupirač|podupirac|potporn|upornj|"
+    r"rol(?:a|e|i|u|n|ama)|kapij|vrata\b|vratnic|mrež|mrez|ograd|pločic|plocic|"
+    r"šipk|sipk|cijev|profil|traka|trake|traku|sajl|lanac|lanc|beton|cement|vreć|vrec|"
+    r"kutij|paket|komad|kom\b|metar|metr|metara)\w*",
+    re.IGNORECASE,
+)
+_JOIN_WORDS = frozenset(
+    [
+        "za",
+        "u",
+        "iz",
+        "na",
+        "s",
+        "sa",
+        "od",
+        "do",
+        "po",
+        "prema",
+        "i",
+        "ili",
+        "ali",
+        "a",
+        "kako",
+        "što",
+        "sto",
+        "su",
+        "je",
+    ]
+)
 # Rough counts in words ("desetak stubova", "dvadesetak panela", "stotinjak vijaka", "par
-# stubova"): a quantity no tool gave, so it fails before a product noun (#134, manager's
-# decision). Before a suggestion noun ("par prijedloga") or a time ("za par dana") it passes;
-# before a currency, `_VAGUE_PRICE` reports it. "nekoliko" is not one: it is too common
-# outside counts ("Još nekoliko podataka:").
+# stubova"): a quantity no tool gave, so it fails before a product noun (#134); before a
+# currency, `_VAGUE_PRICE` reports it. "nekoliko" is not one: it is too common outside
+# counts ("Još nekoliko podataka:").
 _ROUGH_COUNT = re.compile(
     r"\b(?:(?:jedanaest|dvanaest|trinaest|četrnaest|cetrnaest|petnaest|šesnaest|sesnaest|"
     r"sedamnaest|osamnaest|devetnaest|deset|dvadeset|trideset|četrdeset|cetrdeset|pedeset|"
     r"šezdeset|sezdeset|sedamdeset|osamdeset|devedeset)ak|stotin(?:j?ak)|par)\b",
-    re.IGNORECASE,
-)
-_TIME_NOUN = re.compile(
-    r"\s+(?:dan\w*|sat\w*|minut\w*|sekund\w*|sedmic\w*|tjed\w*|mjesec\w*|godin\w*|put\w*)\b",
     re.IGNORECASE,
 )
 
@@ -318,6 +352,14 @@ def check_grounding(
     # "RAL 7016"), never as a free count: "Trebate 10 stubova" must fail (R3a-1).
     text = _COPY_PHRASES.sub(" ", text)
     text = _PER_ONE.sub(" ", text)
+    known_prices = facts.price_set()
+    for match in _MARKER_PRICE.finditer(text):
+        phrase = f"{match.group('amount')} {match.group('currency')}"
+        if not re.fullmatch(_KM, match.group("currency"), re.IGNORECASE):
+            problems.append(f"price '{phrase}' is in euros; Martom prices are in KM")
+        elif Decimal(match.group("amount")) not in known_prices:
+            problems.append(f"price '{phrase}' is not in any tool result")
+    text = _MARKER_PRICE.sub(" ", text)
     text = _LIST_MARKER.sub(r"\1", text)
     text = _strip_suggestion_counts(text)
     # A manual product's key is checked like a listing id, then taken out, so the digits
@@ -327,7 +369,6 @@ def check_grounding(
         if match.group(0) not in known_keys:
             problems.append(f"product key {match.group(0)} is not in any tool result")
     text = _MANUAL_KEY.sub(" ", text)
-    known_prices = facts.price_set()
     for match in _PRICE.finditer(text):
         amount = parse_km(match.group("after") or match.group("before"))
         currency = match.group("cur_after") or match.group("cur_before")
@@ -456,10 +497,28 @@ def _check_number_words(text: str, known_prices: set[Decimal], allowed: set[Deci
     return problems
 
 
+_NEXT_WORD = re.compile(r"[^\S\n]+(\w+)")
+
+
+def _product_noun_after(text: str, end: int) -> str | None:
+    """The words up to a product noun right after `end` (one word may stand between)."""
+    first = _NEXT_WORD.match(text, end)
+    if first is None:
+        return None
+    if _PRODUCT_NOUN.fullmatch(first.group(1)):
+        return first.group(1)
+    if first.group(1).lower() in _JOIN_WORDS:
+        return None
+    second = _NEXT_WORD.match(text, first.end())
+    if second is not None and _PRODUCT_NOUN.fullmatch(second.group(1)):
+        return f"{first.group(1)} {second.group(1)}"
+    return None
+
+
 def _is_suggestion_count(text: str, end: int) -> bool:
     """A suggestion noun starts at `end` and no product noun follows it (#134)."""
     noun = _SUGGESTION_NOUN.match(text, end)
-    return noun is not None and _AFTER_SUGGESTION.match(text, noun.end()) is not None
+    return noun is not None and _product_noun_after(text, noun.end()) is None
 
 
 def _strip_suggestion_counts(text: str) -> str:
@@ -479,16 +538,11 @@ def _strip_suggestion_counts(text: str) -> str:
 def _check_rough_counts(text: str) -> list[str]:
     problems = []
     for match in _ROUGH_COUNT.finditer(text):
-        rest = text[match.end() :]
-        if (
-            _is_suggestion_count(text, match.end())
-            or _TIME_NOUN.match(rest)
-            or re.match(rf"\s+{_CURRENCY}", rest, re.IGNORECASE)  # `_VAGUE_PRICE` has it
-            or not re.match(r"\s+\w", rest)
-        ):
-            continue
-        phrase = text[match.start() :].split(maxsplit=2)[:2]
-        problems.append(f"rough count '{' '.join(phrase)}' is not a quantity from any tool result")
+        product = _product_noun_after(text, match.end())
+        if product is not None:
+            problems.append(
+                f"rough count '{match.group(0)} {product}' is not a quantity from any tool result"
+            )
     return problems
 
 

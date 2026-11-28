@@ -604,3 +604,111 @@ def test_scheme_less_link_a_tool_returned_passes() -> None:
 def test_bare_domain_or_slash_text_is_not_a_link(text: str) -> None:
     result = check_grounding(text, facts())
     assert result.ok, result.problems
+
+
+# --- #134 review round 1 -----------------------------------------------------------------
+
+
+# R1-1: a list marker is a price only when a currency follows directly and no number after it.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "1. Eurofence panel\n2. Stup",
+        "1. EURO PANEL ZELENI\n2. Stup",
+        "1. KM 53,00 za panel\n2. Stup",
+        "1. KM 53,00",
+        "1) Eurofence panel",
+    ],
+)
+def test_list_marker_before_a_product_or_a_currency_first_price_passes(text: str) -> None:
+    result = check_grounding(text, Facts(prices=["53.00"]))
+    assert result.ok, result.problems
+
+
+def test_list_marker_before_a_currency_first_price_still_checks_the_price() -> None:
+    result = check_grounding("1. KM 49,00", Facts(prices=["53.00"]))
+    assert not result.ok
+    assert all("'1" not in problem for problem in result.problems)
+
+
+@pytest.mark.parametrize("text", ["Ukupno:\n12. eura", "Ukupno:\n12) EUR", "Ukupno:\n12. eurima"])
+def test_list_marker_before_a_euro_is_a_euro_price(text: str) -> None:
+    result = check_grounding(text, Facts(prices=["12"]))
+    assert not result.ok
+    assert any("euros" in problem for problem in result.problems)
+
+
+# R1-2: a rough count passes before any word that is not a product or material.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Evo par savjeta:",
+        "Imam par pitanja:",
+        "Samo par napomena:",
+        "U par koraka do ograde.",
+        "Par stvari za provjeriti:",
+        "Imam još par informacija.",
+        "Par rukavica uvijek dobro dođe.",
+        "Desetak godina traje.",
+        "Za par minuta.",
+        "Par savjeta za stubove:",
+    ],
+)
+def test_rough_count_of_non_products_passes(text: str) -> None:
+    result = check_grounding(text, Facts())
+    assert result.ok, result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Trebate par metara žice.",
+        "Uzmite desetak ankera.",
+        "Treba vam par rola.",
+        "Dodajte dvadesetak komada.",
+        "Uzmite par zatezača.",
+    ],
+)
+def test_rough_count_of_materials_fails(text: str) -> None:
+    result = check_grounding(text, Facts())
+    assert not result.ok
+
+
+# R1-3: the suggestion exemption holds before prepositions and other non-product words.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Evo tri opcije iz naše ponude:",
+        "Imam dva prijedloga u nastavku:",
+        "Imam dvije opcije s različitim visinama.",
+        "Postoje dva načina na koja možete:",
+        "Imam 3 prijedloga od kojih je prvi najjeftiniji.",
+        "Evo tri varijante boje: zelena, antracit i bijela.",
+        "Imam dva prijedloga za stubove.",
+    ],
+)
+def test_suggestion_count_before_a_non_product_word_passes(text: str) -> None:
+    result = check_grounding(text, Facts())
+    assert result.ok, result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Imam tri prijedloga zelenih panela.", "Postoje 4 varijante ankera.", "Imam 2 opcije mreže."],
+)
+def test_suggestion_count_before_a_product_noun_is_checked(text: str) -> None:
+    assert not check_grounding(text, Facts()).ok
+
+
+# R1-4: the problem quotes the words without punctuation.
+def test_rough_count_problem_has_no_punctuation() -> None:
+    result = check_grounding("Uzmite par stubova.", Facts())
+    assert "rough count 'par stubova'" in result.problems[0]
+
+
+def test_eurofence_title_with_a_number_is_not_a_euro_price() -> None:
+    found = Facts(numbers=["3"])
+    for text in ["Preporučujem Eurofence 3D.", "EUROFENCE 3D panel je dostupan."]:
+        assert check_grounding(text, found).ok, check_grounding(text, found).problems
+    assert not check_grounding("Panel je 3 eura.", found).ok
+    assert not check_grounding("Panel je euro 3.", found).ok
