@@ -358,7 +358,10 @@ def build_graph(
             try:
                 output = await _run_tool(name, call["args"], ctx)
             except FenceTooLargeToolError as exc:
-                contact, bom, bom_changed, bom_facts = True, None, True, Facts()
+                # `bom_changed` tells the browser to drop a list it shows: only when one
+                # was shown (review R1-3, #147), as `_bom_update` does.
+                bom_changed = bom_changed or bom is not None
+                contact, bom, bom_facts = True, None, Facts()
                 results.append(_tool_error(call_id, name, str(exc)))
                 continue
             except ToolError as exc:
@@ -377,7 +380,7 @@ def build_graph(
             else:
                 facts = facts.merge(facts_from_output(output, skip_keys=skip))
             if name == "add_to_cart":
-                cart.append(output["cart_line"])
+                cart = _with_cart_line(cart, output["cart_line"])
             content = json.dumps(output, ensure_ascii=False)
             results.append(ToolMessage(content, tool_call_id=call_id, name=name))
         return {
@@ -472,6 +475,21 @@ async def _run_tool(name: str, args: dict[str, Any], ctx: ToolContext) -> dict[s
         fields = ", ".join(".".join(map(str, e["loc"])) or "input" for e in exc.errors())
         raise ToolError(f"invalid arguments: {fields}") from None
     return await tool.handler(parsed, ctx)
+
+
+def _with_cart_line(cart: list[dict[str, Any]], line: dict[str, Any]) -> list[dict[str, Any]]:
+    """`cart` with `line` added; a line for the same product variant replaces the old one.
+
+    So a grounding retry that calls add_to_cart again can't add the product twice
+    (review R1-2, #147); the last call wins and keeps the first one's place.
+    """
+
+    def key(item: dict[str, Any]) -> tuple[Any, ...]:
+        return (item["source"], item["listing_id"], item["manual_key"], item["variant_label"])
+
+    if any(key(item) == key(line) for item in cart):
+        return [line if key(item) == key(line) else item for item in cart]
+    return [*cart, line]
 
 
 def _tool_error(call_id: str, name: str, message: str) -> ToolMessage:

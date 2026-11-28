@@ -403,8 +403,8 @@ upit"). Prices are illustrative.
 ### `bom_cleared`
 
 The materials list on screen no longer fits: hide the `bom` card, its total and any
-quantity edits. Sent when the customer changed the fence (type, height, sides, layout,
-posts, panel width, post spacing or colour) after a list was shown, or when the advisor
+quantity edits. Sent only after a list was shown, when the customer changed the fence
+(type, height, sides, layout, posts, panel width, post spacing or colour) or the advisor
 can't calculate the new fence (too large, chain link), also on a turn that asks clarify
 questions. It carries no other field. The next `bom` event brings the new list (Tomislav,
 28 Nov 2026, #147: no stale list or total may be visible).
@@ -418,11 +418,17 @@ questions. It carries no other field. The next `bom` event brings the new list (
 Products the advisor added to the customer's cart (korpa) in this turn, because the
 customer asked (the `add_to_cart` tool); only this turn's additions, so add them to the
 cart the browser keeps (the korpa page is #27). Title, link, variant and `unit_price`
-come from the database or `manual_products.toml`, the quantity is the one the tool
-accepted, and `line_total` (`unit_price` × `quantity`, `null` when the price is "na
+come from the database or `manual_products.toml`, and `line_total` (`unit_price` × `quantity`, `null` when the price is "na
 upit") is worked out by the server. A manual product (`source` `"manual"`) has
 `listing_id` and `url` `null` and its `manual_key`, as on a product card. Prices are
 illustrative.
+
+The quantity is grounded like any number in an answer: a line is sent only when its
+quantity is a whole number the customer wrote, the quantity of a line of the current
+materials list, or 1 when the customer's message had no number at all; any other line is
+left out. A turn whose answer failed the grounding check (the plain search list) sends no
+`cart`. The same product variant added twice in one turn (a retry) is one line, with the
+last quantity.
 
 ```json
 {

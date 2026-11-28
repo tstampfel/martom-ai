@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 
+from martom.agent.grounding import numbers_in
 from martom.agent.understand import total_length_text
 from martom.api import chat_copy
 from martom.api.chat_events import (
@@ -112,17 +113,59 @@ def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
 def cart_lines(state: Mapping[str, Any]) -> list[CartLine]:
     """This turn's cart additions (the add_to_cart results the graph collected).
 
-    Prices and quantities are the tool's, never the model's text; the line total is
-    worked out in Python (`CartLine.from_tool`). A line that breaks the contract is
-    skipped and logged by type only, like a product card.
+    Title, link and price are the tool's; the line total is worked out in Python
+    (`CartLine.from_tool`). The quantity is the model's own add_to_cart argument, so a
+    line goes out only when it is grounded (`grounded_cart_quantities`, review R1-1):
+    nothing on a fallback turn, whose answer grounding rejected. A line that breaks the
+    contract or has an ungrounded quantity is dropped and logged by count only.
     """
+    cart = state.get("cart") or []
+    if not cart or state.get("fallback") or state.get("generate_failed"):
+        return []
+    allowed = grounded_cart_quantities(state)
     lines: list[CartLine] = []
-    for cart_line in state.get("cart") or []:
+    ungrounded = invalid = 0
+    for cart_line in cart:
+        if cart_line.get("quantity") not in allowed:
+            ungrounded += 1
+            continue
         try:
             lines.append(CartLine.from_tool(cart_line))
-        except (ValueError, TypeError, ArithmeticError) as exc:
-            logger.info("cart line skipped", extra={"error": type(exc).__name__})
+        except (ValueError, TypeError, ArithmeticError):
+            invalid += 1
+    if ungrounded or invalid:
+        logger.info("cart lines dropped", extra={"ungrounded": ungrounded, "invalid": invalid})
     return lines
+
+
+def grounded_cart_quantities(state: Mapping[str, Any]) -> set[int]:
+    """The quantities a cart line may carry (Tomislav's rule for #147, review R1-1).
+
+    A whole number the customer wrote in any of their messages, or the quantity of a line
+    of the current materials list. 1 only when the customer's message this turn has no
+    number at all ("Dodaj panel u korpu"), the natural default.
+    """
+    messages = state.get("messages", [])
+    allowed: set[int] = set()
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            allowed.update(_whole_numbers(message.text))
+    bom = state.get("bom") or {}
+    allowed.update(
+        line["quantity"] for line in bom.get("lines", []) if isinstance(line.get("quantity"), int)
+    )
+    last = _last_customer_message(messages)
+    if last is None or not numbers_in(last.text):
+        allowed.add(1)
+    return allowed
+
+
+def _whole_numbers(text: str) -> set[int]:
+    return {int(number) for number in numbers_in(text) if number == number.to_integral_value()}
+
+
+def _last_customer_message(messages: list[BaseMessage]) -> HumanMessage | None:
+    return next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
 
 
 def search_step_text(count: int) -> str:

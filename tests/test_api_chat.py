@@ -206,6 +206,56 @@ def test_a_cart_turn_sends_a_cart_event_with_tool_quantities_and_prices(
     ]
 
 
+def cart_probe(message: str, *answers: AIMessage, quantity: int) -> list[dict[str, Any]]:
+    add = {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": quantity}
+    replies: list[AIMessage] = []
+    for answer in answers:  # each answer follows its own add_to_cart call (a retry calls again)
+        replies += [tool_call("add_to_cart", add), answer]
+    service = make_service(Recorder(understanding(request="product")), replies)
+    events = post(client(service), {"message": message})
+    for event in events:
+        jsonschema.validate(event, SCHEMA)
+    return events
+
+
+def test_a_cart_quantity_nobody_gave_sends_no_cart_event() -> None:
+    # Review R1-1 repro A: no number in the answer, so grounding passes; 37 x 53.00
+    # must still never reach the korpa.
+    events = cart_probe(
+        "Dodaj panel 153 u korpu", AIMessage("Dodao sam panele u korpu."), quantity=37
+    )
+    assert "cart" not in [event["type"] for event in events]
+    assert "".join(e["text"] for e in events if e["type"] == "token") == (
+        "Dodao sam panele u korpu."
+    )
+
+
+def test_a_grounding_fallback_turn_sends_no_cart_event() -> None:
+    # Review R1-1 repro B: grounding rejects "37 panela" twice; the fallback list goes out
+    # and the rejected 37 x 53.00 must not go into the korpa.
+    events = cart_probe(
+        "Dodaj panel 153 u korpu",
+        AIMessage("Dodao sam 37 panela u korpu."),
+        AIMessage("Dodao sam 37 panela u korpu."),
+        quantity=37,
+    )
+    assert "cart" not in [event["type"] for event in events]
+    text = "".join(e["text"] for e in events if e["type"] == "token")
+    assert "37" not in text
+
+
+def test_a_grounding_retry_sends_each_cart_line_once() -> None:
+    # Review R1-2 repro C: the retry calls add_to_cart(3) again; 3 panels, not 6.
+    events = cart_probe(
+        "Dodaj 3 panela 153 u korpu",
+        AIMessage("Dodao sam 37 panela u korpu."),
+        AIMessage("Dodao sam 3 panela u korpu."),
+        quantity=3,
+    )
+    cart = next(event for event in events if event["type"] == "cart")
+    assert [line["quantity"] for line in cart["lines"]] == [3]
+
+
 def test_a_chain_link_turn_offers_contact_martom(caplog: pytest.LogCaptureFixture) -> None:
     service = make_service(Recorder(understanding(request="fence_chain_link", lengths=["30 m"])))
     with caplog.at_level(logging.INFO, logger="martom.api"):

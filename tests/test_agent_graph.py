@@ -30,6 +30,7 @@ from tests.agent_fakes import (
 )
 
 from martom.agent import copy
+from martom.agent import graph as graph_module
 from martom.agent.catalogue import ProductInfo
 from martom.agent.graph import (
     MAX_REWRITES,
@@ -39,6 +40,7 @@ from martom.agent.graph import (
     build_graph,
 )
 from martom.agent.prompts import Grade, Rewrite
+from martom.agent.tools import FenceTooLargeToolError
 from martom.bom.manual_products import ManualProduct, load_manual_products
 
 pytestmark = pytest.mark.anyio
@@ -334,6 +336,66 @@ async def test_add_to_cart_records_the_database_price() -> None:
         }
     ]
     assert result["answer"] == "Dodao sam 10 panela u korpu."
+
+
+async def test_a_grounding_retry_never_adds_a_cart_line_twice() -> None:
+    # Review R1-2: the retry keeps `cart`, and the model may call add_to_cart again.
+    add = {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 3}
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [
+            tool_call("add_to_cart", add),
+            AIMessage("Dodao sam 37 panela u korpu."),  # 37: fails grounding, retry
+            tool_call("add_to_cart", add),
+            AIMessage("Dodao sam 3 panela u korpu."),
+        ],
+    )
+    result = await ask(graph, "Dodaj 3 panela 153 u korpu")
+    assert result["answer"] == "Dodao sam 3 panela u korpu."
+    assert [line["quantity"] for line in result["cart"]] == [3]
+
+
+async def test_a_second_call_for_the_same_variant_replaces_its_line() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product")),
+        [
+            tool_call(
+                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 3}
+            ),
+            tool_call(
+                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "103 × 250", "quantity": 2}
+            ),
+            tool_call(
+                "add_to_cart", {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 5}
+            ),
+            AIMessage("Gotovo."),
+        ],
+    )
+    result = await ask(graph, "Dodaj 5 panela 153 i 2 panela 103")
+    assert [(line["variant_label"], line["quantity"]) for line in result["cart"]] == [
+        ("153 × 250", 5),
+        ("103 × 250", 2),
+    ]
+
+
+async def test_a_too_large_tool_result_clears_no_list_when_none_was_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review R1-3: `bom_changed` means a list on screen must go; there was none.
+    async def too_large(args: Any, ctx: Any) -> dict[str, Any]:
+        raise FenceTooLargeToolError(copy.FENCE_TOO_LARGE)
+
+    tools = dict(graph_module.TOOLS_BY_NAME)
+    tools["calculate_fence_bom"] = replace(tools["calculate_fence_bom"], handler=too_large)
+    monkeypatch.setattr(graph_module, "TOOLS_BY_NAME", tools)
+    graph = make_graph(
+        Recorder(understanding(height="153 cm", lengths=["25 m"], layout="straight")),
+        [tool_call("calculate_fence_bom"), AIMessage("Javite se Martomu.")],
+    )
+    result = await ask(graph, "Panelna ograda 25 m, 153 cm")
+    assert result["contact_martom"] is True
+    assert result["bom"] is None
+    assert result["bom_changed"] is False
 
 
 async def test_tool_errors_go_back_to_the_model() -> None:
