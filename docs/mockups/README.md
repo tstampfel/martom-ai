@@ -4,12 +4,12 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it.
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it; the two Privatnost screens (`web/` and `mobile/` `6-privatnost.html`) and the start and cart/order screens, whose "Privatnost" links now open them, from `1795850976-906d` (M6-5b), the only screens that changed in it.
 
 | Canvas | Repo |
 | --- | --- |
-| Web1Start · Web2Clarify · Web3Results · Web4Order · Web5Done | `web/1-start.html` · `2-clarify.html` · `3-results.html` · `4-cart-order.html` · `5-sent.html` |
-| Main · Clarify · Results · Order · Done | `mobile/1-start.html` · `2-clarify.html` · `3-results.html` · `4-cart-order.html` · `5-sent.html` |
+| Web1Start · Web2Clarify · Web3Results · Web4Order · Web5Done · Web6Privatnost | `web/1-start.html` · `2-clarify.html` · `3-results.html` · `4-cart-order.html` · `5-sent.html` · `6-privatnost.html` |
+| Main · Clarify · Results · Order · Done · Privatnost | `mobile/1-start.html` · `2-clarify.html` · `3-results.html` · `4-cart-order.html` · `5-sent.html` · `6-privatnost.html` |
 
 When you sync, copy layout, colours, copy and interactions exactly, and change only these:
 
@@ -31,6 +31,7 @@ The example story on every screen: *"Treba mi 25 m ograde za dvorište, visina o
 | 3 | `3-results.html` | `3-results.html` | Recommendation text, product cards with variant picker (panel = recommended, Garden Light = cheaper), materials list with working +/− quantity steppers, live total, "Dodaj sve u korpu" |
 | 4 | `4-cart-order.html` | `4-cart-order.html` | Own cart (korpa) and order form with the same fields as martomshop.ba; **one** red "Pošalji narudžbu" button that opens WhatsApp with the order pre-filled |
 | 5 | `5-sent.html` | `5-sent.html` | Confirmation, what happens next, and the exact WhatsApp message that was sent (use it as the message format for M5-6) |
+| 6 | `6-privatnost.html` | `6-privatnost.html` | Privacy page, opened by the "Privatnost" links on screens 1 and 4: who we are, what is collected, why, how long it is kept (chats 90 days), who else sees it, your rights, a tip; "← Natrag na savjetnika" (mobile "← Natrag") back to the start. `[DATUM]` and the order retention `[ROK ČUVANJA – …]` are placeholders until Martom confirms them |
 
 Non-fence questions ("brusilica 125") skip screens 2 and the materials list on 3: straight to product cards.
 
@@ -56,6 +57,7 @@ Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "St
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
 | Agent card | `#4A4F57` (border), `#5A5F68` ("primjer" badge border), `#34C46A` (step done), `#F5A623` (step working) | "Kako savjetnik radi" card on charcoal. Since canvas version 26 the start screens show only done steps, so no mockup uses `#F5A623` now |
 | Chat on light | `#C27A00` ("?" step mark), `#DEDED9` / `#E8E8E4` (striped photo placeholder) | Agent steps and product-card placeholders on screens 2–3 |
+| Link | `#185FA5`, `#0C447C` (hover) | Links in running text on light backgrounds (the e-mail on the Privatnost page; 5.9:1 on the page background) |
 | Headings | Outfit 700/800 | |
 | Body | Inter 400–700 | |
 | Hexagon | `clip-path: polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)` | Badges and step numbers (echoes the hex nut in the logo) |
