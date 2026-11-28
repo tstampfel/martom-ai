@@ -26,24 +26,28 @@
 # the same name on that distribution.
 
 locals {
-  # Country-only location (Tomislav, #163 review r2), with the official image: a pinned
-  # GeoLite2-Country database is downloaded at every start and checked against its
-  # sha256; on any failure the container exits before Umami starts (never falling back to
-  # the image's GeoLite2-City). /tmp because the image runs as the unprivileged `nextjs`
-  # user. Checked locally with Umami 3.5.0 (docs/analytics.md, "Country only").
-  umami_country_db_path = "/tmp/geo/GeoLite2-Country.mmdb"
-  umami_start_script    = <<-EOT
-    set -eu
-    mkdir -p /tmp/geo
-    cd /tmp/geo
-    curl -fsSL --retry 3 -o country.tar.gz "$GEO_COUNTRY_DB_URL"
-    echo "$GEO_COUNTRY_DB_SHA256  country.tar.gz" | sha256sum -c -
-    tar -xzf country.tar.gz
-    mv GeoLite2-Country_*/GeoLite2-Country.mmdb "$GEOLITE_DB_PATH"
-    rm -rf country.tar.gz GeoLite2-Country_*
-    cd /app
-    exec sh scripts/start-docker.sh
-  EOT
+  # Country only (Tomislav, #163 review r4): Umami takes the country from CloudFront's
+  # CloudFront-Viewer-Country header (aws_cloudfront_origin_request_policy.umami below) and
+  # never looks a visitor up in the image's GeoLite2-City database: GEOLITE_DB_PATH points
+  # at a file that doesn't exist, so a request without the country header is answered 500
+  # and stores nothing, instead of storing a city. Checked locally with Umami 3.5.0
+  # (docs/analytics.md, "Country only").
+  umami_no_city_db_path = "/nonexistent/no-city-lookup.mmdb"
+
+  # The only request headers CloudFront passes to Umami (an allowlist: any other header a
+  # visitor sends, such as cf-ipcountry, cf-ipcity or cloudfront-viewer-city, never
+  # reaches Umami, and CloudFront adds no other CloudFront-Viewer-* header).
+  umami_forwarded_headers = [
+    "CloudFront-Viewer-Country", # the country; CloudFront sets it from the viewer's IP
+    "User-Agent",                # browser, OS and device; CloudFront replaces it unless forwarded
+    "Authorization",             # the admin UI's login token (Bearer)
+    "Content-Type",              # JSON bodies
+    "Origin",                    # CORS on /api/send
+    "Accept",
+    "x-umami-cache",       # the tracker's session cache token
+    "x-umami-share-token", # shared report links (admin feature)
+    "x-umami-share-context",
+  ]
 
   umami_origin_header = "X-Martom-Origin"
   umami_port          = 3000
@@ -115,24 +119,18 @@ resource "aws_ecs_task_definition" "umami" {
 
       portMappings = [{ containerPort = local.umami_port, protocol = "tcp" }]
 
-      # Country only (Tomislav, #163 review r2): local.umami_start_script first puts a
-      # GeoLite2-Country database in place, then runs the image's own start script, which
-      # applies Umami's Prisma migrations to the `umami` database and, on the very first
-      # start, creates the admin login admin / umami: change it at once (README, "Umami",
-      # step 4).
-      command = ["sh", "-c", local.umami_start_script]
+      # At start the image applies its own Prisma migrations to the `umami` database and,
+      # on the very first start, creates the admin login admin / umami: change it at once
+      # (README, "Umami", step 4).
       environment = [
         { name = "DISABLE_TELEMETRY", value = "1" }, # no anonymous usage pings to Umami
         { name = "DISABLE_UPDATES", value = "1" },   # no version check; upgrades are a var.umami_image change
-        # The location lookup reads this database instead of the image's GeoLite2-City, so
-        # region and city stay empty. Never point it back at a City database.
-        { name = "GEOLITE_DB_PATH", value = local.umami_country_db_path },
-        # Never take the location from request headers (cf-ipcountry, cf-ipcity,
-        # cloudfront-viewer-city, ...): a visitor can send those, and they carry a city.
-        { name = "SKIP_LOCATION_HEADERS", value = "1" },
-        { name = "GEO_COUNTRY_DB_URL", value = var.umami_geo_country_db_url },
-        { name = "GEO_COUNTRY_DB_SHA256", value = var.umami_geo_country_db_sha256 },
-        # Left unset on purpose (docs/analytics.md, "What Umami stores"): SALT_ROTATION
+        # No IP lookup at all: the image's GeoLite2-City would store region and city. The
+        # country comes only from CloudFront-Viewer-Country (locals above). Never unset it
+        # or point it at a real database.
+        { name = "GEOLITE_DB_PATH", value = local.umami_no_city_db_path },
+        # Left unset on purpose (docs/analytics.md, "What Umami stores"): SKIP_LOCATION_HEADERS
+        # (it would ignore CloudFront-Viewer-Country), SALT_ROTATION
         # (a value other than day/week/month fixes the salt for ever), ENABLE_CLIENT_SALT,
         # CLIENT_IP_HEADER, TRUSTED_PROXIES and LOG_QUERY.
       ]
@@ -289,6 +287,31 @@ resource "aws_lb_listener_rule" "umami" {
 
 # --- CloudFront: Umami's own distribution and hostname ---
 
+# What CloudFront sends to Umami: the allowlisted headers only (locals above), every query
+# string (the admin UI's API calls and Next.js's `_rsc`), no cookies (Umami uses none; the
+# admin login travels in Authorization). Not the Host header, like the API distribution.
+# Next.js's client-side navigation headers (RSC, Next-Router-State-Tree) aren't forwarded,
+# so the admin UI loads a full page on navigation instead of a partial update.
+resource "aws_cloudfront_origin_request_policy" "umami" {
+  name    = "${local.prefix}-umami"
+  comment = "Umami: allowlisted headers only, country from CloudFront-Viewer-Country"
+
+  headers_config {
+    header_behavior = "whitelist"
+    headers {
+      items = local.umami_forwarded_headers
+    }
+  }
+
+  cookies_config {
+    cookie_behavior = "none"
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
+}
+
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
 }
@@ -326,7 +349,7 @@ resource "aws_cloudfront_distribution" "umami" {
     compress               = true
 
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    origin_request_policy_id   = aws_cloudfront_origin_request_policy.umami.id
     response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
   }
 

@@ -182,29 +182,6 @@ variable "umami_image" {
   default     = "ghcr.io/umami-software/umami:3.5.0"
 }
 
-# Country-only location (#163 review r2): the GeoLite2-Country database Umami reads instead
-# of the image's GeoLite2-City. The same redistribution the official image's build downloads
-# its City database from (GitSquared/node-geolite2-redist), pinned to a commit and checked
-# against this sha256 at every start. Use of the data is under MaxMind's GeoLite2 EULA.
-# Refresh both together (the repo publishes the .sha256 next to the file) when upgrading
-# Umami.
-variable "umami_geo_country_db_url" {
-  description = "GeoLite2-Country .tar.gz Umami downloads at start (pinned to a commit)."
-  type        = string
-  default     = "https://raw.githubusercontent.com/GitSquared/node-geolite2-redist/b14fa6f2bdc4ba6d2ed283cbe61265aae314a4c8/redist/GeoLite2-Country.tar.gz"
-}
-
-variable "umami_geo_country_db_sha256" {
-  description = "sha256 of umami_geo_country_db_url; a mismatch stops the Umami container before it starts."
-  type        = string
-  default     = "110510683ce29c63387b8673328b37a30929b18a932e0183acc576d6b956ed84"
-
-  validation {
-    condition     = can(regex("^[0-9a-f]{64}$", var.umami_geo_country_db_sha256))
-    error_message = "A sha256 is 64 lowercase hex characters."
-  }
-}
-
 variable "umami_desired_count" {
   description = "Number of Umami tasks. Use 0 until its database exists and its secret is set (README, \"Umami\")."
   type        = number

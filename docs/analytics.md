@@ -32,9 +32,12 @@ no table has an IP column, and no Umami setting stores one.
 `region` and `city` columns exist too, and the official image would fill them: it ships
 the city-level GeoLite2-City database and also trusts location headers (`cf-ipcity`,
 `cloudfront-viewer-city`, ...) that a visitor can send. **We store the country only**
-(Tomislav, #163 review r2), so those two columns stay empty. How, below.
+(Tomislav, #163 review r4), so those two columns stay empty. **The country comes from
+CloudFront**, not from a database of ours: CloudFront looks up the visitor's IP address
+and passes the country code to Umami in the `CloudFront-Viewer-Country` header. How, below.
 
 Left unset on purpose (each would weaken this), guarded by `tests/test_umami_infra.py`:
+`SKIP_LOCATION_HEADERS` (Umami would ignore the CloudFront country), `CLOUD_MODE`,
 `SALT_ROTATION` (any value other than `day`/`week`/`month` fixes the salt for ever, so
 sessions could be linked across months), `ENABLE_CLIENT_SALT`, `CLIENT_IP_HEADER`,
 `TRUSTED_PROXIES` and `LOG_QUERY` (writes Umami's queries to the container log).
@@ -44,59 +47,58 @@ database could test a guessed IP address and user agent against a session id. Th
 the data is pseudonymous, not anonymous.
 
 Accuracy note: behind CloudFront and the ALB, Umami reads the left-most `X-Forwarded-For`
-address, which a visitor can set, so a visitor can fake their own country or split their
-own sessions. That affects only the accuracy of the statistics, never someone else's data.
+address, which a visitor can set, so a visitor can split their own sessions. That affects only the accuracy of the statistics, never someone else's data.
 
-### Country only, with the official image (Tomislav, #163 review r2)
+### Country only: the country from CloudFront (Tomislav, #163 review r4)
 
-How Umami 3.5 finds a location (`src/lib/detect.ts`, `getLocation`): unless
-`SKIP_LOCATION_HEADERS` is set, it first takes country, region and city from CDN headers
-(Cloudflare, Vercel, CloudFront, EdgeOne); otherwise it opens the MaxMind database at
-`GEOLITE_DB_PATH` (default: the image's `geo/GeoLite2-City.mmdb`) and reads country,
-subdivision and city from the result. Both settings are read at run time, so no image
-build is needed:
+How Umami 3.5.0 finds a location (`src/lib/detect.ts`, `getLocation`, read in the source
+of the version we run): unless `SKIP_LOCATION_HEADERS` is set, it walks a list of CDN
+header sets (Cloudflare `cf-ipcountry`, Vercel, CloudFront `cloudfront-viewer-country`,
+EdgeOne) and uses the first set whose **country** header is present, taking region and
+city from that set's region and city headers, or empty when they are absent. With no
+country header it opens the MaxMind database at `GEOLITE_DB_PATH` (default: the image's
+`geo/GeoLite2-City.mmdb`) and reads country, subdivision and city. Only `/api/send` (and
+the pixel and link routes, which call it) and error collection look a location up.
 
-- `SKIP_LOCATION_HEADERS=1`: never take a location from a request header.
-- `GEOLITE_DB_PATH=/tmp/geo/GeoLite2-Country.mmdb`: a **GeoLite2-Country** database, which
-  has no subdivision or city data, so `region` and `city` come out empty.
-- The image doesn't contain a Country database, so the container's command
-  (`umami_start_script` in `infra/umami.tf`) downloads one at every start: the same
-  redistribution the official image's build takes its City database from
-  (`GitSquared/node-geolite2-redist`), **pinned to a commit and checked against its
-  sha256** (`umami_geo_country_db_url` / `_sha256` in `infra/variables.tf`). Any failure
-  (download, checksum, unpacking) stops the container before Umami starts; it never falls
-  back to the City database. Then it runs the image's own `scripts/start-docker.sh`.
-  Startup needs raw.githubusercontent.com (outbound HTTPS, already allowed); if GitHub is
-  down, a new task fails to start and ECS retries, while a running task is unaffected.
-- Use of the data is under MaxMind's GeoLite2 EULA (as for the City database the official
-  image ships). Refresh the pin and its sha256 together when upgrading Umami. **Tomislav to
-  check the EULA's terms (attribution, keeping the data current) before approving this.**
+Our settings, all of them run-time settings of the official image (no image build, no
+download, no MaxMind account, nothing in Secrets Manager):
 
-**Risk: Umami's start depends on a third-party GitHub repo.** `GitSquared/node-geolite2-redist`
-is run by a private person, not by MaxMind or Umami. Umami runs on FARGATE_SPOT, so AWS
-can stop it at any time and it restarts more often than deploys alone would cause, each
-time downloading the file again:
+- **CloudFront passes an allowlist of headers only** (`aws_cloudfront_origin_request_policy.umami`,
+  `local.umami_forwarded_headers` in `infra/umami.tf`): `CloudFront-Viewer-Country`, plus
+  what Umami needs to work (User-Agent, Authorization for the admin login, Content-Type,
+  Origin, Accept and Umami's own `x-umami-cache` / `x-umami-share-token` /
+  `x-umami-share-context`). Any other header a visitor sends, such as `cf-ipcountry`,
+  `cf-ipcity` or `cloudfront-viewer-city`, never reaches Umami, and CloudFront adds no
+  other `CloudFront-Viewer-*` header, so Umami only ever sees a country. The policy is on
+  every path except the cached `/script.js`, which forwards no viewer headers at all.
+- **The GeoLite2-City lookup is off:** `GEOLITE_DB_PATH` points at a file that doesn't
+  exist. A request that arrives without the country header (CloudFront may leave it out
+  for an address it can't place) makes the lookup fail, so Umami answers 500 and that one
+  visit isn't counted; nothing is stored, never a city. The error in the container log
+  names the missing file only, no visitor data.
+- `SKIP_LOCATION_HEADERS` stays unset (it would ignore the CloudFront country).
 
-| What fails | Effect | What to do |
-| --- | --- | --- |
-| GitHub is briefly down | A starting task exits; ECS keeps retrying until the download works. No visits are counted meanwhile. A running task is unaffected. | Nothing; it recovers by itself. |
-| The repo or the pinned commit disappears (deleted, history rewritten) | **Every** start fails until the pin changes. Statistics stop at the next Spot interruption or deploy. | Point `umami_geo_country_db_url` and `_sha256` at another copy of a GeoLite2-Country `.tar.gz` (e.g. downloaded from MaxMind with our own free license key and put in a private S3 bucket of our account) and apply; or set `umami_desired_count = 0` until then. |
-| The checksum no longer matches | Same as above: the container refuses to start, by design. | Same as above; never remove the checksum check. |
-
-The shop's site and the API never depend on Umami, so none of these affects customers.
-Taking the dependency away entirely (mirroring the file into our own S3 bucket, read by
-the task's role) is a small follow-up if Tomislav prefers it; it isn't built here.
+Can a visitor fake the country? CloudFront generates `CloudFront-Viewer-Country` itself
+from the connection's IP address; AWS documents that it sets these headers, but not in so
+many words that it replaces a value the visitor sent under the same name. Even if it
+didn't, the visitor could only fake their own country, never region or city (those
+headers aren't forwarded) and never someone else's data. Tomislav checks it once after
+the apply (`infra/README.md`, "Umami", checks).
 
 Checked locally on 28 Nov 2026 with the real `ghcr.io/umami-software/umami:3.5.0` image and
-Postgres 16, sending the same visit (an address with city data in GeoLite2, plus fake
-`cf-ipcountry`/`cf-region-code`/`cf-ipcity` headers) to two containers:
+Postgres 16, sending a visit from an address with city data in GeoLite2:
 
-| Container | Stored `country`, `region`, `city` |
-| --- | --- |
-| Official image, default settings | `XX`, `XX-FAKE`, `Fakeville` (the visitor's own headers); without them `SE`, `SE-O`, `Lidköping` |
-| Our settings (country database, headers skipped) | `SE`, empty, empty, both times |
+| Container | Request reaching Umami | Stored `country`, `region`, `city` |
+| --- | --- | --- |
+| Official image, default settings | fake `cf-ipcountry`/`cf-region-code`/`cf-ipcity` headers | `XX`, `XX-FAKE`, `Fakeville` (the visitor's own headers) |
+| Official image, default settings | no location headers | `SE`, `SE-O`, `Lidköping` (GeoLite2-City) |
+| Our settings | `CloudFront-Viewer-Country: SE` only (what the allowlist passes) | `SE`, empty, empty |
+| Our settings | no country header | nothing stored (HTTP 500) |
 
-A wrong sha256 made the container exit 1 before Umami started (`sha256sum: ... did NOT match`).
+What stays untested until Tomislav's plan/apply: the policy on real CloudFront (that a
+visitor's `cf-ipcity` is dropped and the country arrives), and the admin UI behind the
+allowlist (Next.js's partial-navigation headers aren't forwarded, so navigation loads
+full pages).
 
 ### How it runs (Terraform: `infra/umami.tf`)
 
@@ -202,14 +204,15 @@ privacy review to confirm, not decided here.
 The Privatnost text is now frozen (Tomislav, 28 Nov 2026) and is not changed by #163. Its
 sentence "IP adresu koristimo samo trenutno, da posjetu ne bismo brojali dvaput, i ne
 čuvamo je u statistici" holds with the setup above: the IP address is used for the session
-hash and the country lookup and never stored, and the location stored is the country only.
+hash (CloudFront does the country lookup) and never stored, and the location stored is the
+country only.
 
 ### Upgrading Umami
 
 Change `umami_image` in `infra/variables.tf` to the new tag after reading Umami's release
 notes, then apply. The container runs Umami's database migrations by itself on start.
-Before upgrading, check in the new version's `src/lib/detect.ts` that `SKIP_LOCATION_HEADERS`
-and `GEOLITE_DB_PATH` still work as described in "Country only", and that its
-`scripts/start-docker.sh` still exists (our start script ends by running it); then repeat
-the local check above (a visit with fake city headers must store the country only). Refresh
-`umami_geo_country_db_url` and `umami_geo_country_db_sha256` at the same time.
+Before upgrading, check in the new version's `src/lib/detect.ts` that the CloudFront
+country header is still read, that no new location header set comes before it, and that
+`GEOLITE_DB_PATH` still decides the lookup ("Country only"); then repeat the local check
+above (a visit with only `CloudFront-Viewer-Country` must store the country only, and one
+without it must store nothing).
