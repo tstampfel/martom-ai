@@ -329,6 +329,65 @@ def test_product_card_without_price_is_on_request() -> None:
     assert product.price is None
 
 
+def manual_card(**overrides: Any) -> dict[str, Any]:
+    product = card(
+        source="manual",
+        listing_id=None,
+        manual_key="anchor_m8x70",
+        url=None,
+        title="Anker M8×70",
+        subtitle=None,
+        price="0.80",
+        price_unit="kom",
+        variants=[],
+    )
+    product.update(overrides)
+    return product
+
+
+def test_olx_card_defaults_to_source_olx() -> None:
+    product = ProductCard.model_validate(card())
+    assert product.source == "olx"
+    assert product.manual_key is None
+
+
+def test_manual_product_card_has_no_listing_id_or_link() -> None:
+    # #132: a manual_products.toml product has no OLX listing.
+    product = ProductCard.model_validate(manual_card())
+    assert product.listing_id is None
+    assert product.url is None
+    assert product.manual_key == "anchor_m8x70"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"url": "https://martom.olx.ba/artikal/anker-63996799"}, "url"),
+        ({"listing_id": 63996799}, "listing_id"),
+        ({"manual_key": None}, "manual_key"),
+        ({"manual_key": ""}, "manual_key"),
+    ],
+)
+def test_manual_product_card_never_carries_an_olx_listing(
+    overrides: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ProductCard.model_validate(manual_card(**overrides))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"listing_id": None}, "listing_id"),
+        ({"url": None}, "url"),
+        ({"manual_key": "anchor_m8x70"}, "manual_key"),
+    ],
+)
+def test_olx_card_needs_its_listing_and_link(overrides: dict[str, Any], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        ProductCard.model_validate(card(**overrides))
+
+
 # --- bom --------------------------------------------------------------------------
 
 

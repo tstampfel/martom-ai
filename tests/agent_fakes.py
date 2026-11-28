@@ -40,6 +40,9 @@ EUROFENCE = ProductInfo(
     listing_price=None,
     variants=[VariantInfo(f"{h} cm", None, "rola", str(h)) for h in (60, 80, 125)],
 )
+# The one entry of the real manual_products.toml (Toni, 26 Nov: 0.80 KM).
+ANCHOR_KEY = "anchor_m8x70"
+ANCHOR_NAME = "Anker M8×70"
 PRICES_26_NOV = {
     Item.PANEL: Decimal("53.00"),
     Item.POST_BASE_PLATE: Decimal("24.90"),
@@ -73,10 +76,13 @@ class FakePricer:
 
 
 class FakeRetriever:
-    def __init__(self, relevance: float | None = 0.75, *, manual: bool = False) -> None:
+    def __init__(
+        self, relevance: float | None = 0.75, *, manual: bool = False, listings: bool = True
+    ) -> None:
         self.queries: list[str] = []
         self.relevance = relevance
-        self.manual = manual
+        self.manual = manual  # add the anchor from manual_products.toml (#112)
+        self.listings = listings  # False: the manual hit alone
 
     async def __call__(self, query: str) -> Retrieval:
         self.queries.append(query)
@@ -90,20 +96,20 @@ class FakeRetriever:
             keyword_rank=1,
             vector_rank=1,
         )
-        hits = [hit]
+        hits = [hit] if self.listings else []
         if self.manual:
             hits.append(
                 RetrievedHit(
                     listing_id=None,
-                    title="Stup za panel 60 x 40",
+                    title=ANCHOR_NAME,
                     slug=None,
-                    product_type="stup",
+                    product_type=ANCHOR_NAME,  # a TOML entry has no type; the name stands in
                     rrf_score=0.02,
                     relevance=self.relevance,
                     keyword_rank=2,
                     vector_rank=None,
                     source="manual",
-                    manual_key="post_60x40",
+                    manual_key=ANCHOR_KEY,
                 )
             )
         return Retrieval(hits, SearchFilters(), True, False, 0, self.relevance is not None)

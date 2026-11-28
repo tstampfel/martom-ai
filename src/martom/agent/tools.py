@@ -7,23 +7,31 @@ handler can read the graph state. That is why the fence BOM tool takes no fence 
 it reads the lengths, height and posts the customer gave (the `FenceSpec`), so the model
 can't pass a length the customer never said.
 
-Every handler returns plain JSON. Prices in it come from the database (product lookup) or
-from the injected `BomPricer`; listing text inside it is data, never instructions. The
-grounding check collects every price, id and quantity from these outputs.
+Every handler returns plain JSON. Prices in it come from the database (product lookup),
+from `manual_products.toml` (a manual product, #132) or from the injected `BomPricer`;
+listing text inside it is data, never instructions. The grounding check collects every
+price, id and quantity from these outputs.
+
+A manual product (#112: something Toni sells without an OLX listing) is identified by its
+TOML key (`manual_key`) instead of a listing id. Its name and price come only from the
+loaded TOML (`load_manual_products`), never from the `manual_product` search table, whose
+price copy exists only for the search price filter; its `url` is always null, because
+there is no OLX listing to link to.
 """
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from martom.agent import copy
 from martom.agent.catalogue import Catalogue, ProductInfo
 from martom.agent.understand import FenceSpec, default_panel_width, total_length_text
 from martom.api.chat_events import BomEvent, BomLineOut, ExtraLine, format_price
 from martom.bom.common import BomLine, FenceTooLargeError
+from martom.bom.manual_products import ManualProduct
 from martom.bom.panel import panel_fence_bom
 from martom.bom.roll import RollPostModel, roll_fence_bom
 from martom.search.retrieve import Retrieval, RetrievedHit
@@ -50,6 +58,8 @@ class ToolContext:
     retriever: Retriever
     catalogue: Catalogue
     pricer: BomPricer | None
+    # manual_products.toml, loaded once when the graph is built (key -> entry).
+    manual_products: Mapping[str, ManualProduct]
 
 
 class ToolError(Exception):
@@ -80,7 +90,8 @@ class SearchArgs(BaseModel):
 
 
 def hit_json(hit: RetrievedHit) -> dict[str, Any]:
-    # A manual product (#112) has no listing id or link; its full handling is #132.
+    # A manual product (#112) has no listing id and no link (url None): the model looks it
+    # up and adds it to the cart by its manual_key.
     return {
         "source": hit.source,
         "listing_id": hit.listing_id,
@@ -102,13 +113,32 @@ async def _search(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
 # --- get_product -------------------------------------------------------------------
 
 
-class ProductArgs(BaseModel):
-    listing_id: int = Field(ge=1)
+class ProductRef(BaseModel):
+    """Exactly one of the two: an OLX listing id, or a manual product's key."""
+
+    listing_id: int | None = Field(default=None, ge=1, description="An OLX product.")
+    manual_key: str | None = Field(
+        default=None,
+        min_length=1,
+        description="A result with source 'manual' (no OLX listing): its manual_key.",
+    )
+
+    @model_validator(mode="after")
+    def _one_ref(self) -> "ProductRef":
+        if (self.listing_id is None) == (self.manual_key is None):
+            raise ValueError("give either listing_id or manual_key")
+        return self
+
+
+class ProductArgs(ProductRef):
+    pass
 
 
 def product_json(product: ProductInfo) -> dict[str, Any]:
     return {
+        "source": "olx",
         "listing_id": product.listing_id,
+        "manual_key": None,
         "title": product.title,
         "url": product.url,
         "product_type": product.product_type,
@@ -121,8 +151,33 @@ def product_json(product: ProductInfo) -> dict[str, Any]:
     }
 
 
+def manual_product_json(product: ManualProduct) -> dict[str, Any]:
+    """The TOML entry as get_product returns it: no listing, no link, no variants."""
+    return {
+        "source": "manual",
+        "listing_id": None,
+        "manual_key": product.key,
+        "title": product.name,
+        "url": None,
+        "product_type": None,
+        "colours": [],
+        "price": _manual_price(product),
+        "variants": [],
+    }
+
+
+def _manual_product(ctx: ToolContext, key: str) -> ManualProduct:
+    product = ctx.manual_products.get(key)
+    if product is None:
+        raise ToolError(f"no manual product {key!r}")
+    return product
+
+
 async def _get_product(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
     assert isinstance(args, ProductArgs)
+    if args.manual_key is not None:
+        return manual_product_json(_manual_product(ctx, args.manual_key))
+    assert args.listing_id is not None  # ProductRef holds exactly one of the two
     product = await ctx.catalogue.get_product(args.listing_id)
     if product is None:
         raise ToolError(f"no active listing {args.listing_id}")
@@ -223,8 +278,7 @@ async def build_bom_event(
 # --- add_to_cart -------------------------------------------------------------------
 
 
-class CartArgs(BaseModel):
-    listing_id: int = Field(ge=1)
+class CartArgs(ProductRef):
     variant_label: str | None = Field(
         default=None, description="Exactly as get_product returned it; null without variants."
     )
@@ -233,6 +287,23 @@ class CartArgs(BaseModel):
 
 async def _add_to_cart(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
     assert isinstance(args, CartArgs)
+    if args.manual_key is not None:
+        manual = _manual_product(ctx, args.manual_key)
+        if args.variant_label is not None:
+            raise ToolError(f"manual product {args.manual_key!r} has no variants")
+        return {
+            "cart_line": {
+                "source": "manual",
+                "listing_id": None,
+                "manual_key": manual.key,
+                "title": manual.name,
+                "url": None,
+                "variant_label": None,
+                "quantity": args.quantity,
+                "unit_price": _manual_price(manual),
+            }
+        }
+    assert args.listing_id is not None  # ProductRef holds exactly one of the two
     product = await ctx.catalogue.get_product(args.listing_id)
     if product is None:
         raise ToolError(f"no active listing {args.listing_id}")
@@ -248,7 +319,9 @@ async def _add_to_cart(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
         unit_price = match.price
     return {
         "cart_line": {
+            "source": "olx",
             "listing_id": product.listing_id,
+            "manual_key": None,
             "title": product.title,
             "url": product.url,
             "variant_label": args.variant_label,
@@ -261,13 +334,15 @@ async def _add_to_cart(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
 TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "search_products",
-        "Search Martom's active catalogue. Returns listing ids, titles and links, no prices.",
+        "Search Martom's active catalogue. Returns listing ids, titles and links, no prices. "
+        "A result with source 'manual' has no listing id and no link, only a manual_key.",
         SearchArgs,
         _search,
     ),
     ToolSpec(
         "get_product",
-        "One active listing with its variants and their prices from the database.",
+        "One product with its variants and prices: an active listing by listing_id, or a "
+        "manual product (source 'manual') by manual_key.",
         ProductArgs,
         _get_product,
     ),
@@ -280,7 +355,8 @@ TOOLS: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         "add_to_cart",
-        "Add one product variant to the customer's cart when they ask for it.",
+        "Add one product variant to the customer's cart when they ask for it: by listing_id, "
+        "or by manual_key for a manual product (which has no variants).",
         CartArgs,
         _add_to_cart,
     ),
@@ -290,3 +366,8 @@ TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
 
 def _price(amount: Decimal | None) -> str | None:
     return format_price(amount) if amount is not None and amount.is_finite() else None
+
+
+def _manual_price(product: ManualProduct) -> str | None:
+    # 0 KM in the TOML is not a price (the BOM pricer's rule too): "cijena na upit".
+    return _price(product.price_km) if product.price_km > 0 else None
