@@ -26,6 +26,20 @@ describe('ProductCards', () => {
     expect(screen.queryByText(copy.chat.cards.noPhoto)).toBeNull()
   })
 
+  it('shows a manual product without a photo as a grey placeholder with an icon', () => {
+    // Tomislav (#132): no "Bez slike" text; screen readers hear "Slika nije dostupna".
+    const [card] = cardsOf(fixtures.manualProduct)
+    render(<ProductCards cards={[card]} />)
+    const hidden = screen.getByText(copy.chat.cards.photoUnavailable)
+    expect(hidden).toHaveClass('visually-hidden')
+    const placeholder = hidden.closest('.product-card__photo--manual')
+    expect(placeholder).not.toBeNull()
+    expect(placeholder?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    // The only text is the screen-reader name; nothing visible.
+    expect(placeholder?.textContent).toBe(copy.chat.cards.photoUnavailable)
+    expect(screen.queryByText('Bez slike')).toBeNull()
+  })
+
   it('renders an OLX and a manual product side by side', () => {
     const cards = [...cardsOf(fixtures.productQuestion), ...cardsOf(fixtures.manualProduct)]
     render(<ProductCards cards={cards} />)

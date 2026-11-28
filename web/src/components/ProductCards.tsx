@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ProductCard as Card, Variant } from '../api/events'
 import { formatPrice } from '../clarify'
 import { copy } from '../copy'
+import { FastenerIcon } from './Icons'
 
 /** A product with an OLX listing by its id, a manual product (no listing) by its TOML key. */
 function cardKey(card: Card): string {
@@ -37,16 +38,23 @@ function ProductCard({ card, featured }: { card: Card; featured: boolean }) {
 
   return (
     <article className={featured ? 'product-card product-card--featured' : 'product-card'}>
-      <div className="product-card__photo">
-        {card.photo_url ? (
-          <img src={card.photo_url} alt="" loading="lazy" />
-        ) : (
-          <span className="product-card__placeholder">
-            {card.source === 'manual' ? copy.chat.cards.noPhotoManual : copy.chat.cards.noPhoto}
-          </span>
-        )}
-        {card.badge ? <span className="product-card__badge">{card.badge}</span> : null}
-      </div>
+      {card.source === 'manual' && !card.photo_url ? (
+        // No OLX listing, so no listing photo: a grey placeholder with an icon (Tomislav, #132).
+        <div className="product-card__photo product-card__photo--manual">
+          <FastenerIcon />
+          <span className="visually-hidden">{copy.chat.cards.photoUnavailable}</span>
+          {card.badge ? <span className="product-card__badge">{card.badge}</span> : null}
+        </div>
+      ) : (
+        <div className="product-card__photo">
+          {card.photo_url ? (
+            <img src={card.photo_url} alt="" loading="lazy" />
+          ) : (
+            <span className="product-card__placeholder">{copy.chat.cards.noPhoto}</span>
+          )}
+          {card.badge ? <span className="product-card__badge">{card.badge}</span> : null}
+        </div>
+      )}
       <div className="product-card__body">
         <h3 className="product-card__title">{card.title}</h3>
         {card.subtitle ? <span className="product-card__subtitle">{card.subtitle}</span> : null}

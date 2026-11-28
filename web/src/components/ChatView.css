@@ -378,6 +378,14 @@
   object-fit: cover;
 }
 
+/* A product without an OLX listing (#132): plain grey, the icon centred. */
+.product-card__photo--manual {
+  background: var(--color-photo-stripe-light);
+  color: var(--color-muted);
+  align-items: center;
+  justify-content: center;
+}
+
 .product-card__placeholder {
   padding: 12px;
   font-size: 13px;

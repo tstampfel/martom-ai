@@ -56,3 +56,24 @@ export function ArrowIcon() {
     </svg>
   )
 }
+
+/** A bolt with a nut: the placeholder of a fastener (e.g. an anchor) without a photo. */
+export function FastenerIcon() {
+  return (
+    <svg
+      width="56"
+      height="56"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 3h6l1 2.5-1 2.5H9L8 5.5z" />
+      <path d="M10.5 8v12.5l1.5 1.5 1.5-1.5V8" />
+      <path d="M10.5 11l3 1M10.5 14l3 1M10.5 17l3 1" />
+    </svg>
+  )
+}
