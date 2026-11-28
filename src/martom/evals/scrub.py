@@ -80,12 +80,17 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
 # --- names --------------------------------------------------------------------------
 
 # "Ime: Ana Anić", "Ime i prezime: ..." up to the end of the line or a comma.
-_NAME_LABEL_RE = re.compile(r"(?im)\b((?:ime i prezime|ime|prezime)\s*:[ \t]*)[^\n,;.<]+")
+# An initial's dot ("Ana M. Anić") doesn't end it.
+_NAME_LABEL_RE = re.compile(
+    rf"(?im)\b((?:ime i prezime|ime|prezime)\s*:[ \t]*)(?:\b[{_UPPER}]\.|[^\n,;.<])+"
+)
 # Words that follow an intro but are not a name: "zovem se Pero i trebam ...".
 _NOT_A_NAME = r"(?!(?i:i|a|ali|te|pa|iz|sa|s|trebam|treba|hoću|hocu|želim|zelim|imam)\b)"
-# "zovem se pero perić": any case, as customers type. One or two words.
+# "zovem se pero perić": any case, as customers type. One to three words ("Ana Marija
+# Anić").
 _INTRO_RE = re.compile(
-    rf"\b((?i:zovem se|moje ime je|ime mi je)\s+){_NOT_A_NAME}{_WORD}(?:\s+{_NOT_A_NAME}{_WORD})?"
+    rf"\b((?i:zovem se|moje ime je|ime mi je)\s+){_NOT_A_NAME}{_WORD}"
+    rf"(?:\s+{_NOT_A_NAME}{_WORD}){{0,2}}"
 )
 # "Ja sam Ana Anić": capitalised words only, so "ja sam iz Čitluka" stays.
 _JA_SAM_RE = re.compile(rf"\b((?i:ja sam)\s+){_CAPITALISED}(?:\s+{_CAPITALISED}){{0,2}}")

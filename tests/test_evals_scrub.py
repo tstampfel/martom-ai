@@ -156,6 +156,10 @@ def test_dj_and_d_match_the_letter_dj(form_name: str, typed: str) -> None:
         ("Ja sam Ana Anić.", "Ja sam [ime]."),
         ("Ime i prezime: Ante Antić", "Ime i prezime: [ime]"),
         ("ime: Mara Marić\nTelefon: 060 000 000", "ime: [ime]\nTelefon: [telefon]"),
+        ("Zovem se Ana Marija Anić.", "Zovem se [ime]."),
+        ("zovem se ana marija anić i trebam ogradu", "zovem se [ime] i trebam ogradu"),
+        ("Ime: Ana M. Anić, Mostar", "Ime: [ime], Mostar"),
+        ("Ime i prezime: A. Anić. Trebam panel.", "Ime i prezime: [ime]. Trebam panel."),
     ],
 )
 def test_removes_names_the_customer_introduces(text: str, expected: str) -> None:
