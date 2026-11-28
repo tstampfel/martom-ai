@@ -6,6 +6,7 @@ import pytest
 from tests.search_catalogue import INACTIVE_PANEL, build_catalogue
 
 from martom.agent.catalogue import PostgresCatalogue
+from martom.db import open_query_pool
 
 pytestmark = pytest.mark.anyio
 
@@ -43,3 +44,14 @@ async def test_variant_heights_are_parsed_and_sorted(database_url: str) -> None:
     # Panel heights plus the post heights (85 cm, ...) written in the same listing.
     assert {83, 85, 103, 153, 203} <= set(heights)
     assert heights == sorted(set(heights))
+
+
+async def test_the_catalogue_borrows_connections_from_a_pool(database_url: str) -> None:
+    # The API (#21) shares a pool between concurrent chats instead of one connection.
+    async with await build_catalogue(database_url):
+        pass
+    async with open_query_pool(database_url) as pool:
+        catalogue = PostgresCatalogue(pool)
+        product = await catalogue.get_product(PANEL_ID)
+        assert product is not None and product.listing_id == PANEL_ID
+        assert 153 in await catalogue.variant_heights(PANEL_ID)

@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol
 
-import psycopg
-
+from martom.db import Connector, borrow
 from martom.search.keyword import LISTING_URL
 from martom.search.query_parser import parse_height_cm
 
@@ -64,11 +63,13 @@ ORDER BY position
 
 
 class PostgresCatalogue:
-    def __init__(self, conn: psycopg.AsyncConnection) -> None:
-        self.conn = conn
+    """`source` is one connection (a job, a test) or a pool (the API, #21)."""
+
+    def __init__(self, source: Connector) -> None:
+        self.source = source
 
     async def get_product(self, listing_id: int) -> ProductInfo | None:
-        async with self.conn.cursor() as cur:
+        async with borrow(self.source) as conn, conn.cursor() as cur:
             await cur.execute(_PRODUCT_SQL, (listing_id,))
             row = await cur.fetchone()
             if row is None:

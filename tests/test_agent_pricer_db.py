@@ -16,6 +16,7 @@ from martom.bom.common import BomLine, Item
 from martom.bom.panel import panel_fence_bom
 from martom.bom.pricing import load_price_map
 from martom.bom.roll import roll_fence_bom
+from martom.db import open_query_pool
 from martom.extract.store import ProductRecord, save_products
 from martom.migrate import run_migrations
 from search_catalogue import REPO, add_listing
@@ -161,3 +162,14 @@ async def test_a_draft_map_prices_nothing_and_warns_once(
     assert all(line.price_on_request for line in event.lines)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert [r.message for r in warnings] == ["price map is a draft: every BOM line is on request"]
+
+
+async def test_the_pricer_borrows_connections_from_a_pool(database_url: str) -> None:
+    # The API (#21) shares a pool between concurrent chats instead of one connection.
+    async with await build(database_url):
+        pass
+    async with open_query_pool(database_url) as pool:
+        pricer = PostgresBomPricer(pool, price_map=REVIEWED)
+        lines = panel_fence_bom(sides_m=[25], panel_height_cm=153)
+        event = await build_bom_event(lines, pricer, summary="s", extra_lines=[], notes=[])
+    assert event.total == "905.10"
