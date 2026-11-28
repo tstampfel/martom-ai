@@ -1,3 +1,4 @@
+import { copy } from './copy'
 import details from './companyDetails.json'
 
 /**
@@ -24,13 +25,14 @@ export const companyDetails: CompanyDetails = details
 
 /**
  * The footer line, or null while the name, address or JIB is still empty, so
- * the footer shows nothing half filled in. The layout and labels follow the
- * canvas once it has the values.
+ * the footer shows nothing half filled in. The labels are in
+ * `copy.footer.company`.
  */
 export function companyLine(company: CompanyDetails): string | null {
   const { legalName, address, jib, vatRegistered, vatNumber } = company
   if (!legalName || !address || !jib) return null
-  const parts = [legalName, address, `JIB: ${jib}`]
-  if (vatRegistered && vatNumber) parts.push(`PDV broj: ${vatNumber}`)
-  return parts.join(' · ')
+  const { jibLabel, vatLabel, separator } = copy.footer.company
+  const parts = [legalName, address, `${jibLabel} ${jib}`]
+  if (vatRegistered && vatNumber) parts.push(`${vatLabel} ${vatNumber}`)
+  return parts.join(separator)
 }

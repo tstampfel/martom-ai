@@ -252,6 +252,10 @@ export const copy = {
     creditLead: 'Izradio i održava',
     credit: 'Stampfel Consulting',
     creditUrl: 'https://stampfelconsulting.com/',
+    // Martom's legal details line (companyDetails.ts), shown on every page
+    // once the values are filled in. Not on the canvas yet: the labels and
+    // layout follow the canvas when Tomislav or Toni add the values there.
+    company: { jibLabel: 'JIB:', vatLabel: 'PDV broj:', separator: ' · ' },
   },
   // The "Privatnost" page, canvas version 1795858888-a499 (Tomislav, 28 Nov
   // 2026: Claude's legal review plus Gemini's checklist, the final text,
