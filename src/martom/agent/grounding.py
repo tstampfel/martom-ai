@@ -13,14 +13,17 @@ answer and asks where it came from:
 - A listing id (7–9 digits) must be one a tool or the Retrieve step returned, and so
   must a manual product's key (a `manual_products.toml` key such as "anchor_m8x70",
   #132): a product without an OLX listing is identified by that key instead.
-- A link (any http(s):// or www. address, and any olx.ba address with a path even
-  without one) must be a `url` a tool or the Retrieve step returned, exactly; markdown,
+- A link (any http(s):// or www. address, and any address with a path even without
+  one: "olx.ba/…", "martomshop.ba/…") must be a `url` a tool or the Retrieve step
+  returned, exactly; a site named without a path ("OLX.ba") is not a link; markdown,
   quotes and brackets around it are not part of it. A manual product has no OLX
   listing (#132), so any link written for it fails, and so does an olx.ba/artikal/{id}
   link, which doesn't open.
 - Bosnian number words ("pedeset tri KM", "dvanaest stubova") are read as numbers and
-  checked the same way; a lone "jedan/jedna" (the article) and numbered-list markers are
-  not claims.
+  checked the same way; a lone "jedan/jedna" (the article), numbered-list markers (but
+  never a number with a currency after it) and a count of suggestions ("dva prijedloga",
+  unless a product noun follows: "7 varijanti panela") are not claims. A rough count of
+  products ("desetak stubova", "par panela") always fails: no tool gave it.
 - Any other number must appear in a tool output (a quantity, a size in a title, a BOM
   line), in what the customer wrote, in the fence spec built from it, or in the advisor's
   fixed copy (agent/copy.py: Martom's phone, "10–15 dana", RAL colours).
@@ -50,7 +53,8 @@ PRICE_KEYS = frozenset({"price", "unit_price", "line_total", "total"})
 # One amount: "1.234,50" / "1 234,50" (grouped thousands), "53,00", "24.90", "53", "49,-".
 _AMOUNT = r"(?:\d{1,3}(?:[.\u00a0 ]\d{3})+(?:,\d{1,2}|,-)?|\d+(?:[.,]\d{1,2})?(?:,-)?)"
 _KM = r"(?:KM\b|BAM\b|konvertibiln\w*\s+mar\w*|mar(?:ka|aka|ke|ki)\b)"
-_EURO = r"(?:€|EUR\b|eur[ao]?\b|euro\w*)"
+# "Eurofence" is a product line (copy.EUROFENCE_*), not a euro amount (#134 R1-1).
+_EURO = r"(?:€|EUR\b|eur[ao]?\b|euro(?!fenc)\w*)"
 _CURRENCY = rf"(?:{_KM}|{_EURO})"
 _PRICE = re.compile(
     rf"(?<![\d.,])(?P<after>{_AMOUNT})\s*(?P<cur_after>{_CURRENCY})"
@@ -61,13 +65,16 @@ _PRICE = re.compile(
 _DASH_PRICE = re.compile(r"(?<![\d.,])(\d+(?:[.\u00a0 ]\d{3})*),-")
 # OLX listing ids have 7 to 9 digits.
 _LISTING_ID = re.compile(r"(?<![\d.,])\d{7,9}(?!\d|[.,]\d)")
-# A link: "https://…", "www.…", or a bare "olx.ba/…" / "martom.olx.ba/…" (R1-1). A link
-# stops at whitespace and at the characters a model wraps one in: markdown bold, code and
+# A link: "https://…", "www.…", or a bare address with a path on any domain: "olx.ba/…",
+# "martom.olx.ba/…" (R1-1), "martomshop.ba/…", "example.com/…" (#134, A1-2). A link stops
+# at whitespace and at the characters a model wraps one in: markdown bold, code and
 # [text](url), <autolinks>, quotes (also Bosnian „…“) and an ellipsis (A1-1). The bare
-# form needs a path, so naming the site ("na OLX.ba") is not a link.
+# form needs a path and a top-level domain of letters, so naming a site ("na OLX.ba",
+# "martomshop.ba"), an email address or "24.90 KM/kom" is not a link.
 _URL_CHAR = r"[^\s<>`*\"'“”„‘’\[\]()…]"
 _URL = re.compile(
-    rf"(?:https?://|www\.){_URL_CHAR}+|(?<![\w.-])(?:[\w-]+\.)*olx\.ba/{_URL_CHAR}+",
+    rf"(?:https?://|www\.){_URL_CHAR}+"
+    rf"|(?<![\w.@/-])(?:[\w-]+\.)+[a-z]{{2,24}}/{_URL_CHAR}+",
     re.IGNORECASE,
 )
 # Sentence punctuation after a link is not part of it.
@@ -92,6 +99,19 @@ NEVER_PRICED = (
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
 # A numbered list marker at the start of a line ("1. PANEL", "2) Stup"): not a claim (R2-3).
 _LIST_MARKER = re.compile(r"^(\s*)\d{1,2}[.)](?=\s)", re.MULTILINE)
+# ... unless a currency follows it directly and no other number follows on that line: then
+# it is a price ("Ukupno:\n12. KM", #134). "1. KM 53,00" (the price is 53,00) and
+# "1. Eurofence panel" (a product line, not a euro) stay markers, so the euro form here is
+# word-bounded instead of `_EURO`'s "euro\w*", and leaves out "euro" itself, which starts
+# product titles ("1. EURO PANEL ZELENI"; #134 R1-1).
+_MARKER_CURRENCY = rf"(?:{_KM}|€|EUR\b|eura\b|eur(?:ima|om)\b)"
+_MARKER_PRICE = re.compile(
+    rf"^\s*(?P<amount>\d{{1,2}})[.)]\s*(?P<currency>{_MARKER_CURRENCY})"
+    # Only an amount right after the currency makes it a currency-first price ("1. KM
+    # 53,00"); a number later on the line ("85. KM (2 panela)") doesn't (#134 R2-1).
+    r"(?![^\S\n]*:?[^\S\n]*\d)",
+    re.MULTILINE | re.IGNORECASE,
+)
 # "2 prijedloga", "dva prijedloga": how many suggestions the answer makes, not a quantity.
 _SUGGESTION_NOUN = re.compile(
     r"\s+(?:prijedlog\w*|opcij\w*|varijant\w*|rješenj\w*|rjesenj\w*|mogućnost\w*|"
@@ -99,6 +119,57 @@ _SUGGESTION_NOUN = re.compile(
     re.IGNORECASE,
 )
 MAX_SUGGESTIONS = 10
+# Products and materials Martom sells, as Bosnian stems (#134, manager's decision): a count
+# of suggestions followed by one of them ("7 varijanti panela", "pet opcija stubova") is
+# checked like any count, and a rough count before one ("desetak stubova") fails. Before
+# any other word both pass ("tri opcije iz naše ponude", "par savjeta", "par rukavica").
+# One word may stand between them ("petnaestak dodatnih kopči"), unless it is a joining
+# word ("dva prijedloga za stubove" is about suggestions). Add a product here when the
+# advisor starts selling one.
+_PRODUCT_NOUN = re.compile(
+    r"(?:stub|stup|panel|kopč|kopc|žic|zic|anker|vijak|vijk|vijc|šaraf|saraf|matic|"
+    r"podlošk|podlosk|zatezač|zatezac|zatezn|podupirač|podupirac|potporn|upornj|"
+    r"rol(?:a|e|i|u|n|ama)|kapij|vrata\b|vratnic|mrež|mrez|ograd|pločic|plocic|"
+    r"šipk|sipk|cijev|profil|traka|trake|traku|sajl|lanac|lanc|beton|cement|vreć|vrec|"
+    r"kutij|paket|komad|kom\b|metar|metr|metara|"
+    # BOM lines ("Zatezač (španer)", "Nosač nosive žice", "kolut 100 m"; R2-2) and
+    # catalogue hardware.
+    r"španer|spaner|nosač|nosac|kolut|obujmic|šark|sark|spojnic|kapic|tipl|brav|pletiv)\w*",
+    re.IGNORECASE,
+)
+_JOIN_WORDS = frozenset(
+    [
+        "za",
+        "u",
+        "iz",
+        "na",
+        "s",
+        "sa",
+        "od",
+        "do",
+        "po",
+        "prema",
+        "i",
+        "ili",
+        "ali",
+        "a",
+        "kako",
+        "što",
+        "sto",
+        "su",
+        "je",
+    ]
+)
+# Rough counts in words ("desetak stubova", "dvadesetak panela", "stotinjak vijaka", "par
+# stubova"): a quantity no tool gave, so it fails before a product noun (#134); before a
+# currency, `_VAGUE_PRICE` reports it. "nekoliko" is not one: it is too common outside
+# counts ("Još nekoliko podataka:").
+_ROUGH_COUNT = re.compile(
+    r"\b(?:(?:jedanaest|dvanaest|trinaest|četrnaest|cetrnaest|petnaest|šesnaest|sesnaest|"
+    r"sedamnaest|osamnaest|devetnaest|deset|dvadeset|trideset|četrdeset|cetrdeset|pedeset|"
+    r"šezdeset|sezdeset|sedamdeset|osamdeset|devedeset)ak|stotin(?:j?ak)|par)\b",
+    re.IGNORECASE,
+)
 
 # Bosnian number words (R2-2), with and without diacritics. "sto" is not in the table: without
 # diacritics it is also "što" ("sto se tice ..."), so it counts as 100 only when a currency
@@ -287,6 +358,14 @@ def check_grounding(
     # "RAL 7016"), never as a free count: "Trebate 10 stubova" must fail (R3a-1).
     text = _COPY_PHRASES.sub(" ", text)
     text = _PER_ONE.sub(" ", text)
+    known_prices = facts.price_set()
+    for match in _MARKER_PRICE.finditer(text):
+        phrase = f"{match.group('amount')} {match.group('currency')}"
+        if not re.fullmatch(_KM, match.group("currency"), re.IGNORECASE):
+            problems.append(f"price '{phrase}' is in euros; Martom prices are in KM")
+        elif Decimal(match.group("amount")) not in known_prices:
+            problems.append(f"price '{phrase}' is not in any tool result")
+    text = _MARKER_PRICE.sub(" ", text)
     text = _LIST_MARKER.sub(r"\1", text)
     text = _strip_suggestion_counts(text)
     # A manual product's key is checked like a listing id, then taken out, so the digits
@@ -296,7 +375,6 @@ def check_grounding(
         if match.group(0) not in known_keys:
             problems.append(f"product key {match.group(0)} is not in any tool result")
     text = _MANUAL_KEY.sub(" ", text)
-    known_prices = facts.price_set()
     for match in _PRICE.finditer(text):
         amount = parse_km(match.group("after") or match.group("before"))
         currency = match.group("cur_after") or match.group("cur_before")
@@ -324,6 +402,7 @@ def check_grounding(
                 f"number '{match.group(0)}' is not in any tool result or customer message"
             )
     problems.extend(_check_number_words(text, known_prices, allowed))
+    problems.extend(_check_rough_counts(text))
     for match in _VAGUE_PRICE.finditer(text):
         problems.append(f"price '{match.group(0)}' is not an amount from any tool result")
     problems.extend(_priced_never_priced(text, facts.unpriced_names))
@@ -424,22 +503,58 @@ def _check_number_words(text: str, known_prices: set[Decimal], allowed: set[Deci
     return problems
 
 
+# A hyphenated word is one token ("T-stupova"); its last part is the noun (#134 R2-2).
+_NEXT_WORD = re.compile(r"[^\S\n]+(\w+(?:-\w+)*)")
+
+
+def _is_product_noun(word: str) -> bool:
+    return _PRODUCT_NOUN.fullmatch(word.rsplit("-", 1)[-1]) is not None
+
+
+def _product_noun_after(text: str, end: int) -> str | None:
+    """The words up to a product noun right after `end` (one word may stand between)."""
+    first = _NEXT_WORD.match(text, end)
+    if first is None:
+        return None
+    if _is_product_noun(first.group(1)):
+        return first.group(1)
+    if first.group(1).lower() in _JOIN_WORDS:
+        return None
+    second = _NEXT_WORD.match(text, first.end())
+    if second is not None and _is_product_noun(second.group(1)):
+        return f"{first.group(1)} {second.group(1)}"
+    return None
+
+
+def _is_suggestion_count(text: str, end: int) -> bool:
+    """A suggestion noun starts at `end` and no product noun follows it (#134)."""
+    noun = _SUGGESTION_NOUN.match(text, end)
+    return noun is not None and _product_noun_after(text, noun.end()) is None
+
+
 def _strip_suggestion_counts(text: str) -> str:
     """Drop "2 prijedloga" / "dva prijedloga" (up to MAX_SUGGESTIONS): not a quantity."""
 
     def digit(match: re.Match[str]) -> str:
-        return " " if int(match.group(1)) <= MAX_SUGGESTIONS else match.group(0)
+        exempt = int(match.group(0)) <= MAX_SUGGESTIONS and _is_suggestion_count(text, match.end())
+        return " " if exempt else match.group(0)
 
-    text = re.sub(
-        r"(?<![\d.,])(\d{1,2})(?=" + _SUGGESTION_NOUN.pattern + ")",
-        digit,
-        text,
-        flags=re.IGNORECASE,
-    )
+    text = re.sub(r"(?<![\d.,])\d{1,2}(?!\d|[.,]\d)", digit, text)
     for number in reversed(word_numbers(text)):
-        if number.value <= MAX_SUGGESTIONS and _SUGGESTION_NOUN.match(text, number.end):
+        if number.value <= MAX_SUGGESTIONS and _is_suggestion_count(text, number.end):
             text = text[: number.start] + " " + text[number.end :]
     return text
+
+
+def _check_rough_counts(text: str) -> list[str]:
+    problems = []
+    for match in _ROUGH_COUNT.finditer(text):
+        product = _product_noun_after(text, match.end())
+        if product is not None:
+            problems.append(
+                f"rough count '{match.group(0)} {product}' is not a quantity from any tool result"
+            )
+    return problems
 
 
 def _priced_never_priced(text: str, unpriced_names: Iterable[str]) -> list[str]:
