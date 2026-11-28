@@ -351,6 +351,46 @@
   color: var(--color-muted);
 }
 
+/* Slogan band between the badges and the categories (web/1-start.html).
+   The text wraps on narrow widths; the logo drops under it. */
+.slogan {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 40px var(--gutter) 0;
+}
+
+.slogan__card {
+  background: var(--color-charcoal);
+  border-radius: var(--radius-panel);
+  padding: 36px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.slogan__text {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.5px;
+  color: var(--color-on-brand);
+}
+
+/* Large text only: 4.49:1 on charcoal (tokens.css). */
+.slogan__accent {
+  color: var(--color-red-on-dark);
+}
+
+.slogan__logo {
+  display: block;
+  height: 56px;
+  width: auto;
+}
+
 @media (max-width: 1023px) {
   .about__list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -393,6 +433,7 @@
   .hero__lead,
   .hero__aside,
   .chip--wide-only,
+  .slogan,
   .how {
     display: none;
   }

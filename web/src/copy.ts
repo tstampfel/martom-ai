@@ -314,6 +314,13 @@ export const copy = {
       },
     ],
   },
+  // Slogan band on the web start screen (canvas 1795853906-fa58; to be
+  // confirmed by Toni). Split around the accent word, shown in
+  // --color-red-on-dark; the line breaks after it.
+  brand: {
+    slogan: { before: 'Sve što nije ', accent: 'ograđeno', after: ' nije vaše!' },
+    sloganLabel: 'Martomov slogan',
+  },
   about: {
     label: 'O Martomu',
     badges: [

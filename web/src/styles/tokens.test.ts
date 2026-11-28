@@ -29,6 +29,7 @@ const expected: Record<string, string> = {
   '--color-step-question': '#C27A00',
   '--color-photo-stripe': '#DEDED9',
   '--color-photo-stripe-light': '#E8E8E4',
+  '--color-red-on-dark': '#FF4D5A',
   '--color-link': '#185FA5',
   '--color-link-hover': '#0C447C',
   '--hexagon': 'polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)',
@@ -86,6 +87,12 @@ describe('design tokens', () => {
     ['--color-muted', '--color-page'],
   ])('%s on %s has a contrast of at least 4.5:1', (text, background) => {
     expect(contrast(expected[text], expected[background])).toBeGreaterThanOrEqual(4.5)
+  })
+
+  // The slogan's accent word (web start, 44 px Outfit 800) is large text, so
+  // WCAG asks 3:1; it is 4.49:1. Never use it below 24 px (18.66 px bold).
+  it('--color-red-on-dark on --color-charcoal reaches the large-text 3:1', () => {
+    expect(contrast(expected['--color-red-on-dark'], expected['--color-charcoal'])).toBeGreaterThanOrEqual(3)
   })
 
   it('keeps touch targets at least 44 px', () => {

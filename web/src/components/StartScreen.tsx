@@ -1,4 +1,5 @@
 import { agentStepStates } from '../agentSteps'
+import logoWhite from '../assets/martom-logo-white.png'
 import { copy } from '../copy'
 import { useAgentCardSteps } from '../hooks'
 import { Hexagon } from './Hexagon'
@@ -91,6 +92,19 @@ export function StartScreen({ onStartChat, focusQuestion = false }: StartScreenP
             </li>
           ))}
         </ul>
+      </section>
+
+      {/* Wide screens only: phones hide it (StartScreen.css), the mobile canvas has none. */}
+      <section className="slogan" aria-label={copy.brand.sloganLabel}>
+        <div className="slogan__card">
+          <p className="slogan__text">
+            {copy.brand.slogan.before}
+            <span className="slogan__accent">{copy.brand.slogan.accent}</span>
+            <br />
+            {copy.brand.slogan.after}
+          </p>
+          <img className="slogan__logo" src={logoWhite} alt={copy.shop.name} width={992} height={308} />
+        </div>
       </section>
 
       {/* On phones the card sits below the badges instead of inside the hero. */}

@@ -138,4 +138,12 @@ describe('Footer credit (M5-9)', () => {
     }
     expect(footer).toHaveTextContent(`${copy.footer.creditLead} ${copy.footer.credit}`)
   })
+
+  it('is not shown once a chat has started', () => {
+    render(<App path="/" />)
+    fireEvent.click(screen.getAllByRole('button', { name: copy.header.nav[0] })[0])
+    expect(
+      within(screen.getByRole('contentinfo')).queryByRole('link', { name: copy.footer.credit }),
+    ).not.toBeInTheDocument()
+  })
 })

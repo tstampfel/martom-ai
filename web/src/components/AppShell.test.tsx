@@ -92,14 +92,20 @@ describe('AppShell footer credit (M5-9)', () => {
     expect(ownLine.closest('p')).toHaveClass('site-footer__credit')
   })
 
-  it('has one line of its own when there is no notice', () => {
+  // The chat screens' canvas footers have no credit (web 2-5, mobile 2-clarify).
+  it('is not shown on the chat screens', () => {
     render(<AppShell onStartChat={() => {}}>content</AppShell>)
-    expect(creditLinks()).toHaveLength(1)
-    expect(creditLinks()[0].closest('p')).toHaveClass('site-footer__credit')
+    expect(
+      within(screen.getByRole('contentinfo')).queryByRole('link', { name: copy.footer.credit }),
+    ).not.toBeInTheDocument()
   })
 
   it('opens the credit link in a new tab', () => {
-    render(<AppShell onStartChat={() => {}}>content</AppShell>)
+    render(
+      <AppShell onStartChat={() => {}} showPrivacyNotice>
+        content
+      </AppShell>,
+    )
     expect(creditLinks()[0]).toHaveAttribute('href', 'https://stampfelconsulting.com/')
     expect(creditLinks()[0]).toHaveAttribute('target', '_blank')
     expect(creditLinks()[0]).toHaveAttribute('rel', 'noopener')

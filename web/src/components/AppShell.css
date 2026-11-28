@@ -249,11 +249,16 @@
     display: none;
   }
 
-  /* docs/mockups/mobile/: the notice and the credit line sit 8 px apart
-     under the row. */
   .site-footer__inner--narrow {
     display: flex;
-    padding: 14px var(--gutter) 8px;
+    padding: 14px var(--gutter) 18px;
+  }
+
+  /* docs/mockups/mobile/: the notice and the credit line sit 8 px apart
+     under the row. */
+  .site-footer--notice .site-footer__inner--narrow,
+  .site-footer--credit .site-footer__inner--narrow {
+    padding-bottom: 8px;
   }
 
   .privacy-notice--wide {
