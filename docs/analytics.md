@@ -1,7 +1,8 @@
 # Analytics
 
-How we count visits, clicks and conversations that end in an order, without cookies and
-without personal data, with the data in our own AWS account in the EU (#156). Three parts:
+How we count visits, clicks and conversations that end in an order, without cookies,
+without storing IP addresses or anything that names a person, with the data in our own AWS
+account in the EU (#156). Three parts:
 
 | Part | Issue | Status |
 | --- | --- | --- |
@@ -12,8 +13,12 @@ without personal data, with the data in our own AWS account in the EU (#156). Th
 ## Umami
 
 [Umami](https://umami.is) is open-source web analytics. It sets no cookies and stores no
-IP address: a visitor's session is a hash of the IP address, the browser's user agent and
-a salt that changes every month, computed when the request arrives. It shows page views,
+IP address. It does **use** the IP address of each request, briefly: a visitor's session is
+a hash of the IP address, the browser's user agent and a salt that changes every month, and
+the country is looked up from the IP. Under the GDPR that brief use is still processing of
+personal data (an IP address is personal data), so the stored statistics are pseudonymous,
+not anonymous, and the privacy text must not say "no personal data" (see "Privacy text"
+below). It shows page views,
 visitors, referrers, countries, devices and (from #164) custom events. We run the official
 image ourselves; nothing goes to Umami's cloud.
 
@@ -107,8 +112,14 @@ back on. It is per browser and per profile, so repeat it after clearing site dat
 ### Privacy text for the Privatnost page (#152)
 
 #156 asks for one sentence in the Privatnost rewrite; #152 owns that page, so the text is
-only proposed here: *visit statistics are collected without cookies and without personal
-data, and stored on our servers in the EU.*
+only proposed here. #156's wording, "without cookies and without personal data", promises
+more than Umami does: it uses each visitor's IP address briefly (the visitor hash and the
+country, above), and that counts as processing personal data under the GDPR. Proposed
+instead, for Tomislav's privacy review before launch: *visit statistics are collected
+without cookies; your IP address is used only briefly to count unique visits and the
+country, and is never stored. The statistics are kept on our servers in the EU.*
+If the page names a legal basis, it is legitimate interest (Art. 6(1)(f)): that is for the
+privacy review to confirm, not decided here.
 
 ### Upgrading Umami
 
