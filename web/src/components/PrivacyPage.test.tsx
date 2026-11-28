@@ -6,7 +6,7 @@ import { config } from '../config'
 import { copy, privacyPlaceholders, telHref } from '../copy'
 import { PrivacyPage } from './PrivacyPage'
 
-// The canvas text, as synced into docs/mockups (canvas 1795858888-a499).
+// The canvas text, as synced into docs/mockups (canvas 1795865366-4af4).
 const mockup = (variant: 'web' | 'mobile') =>
   readFileSync(join(import.meta.dirname, '../../../docs/mockups', variant, '6-privatnost.html'), 'utf8')
 
@@ -14,17 +14,25 @@ const MOCKUP_PHONE = '036 651 427'
 
 // The canvas marks the LangSmith line with an HTML comment: the comment and
 // the line after it, up to and including its line break.
-const LANGSMITH_SENTENCE = /<!--[^>]*LangSmith[^>]*-->[\s\S]*?<br>/
+const LANGSMITH_SENTENCE = /<!--[^>]*LangSmith line[^>]*-->[\s\S]*?<br>/
+
+// In the transfer section the canvas leaves out the words naming LangSmith
+// and quotes them in an HTML comment ("add ' i LangSmitha' only if LangSmith
+// is enabled at launch"); the page adds them only when LangSmith is on.
+const LANGSMITH_INSERT = /<!--[^>]*add '([^']+)' only if LangSmith[^>]*-->/
 
 /**
  * The visible text of a mockup's <main>: the indentation between tags and the
  * tags themselves dropped (as the DOM's textContent does), spaces collapsed.
- * Without LangSmith, the marked sentence is left out.
+ * Without LangSmith, the marked sentence is left out; with it, the words the
+ * transfer section's comment quotes are put in its place.
  */
 function mockupMainText(variant: 'web' | 'mobile', { langSmith }: { langSmith: boolean }): string {
   let main = mockup(variant).match(/<main[^>]*>([\s\S]*?)<\/main>/)?.[1] ?? ''
   expect(main).toMatch(LANGSMITH_SENTENCE)
+  expect(main).toMatch(LANGSMITH_INSERT)
   if (!langSmith) main = main.replace(LANGSMITH_SENTENCE, '')
+  main = main.replace(LANGSMITH_INSERT, langSmith ? '$1' : '')
   const text = collapse(main.replace(/>\s+</g, '><').replace(/<[^>]+>/g, ''))
   // The page shows the configured shop number (VITE_SHOP_PHONE), the mockup
   // Martom's public one.
@@ -60,15 +68,24 @@ describe('PrivacyPage', () => {
     })
   })
 
-  // The processor line names LangChain, Inc. The canvas's transfer section
-  // ("Serveri AWS-a i LangSmitha ...") names LangSmith either way, so the
-  // test looks for the processor line only.
+  // The processor line names LangChain, Inc.
   it('lists LangSmith among the processors only when it is on', () => {
     const { unmount } = render(<PrivacyPage langSmith />)
     expect(screen.getByRole('main')).toHaveTextContent('LangChain, Inc.')
     unmount()
     render(<PrivacyPage langSmith={false} />)
     expect(screen.getByRole('main')).not.toHaveTextContent('LangChain, Inc.')
+  })
+
+  it('names LangSmith in the transfer section only when it is on', () => {
+    const transfer = () =>
+      screen.getByRole('heading', { level: 2, name: 'Prijenos podataka izvan BiH' }).parentElement
+    const { unmount } = render(<PrivacyPage langSmith />)
+    expect(transfer()).toHaveTextContent('Serveri AWS-a i LangSmitha nalaze se u EU (Njemačka)')
+    unmount()
+    render(<PrivacyPage langSmith={false} />)
+    expect(transfer()).toHaveTextContent('Serveri AWS-a nalaze se u EU (Njemačka)')
+    expect(transfer()).not.toHaveTextContent('LangSmith')
   })
 
   it('follows VITE_LANGSMITH_ENABLED by default', () => {

@@ -13,8 +13,9 @@ const page = copy.privacyPage
  * its own header, with a link back to the advisor instead of the categories
  * and the cart; the top strip and the footer are AppShell's.
  *
- * `langSmith` says whether to name LangSmith among the processors; it
- * follows VITE_LANGSMITH_ENABLED and is a prop only so tests can show both.
+ * `langSmith` says whether to name LangSmith among the processors and in
+ * the transfer section; it follows VITE_LANGSMITH_ENABLED and is a prop
+ * only so tests can show both.
  */
 export function PrivacyPage({ langSmith = config.langSmithEnabled }: { langSmith?: boolean }) {
   // The tab title follows the page; index.html keeps the site's own title.
@@ -61,6 +62,7 @@ export function PrivacyPage({ langSmith = config.langSmithEnabled }: { langSmith
                     {'lead' in line && line.lead}
                     {'label' in line && <b>{line.label}</b>}
                     {line.text}
+                    {langSmith && 'langSmithText' in line && line.langSmithText}
                     {'link' in line && (
                       <a className="privacy-page__link" href={line.link.href} target="_blank" rel="noopener">
                         {line.link.label}
