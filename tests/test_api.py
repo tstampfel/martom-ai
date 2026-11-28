@@ -50,17 +50,30 @@ def test_health_is_200_when_postgres_and_redis_are_up() -> None:
     assert response.json() == {"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}
 
 
-@pytest.mark.parametrize("down", ["postgres", "redis"])
-def test_health_is_503_when_one_dependency_fails(down: str) -> None:
-    checks = {"postgres": healthy, "redis": healthy, down: broken}
-
-    response = client_with(**checks).get("/health")
+def test_health_is_503_when_postgres_fails() -> None:
+    response = client_with(postgres=broken, redis=healthy).get("/health")
 
     assert response.status_code == 503
-    body = response.json()
-    assert body["status"] == "error"
-    assert body["checks"][down] == "error"
-    assert sum(result == "ok" for result in body["checks"].values()) == 1
+    assert response.json() == {"status": "error", "checks": {"postgres": "error", "redis": "ok"}}
+
+
+def test_health_stays_200_when_only_redis_fails() -> None:
+    # M3-5: Redis is only the search cache, and search runs uncached without it, so a dead
+    # Redis must not take the task out of the load balancer (an outage). It still shows.
+    response = client_with(postgres=healthy, redis=broken).get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "degraded",
+        "checks": {"postgres": "ok", "redis": "error"},
+    }
+
+
+def test_health_is_503_when_both_fail() -> None:
+    response = client_with(postgres=broken, redis=broken).get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "error"
 
 
 def test_health_does_not_leak_error_details() -> None:

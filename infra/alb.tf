@@ -34,7 +34,9 @@ resource "aws_lb_target_group" "api" {
   # Give in-flight requests 30 s to finish when a task is replaced during a deploy.
   deregistration_delay = 30
 
-  # GET /health answers 503 when Postgres or Redis is down (src/martom/api/health.py).
+  # GET /health answers 503 when Postgres is down (src/martom/api/health.py). A Redis
+  # that is down answers 200 "degraded": Redis is only the search cache (M3-5), so losing
+  # it must not take the task out of the target group.
   health_check {
     path                = "/health"
     matcher             = "200"
