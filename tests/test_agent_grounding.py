@@ -473,3 +473,134 @@ def test_link_no_tool_returned_fails(text: str) -> None:
     result = check_grounding(text, facts)
     assert not result.ok
     assert any("link" in problem for problem in result.problems)
+
+
+# --- #134 follow-ups ------------------------------------------------------------------
+
+
+# Task 1: a suggestion count is exempt only when no product noun follows the suggestion noun.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Trebate 7 varijanti panela.",
+        "Trebate pet opcija stubova.",
+        "Uzmite 3 varijante stupova.",
+        "Trebate dvije opcije kopči.",
+        "IMAM DVA PRIJEDLOGA PANELA.",
+        "Imam 12 prijedloga.",
+    ],
+)
+def test_suggestion_noun_before_a_product_noun_is_checked(text: str) -> None:
+    # No facts: facts() knows the BOM quantity 2, which would ground "dva"/"dvije".
+    result = check_grounding(text, Facts())
+    assert not result.ok
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Imam dva prijedloga.",
+        "Imam 2 prijedloga:",
+        "Imam dva prijedloga:\n- PANEL\n- Stup",
+        "Imam dvije opcije za vašu ogradu.",
+        "Postoje tri načina, kako želite.",
+        "Imam 2 prijedloga, oba su dostupna.",
+        "Imam dva prijedloga koja odgovaraju.",
+    ],
+)
+def test_suggestion_count_without_a_product_noun_passes(text: str) -> None:
+    result = check_grounding(text, facts())
+    assert result.ok, result.problems
+
+
+# Task 2: a list marker never hides a number with a currency after it.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ukupno:\n12. KM",
+        "Ukupno:\n12) KM",
+        "Ukupno:\n12.\nKM",
+        "Ukupno:\n  12. maraka",
+        "Ukupno:\n12. €",
+    ],
+)
+def test_list_marker_before_a_currency_is_a_price(text: str) -> None:
+    # 12 is a customer number here, so only the price check can catch it.
+    result = check_grounding(text, facts(), known_numbers=[Decimal(12)])
+    assert not result.ok
+    assert any("price" in problem for problem in result.problems)
+
+
+def test_list_marker_before_a_known_price_passes() -> None:
+    result = check_grounding("Ukupno:\n53. KM", facts())
+    assert result.ok, result.problems
+
+
+# Task 3: rough counts of products in words fail (quantities come only from tools).
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Trebate desetak stubova.",
+        "Trebate dvadesetak panela.",
+        "Uzmite par stubova.",
+        "Trebate petnaestak dodatnih kopči.",
+        "Treba vam stotinjak vijaka.",
+        "TREBATE DESETAK STUBOVA.",
+    ],
+)
+def test_rough_count_of_products_fails(text: str) -> None:
+    result = check_grounding(text, facts(), known_numbers=[Decimal(10), Decimal(20)])
+    assert not result.ok
+    assert any("rough count" in problem for problem in result.problems)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Imam par prijedloga.",
+        "Isporuka je za par dana.",
+        "Još nekoliko podataka:",
+        "Jak stup drži panel.",
+        "Desetak minuta i gotovo.",
+    ],
+)
+def test_rough_count_of_suggestions_or_time_passes(text: str) -> None:
+    result = check_grounding(text, facts())
+    assert result.ok, result.problems
+
+
+# A1-2 (#132 review): links without a scheme on any domain are checked too.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Pogledajte martomshop.ba/anker",
+        "Pogledajte example.com/path",
+        "Pogledajte shop.example.co.uk/anker-m8x70.",
+        "Pogledajte **martomshop.ba/proizvod/anker**",
+    ],
+)
+def test_scheme_less_link_on_any_domain_fails(text: str) -> None:
+    result = check_grounding(text, facts_from_output(OLX_OUTPUT))
+    assert not result.ok
+    assert any("link" in problem for problem in result.problems)
+
+
+def test_scheme_less_link_a_tool_returned_passes() -> None:
+    found = Facts(urls=["martomshop.ba/anker"])
+    result = check_grounding("Pogledajte martomshop.ba/anker.", found)
+    assert result.ok, result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Imamo i web shop martomshop.ba.",
+        "Pišite na info@martom-bekaert.com.",
+        "Pogledajte example.com ili nas nazovite.",
+        "Panel je 24.90 KM/kom.",
+        "Cijena po m/kom je ista.",
+    ],
+)
+def test_bare_domain_or_slash_text_is_not_a_link(text: str) -> None:
+    result = check_grounding(text, facts())
+    assert result.ok, result.problems
