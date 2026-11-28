@@ -14,16 +14,14 @@ const shop = {
 
 /**
  * PLACEHOLDERS on the "Privatnost" page, copied from the canvas as written.
- * They stay until Martom (Toni) confirms the date and the order retention
- * period, and the transfer safeguard is checked against the contracts.
- * Replace them here, and PrivacyPage.test.tsx tells you to update it.
+ * Tomislav sets the date at launch; the order retention period waits on
+ * Martom (Toni). Replace them here, and PrivacyPage.test.tsx tells you to
+ * update it. `npm run check:launch` (web/scripts/check-launch.mjs) fails while
+ * either one is still in the production build.
  */
 export const privacyPlaceholders = {
   date: '[DATUM]',
-  orderRetention: '[ROK ČUVANJA – potvrđuje Martom, npr. koliko zahtijevaju računovodstveni propisi]',
-  // The safeguard for sending data to Anthropic and Cohere (USA, Canada),
-  // until the contracts are checked.
-  transferSafeguard: '[ZAŠTITA PRIJENOSA – provjeriti ugovore]',
+  orderRetention: '[ROK ČUVANJA – potvrđuje Martom]',
 } as const
 
 /** Builds a `tel:` link in international form (+387) from a BiH number. */
@@ -255,12 +253,13 @@ export const copy = {
     credit: 'Stampfel Consulting',
     creditUrl: 'https://stampfelconsulting.com/',
   },
-  // The "Privatnost" page, canvas version 1795851325-40ff (Tomislav, 28 Nov
-  // 2026): docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
-  // The wording gets an AI review before launch (#33); don't reword it here.
-  // PLACEHOLDERS: `privacyPlaceholders` (`.date`, `.orderRetention`,
-  // `.transferSafeguard`) stay verbatim until they are confirmed;
-  // PrivacyPage.test.tsx finds them.
+  // The "Privatnost" page, canvas version 1795855258-2d90 (live
+  // 1795855309-7fee, same text; Tomislav, 28 Nov 2026, after the #149
+  // provider decision: Amazon Bedrock in eu-central-1):
+  // docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
+  // Don't reword it here; change the canvas first.
+  // PLACEHOLDERS: `privacyPlaceholders` (`.date`, `.orderRetention`) stay
+  // verbatim until they are confirmed; PrivacyPage.test.tsx finds them.
   privacyPage: {
     // document.title while the page is open; index.html keeps the site title.
     documentTitle: 'Privatnost · Martom savjetnik',
@@ -269,15 +268,18 @@ export const copy = {
     // Wide screens (web/6-privatnost.html) and phones (mobile/6-privatnost.html).
     intro: `Kratko i jasno: koje podatke savjetnik koristi, zašto i koliko dugo. Ažurirano: ${privacyPlaceholders.date}.`,
     introShort: `Koje podatke savjetnik koristi, zašto i koliko dugo. Ažurirano: ${privacyPlaceholders.date}.`,
-    back: '← Natrag na savjetnika',
-    backShort: '← Natrag',
+    back: '← Nazad na savjetnika',
+    backShort: '← Nazad',
     // Each section is a heading and one paragraph; a `label` is the bold
-    // lead-in of a line, and lines are separated by line breaks.
+    // lead-in of a line, and lines are separated by line breaks. A line's
+    // `langSmith` sentence sits between `text` and `textAfter` and is shown
+    // only when LangSmith tracing is on (VITE_LANGSMITH_ENABLED; the canvas
+    // marks it with an HTML comment).
     sections: [
       {
-        heading: 'Tko smo',
+        heading: 'Ko smo',
         lines: [{ text: 'Željezarija Martom d.o.o., Krstine 106, Međugorje. Za sva pitanja o vašim podacima: ' }],
-        // The email (a mailto link) and the shop phone follow the line.
+        // The email (a mailto link) and the shop phone (a tel link) follow the line.
         contact: true,
       },
       {
@@ -291,6 +293,10 @@ export const copy = {
           {
             label: 'Tehnički podaci:',
             text: ' IP adresu i zapise o greškama, radi zaštite od zloupotrebe i ispravljanja grešaka.',
+          },
+          {
+            label: 'Statistika posjeta:',
+            text: ' broj posjeta i klikova, bez kolačića i bez ličnih podataka, na našim serverima u EU.',
           },
         ],
       },
@@ -313,10 +319,13 @@ export const copy = {
         ],
       },
       {
-        heading: 'Tko još vidi podatke',
+        heading: 'Ko još vidi podatke',
         lines: [
           {
-            text: `Podatke vidi Martom. Za rad savjetnika koristimo pružatelje usluga koji ih obrađuju samo u naše ime: Anthropic (razumijevanje pitanja i odgovori), Cohere (pretraživanje artikala), Amazon Web Services (poslužitelji u EU, Frankfurt), LangSmith (praćenje rada savjetnika, podaci u EU, čuvaju se najviše 90 dana) i Cloudflare (zaštita od botova). Anthropic i Cohere obrađuju podatke u SAD-u i Kanadi ${privacyPlaceholders.transferSafeguard}. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete.`,
+            text: 'Podatke vidi Martom. Za rad savjetnika koristimo pružaoce usluga koji ih obrađuju samo u naše ime i po našim uputama. Amazon Web Services (AWS): serveri i baza podataka u EU (Frankfurt). Preko AWS-a, također u EU, rade i AI modeli koji razumiju pitanja i pretražuju artikle (Anthropic Claude i Cohere); proizvođači tih modela ne dobijaju vaše podatke i ne koriste ih za treniranje. ',
+            langSmith: 'LangSmith nam pomaže pratiti rad savjetnika (podaci u EU, čuvaju se najviše 14 dana). ',
+            textAfter:
+              'Cloudflare štiti stranicu od botova. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete.',
           },
         ],
       },
@@ -324,7 +333,7 @@ export const copy = {
         heading: 'Vaša prava',
         lines: [
           {
-            text: 'Možete tražiti uvid u svoje podatke, ispravak ili brisanje, te uložiti prigovor. Javite nam se na e-mail ili telefon iznad. Ako niste zadovoljni odgovorom, možete se obratiti Agenciji za zaštitu ličnih/osobnih podataka u Bosni i Hercegovini.',
+            text: 'Možete tražiti uvid u svoje podatke, ispravak ili brisanje, te uložiti prigovor. Javite nam se na e-mail ili telefon iznad. Ako niste zadovoljni odgovorom, možete se obratiti Agenciji za zaštitu ličnih podataka u Bosni i Hercegovini.',
           },
         ],
       },
@@ -332,7 +341,7 @@ export const copy = {
         heading: 'Savjet',
         lines: [
           {
-            text: 'Ne upisujte u razgovor osobne podatke koji nisu potrebni za pitanje (JMBG, broj kartice i slično).',
+            text: 'Savjetnik je umjetna inteligencija, ne osoba, i može pogriješiti. Cijene, količine i stanje uvijek potvrđuje Martom prije narudžbe. Ne upisujte u razgovor lične podatke koji nisu potrebni za pitanje (JMBG, broj kartice i slično).',
           },
         ],
       },

@@ -6,18 +6,25 @@ import { config } from '../config'
 import { copy, privacyPlaceholders, telHref } from '../copy'
 import { PrivacyPage } from './PrivacyPage'
 
-// The canvas text, as synced into docs/mockups (canvas 1795851325-40ff).
+// The canvas text, as synced into docs/mockups (canvas 1795855258-2d90).
 const mockup = (variant: 'web' | 'mobile') =>
   readFileSync(join(import.meta.dirname, '../../../docs/mockups', variant, '6-privatnost.html'), 'utf8')
 
 const MOCKUP_PHONE = '036 651 427'
 
+// The canvas marks the LangSmith sentence with an HTML comment: the comment
+// and the sentence after it, up to its full stop and the following space.
+const LANGSMITH_SENTENCE = /<!--[^>]*LangSmith[^>]*-->[^.]*\.\s*/
+
 /**
  * The visible text of a mockup's <main>: the indentation between tags and the
  * tags themselves dropped (as the DOM's textContent does), spaces collapsed.
+ * Without LangSmith, the marked sentence is left out.
  */
-function mockupMainText(variant: 'web' | 'mobile'): string {
-  const main = mockup(variant).match(/<main[^>]*>([\s\S]*?)<\/main>/)?.[1] ?? ''
+function mockupMainText(variant: 'web' | 'mobile', { langSmith }: { langSmith: boolean }): string {
+  let main = mockup(variant).match(/<main[^>]*>([\s\S]*?)<\/main>/)?.[1] ?? ''
+  expect(main).toMatch(LANGSMITH_SENTENCE)
+  if (!langSmith) main = main.replace(LANGSMITH_SENTENCE, '')
   const text = collapse(main.replace(/>\s+</g, '><').replace(/<[^>]+>/g, ''))
   // The page shows the configured shop number (VITE_SHOP_PHONE), the mockup
   // Martom's public one.
@@ -40,30 +47,44 @@ describe('PrivacyPage', () => {
   })
 
   // The canvas is the source of truth: the page says exactly what the
-  // mockups say, on wide screens and on phones.
-  it.each(['web', 'mobile'] as const)('renders the %s mockup text word for word', (variant) => {
-    render(<PrivacyPage />)
-    const main = screen.getByRole('main')
-    // Drop the other variant's intro, which is hidden by CSS.
-    const hidden = variant === 'web' ? '.privacy-page__intro--narrow' : '.privacy-page__intro--wide'
-    main.querySelector(hidden)?.remove()
-    expect(collapse(main.textContent ?? '')).toBe(mockupMainText(variant))
+  // mockups say, on wide screens and on phones, with the LangSmith sentence
+  // only when LangSmith is on.
+  describe.each([true, false])('with LangSmith %s', (langSmith) => {
+    it.each(['web', 'mobile'] as const)('renders the %s mockup text word for word', (variant) => {
+      render(<PrivacyPage langSmith={langSmith} />)
+      const main = screen.getByRole('main')
+      // Drop the other variant's intro, which is hidden by CSS.
+      const hidden = variant === 'web' ? '.privacy-page__intro--narrow' : '.privacy-page__intro--wide'
+      main.querySelector(hidden)?.remove()
+      expect(collapse(main.textContent ?? '')).toBe(mockupMainText(variant, { langSmith }))
+    })
   })
 
-  // PLACEHOLDERS: these must stay until they are confirmed. When Toni gives
-  // the date and the order retention period, or the contracts confirm the
-  // transfer safeguard, change them on the canvas and in copy.ts
-  // (privacyPlaceholders), then update this test.
+  it('names LangSmith only when it is on', () => {
+    const { unmount } = render(<PrivacyPage langSmith />)
+    expect(screen.getByRole('main')).toHaveTextContent('LangSmith')
+    unmount()
+    render(<PrivacyPage langSmith={false} />)
+    expect(screen.getByRole('main')).not.toHaveTextContent('LangSmith')
+  })
+
+  it('follows VITE_LANGSMITH_ENABLED by default', () => {
+    render(<PrivacyPage />)
+    const shown = (screen.getByRole('main').textContent ?? '').includes('LangSmith')
+    expect(shown).toBe(config.langSmithEnabled)
+  })
+
+  // PLACEHOLDERS: these must stay until they are confirmed. When Tomislav
+  // sets the date and Toni gives the order retention period, change them on
+  // the canvas and in copy.ts (privacyPlaceholders), then update this test.
   it('still shows the placeholders Martom has to confirm', () => {
     render(<PrivacyPage />)
     const main = screen.getByRole('main')
     expect(main).toHaveTextContent(privacyPlaceholders.date)
     expect(main).toHaveTextContent(privacyPlaceholders.orderRetention)
-    expect(main).toHaveTextContent(privacyPlaceholders.transferSafeguard)
     expect(privacyPlaceholders).toEqual({
       date: '[DATUM]',
-      orderRetention: '[ROK ČUVANJA – potvrđuje Martom, npr. koliko zahtijevaju računovodstveni propisi]',
-      transferSafeguard: '[ZAŠTITA PRIJENOSA – provjeriti ugovore]',
+      orderRetention: '[ROK ČUVANJA – potvrđuje Martom]',
     })
   })
 
@@ -80,6 +101,12 @@ describe('PrivacyPage', () => {
       'href',
       `mailto:${copy.shop.email}`,
     )
+    expect(within(main).getByRole('link', { name: copy.shop.phone })).toHaveAttribute(
+      'href',
+      telHref(copy.shop.phone),
+    )
+    // Martom's public number, as on the canvas.
+    expect(telHref('036 651 427')).toBe('tel:+38736651427')
     const footer = screen.getByRole('contentinfo')
     for (const link of within(footer).getAllByRole('link', { name: copy.shop.phone })) {
       expect(link).toHaveAttribute('href', telHref(copy.shop.phone))
