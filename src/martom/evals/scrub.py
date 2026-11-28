@@ -33,10 +33,15 @@ with no label, street word or delivery verb, even with a house number ("Izmišlj
 Čitluk"), a phone without its 0 written in one run after a bare "broj" (it looks like a
 listing id), a house number followed by a sentence end and a name that is also a month
 ("Izmišljena 5. Maja ..." reads as a date), foreign phone numbers, and numbers written
-as words. Pass the order form's
-values whenever there is one, and still read a promoted chat before committing it
-(`tests/test_fixture_privacy.py` keeps guarding the committed files). The function only
-ever removes text.
+as words. Pass the order form's values whenever there is one, and still read a promoted
+chat before committing it (`tests/test_fixture_privacy.py` keeps guarding the committed
+files).
+
+Known over-scrubs (accepted: the function only ever removes text): a size written in
+capitals after a delivery place or street, "DOSTAVA U MOSTAR 20 M OGRADE" ->
+"DOSTAVA U [adresa] OGRADE" (a capital M, L or H after a number reads as a building
+letter, so "Izmišljena 5 L Mostar" never leaks), and a slash size with no unit after a
+delivery place, "dostava na gradilište 50/50" -> "dostava na [adresa]".
 """
 
 import re
@@ -183,11 +188,10 @@ _HOUSE_NUMBER = (
     r"(?:(?:\d\s?/\s?\d{3}[a-zA-Z]?(?!\w)"
     # "5 A": a spaced letter is upper case only, never "X" ("12 X 3" is a size). Every
     # regex using this is case-insensitive, so the case is pinned: "20 m ograde" is a
-    # length (R5-1). M, L and H are also units, so they are a building letter only at
-    # the end of the address ("5 L", "5 L, Mostar"), and a unit when a word follows
-    # ("20 M OGRADE", "5 L BOJE").
-    r"|\d{1,4}(?:[a-zA-Z](?!\w)"
-    r"|\s(?-i:(?![XMLH])[A-Z]|[MLH](?=[ \t]*(?:[,.\n]|$)))(?!\w))?"
+    # length (R5-1). A capital M, L or H is a building letter too, whatever follows
+    # (Tomislav: fail closed, so "Izmišljena 5 L Mostar" never leaks); the cost is the
+    # over-scrub of an all-caps size after a place ("MOSTAR 20 M OGRADE").
+    r"|\d{1,4}(?:[a-zA-Z](?!\w)|\s(?-i:(?!X)[A-Z])(?!\w))?"
     rf"{_HOUSE_RANGE}"
     r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2})"
     rf"{_HOUSE_RANGE}(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"

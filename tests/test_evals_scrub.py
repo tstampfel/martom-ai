@@ -88,6 +88,20 @@ def test_keeps_listing_ids_after_broj_and_listing_words(text: str) -> None:
     assert scrub_personal_data(text) == text
 
 
+# Accepted over-scrub (Tomislav, fail closed): a capital M, L or H after a place reads
+# as a building letter, so the place and the number go. The function only removes text.
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("DOSTAVA U MOSTAR 20 M OGRADE", "DOSTAVA U [adresa] OGRADE"),
+        ("dostava na gradilište 5 L BOJE", "dostava na [adresa] BOJE"),
+        ("dostava u Mostar 20 M ograde treba", "dostava u [adresa] ograde treba"),
+    ],
+)
+def test_over_scrubs_all_caps_sizes_after_a_place(text: str, expected: str) -> None:
+    assert scrub_personal_data(text) == expected
+
+
 @pytest.mark.parametrize("shop", ["036 651 427", "036/651-427", "+387 36 651 427", "(036) 651 427"])
 def test_keeps_the_shops_public_number(shop: str) -> None:
     text = f"Pozovite trgovinu na {shop}."
@@ -140,11 +154,9 @@ def test_keeps_the_shops_public_number(shop: str) -> None:
         "dostava u Mostar 2 - 3 sata",
         "dostava na gradilište 60/400",
         # A spaced unit or "x" is never a house-number letter (R5-1), in capitals too.
-        "DOSTAVA U MOSTAR 20 M OGRADE",
+        # With no street word or delivery verb before them, capital units stay.
         "5 L BOJE",
-        "dostava na gradilište 5 L BOJE",
         "Mostar 20 M ograde treba",
-        "dostava u Mostar 20 M ograde treba",
         "dostava u Mostar 20 m ograde",
         "dostava na kuću 15 m ograde",
         "dostava u Čitluk 40 m žice i 10 stubova",
@@ -320,9 +332,12 @@ def test_removes_the_address_given_in_the_order_form() -> None:
         ("Pošaljite na Izmišljena 12/4-2", "Pošaljite na [adresa]"),
         ("Pošaljite na Izmišljena 7/123", "Pošaljite na [adresa]"),
         ("Pošaljite na Izmišljena 5-7b", "Pošaljite na [adresa]"),
-        # An upper-case M, L or H is a building letter only at the end of the address
-        # (end of text, comma, full stop, newline); with a word after it, it is a unit.
+        # After a house number any upper-case letter but X is a building letter, M, L
+        # and H too (Tomislav: fail closed). All-caps sizes after a place are therefore
+        # over-scrubbed: see test_over_scrubs_all_caps_sizes_after_a_place.
         ("Ulica Izmišljena 5 L", "[adresa]"),
+        ("dostava na Izmišljena 3 M sutra", "dostava na [adresa] sutra"),
+        ("Ulica Izmišljena 5 L Mostar", "[adresa] Mostar"),
         ("Ulica Izmišljena 5 L, Mostar", "[adresa], Mostar"),
         ("Pošaljite na Izmišljena 12 H", "Pošaljite na [adresa]"),
         ("dostava na Izmišljena 3 M.", "dostava na [adresa]."),
