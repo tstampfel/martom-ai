@@ -130,7 +130,7 @@ terraform -chdir=infra apply              # api_desired_count back to its defaul
 curl -s "$(terraform -chdir=infra output -raw api_url)/health"
 ```
 
-`/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}`. Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on.
+`/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}` (with Redis down: 200, `"status": "degraded"`, `"redis": "error"`; with Postgres down: 503). Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on.
 
 The morning after the first night, check that it ran: a `sync_run` row started around 01:00 local time, and no messages in the dead-letter queue (`aws sqs get-queue-attributes --queue-url "$(terraform -chdir=infra output -raw scheduler_dlq_url)" --attribute-names ApproximateNumberOfMessages`). A message there means EventBridge Scheduler couldn't start the task (for example permissions or Fargate capacity); the message says why.
 
