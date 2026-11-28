@@ -1,8 +1,6 @@
 """The API's Postgres connection budget fits the RDS instance (#21 review r2)."""
 
-from pathlib import Path
-
-from martom import checkpointer, db
+from martom import checkpointer, db, umami_db
 from martom.api import threads
 
 
@@ -29,7 +27,6 @@ def test_two_api_tasks_and_the_jobs_leave_headroom_on_the_instance() -> None:
 
 
 def test_umami_role_limit_matches_the_budget() -> None:
-    # infra/umami.tf creates the umami role with this CONNECTION LIMIT; the budget above
-    # counts the same number.
-    setup = (Path(__file__).parents[1] / "infra" / "umami.tf").read_text()
-    assert f"CONNECTION LIMIT {db.UMAMI_CONNECTIONS} " in setup
+    # `martom umami-db-setup` creates the umami role with this CONNECTION LIMIT
+    # (tests/test_umami_db.py checks it on a real role); the budget above counts it.
+    assert umami_db.setup_umami_database.__kwdefaults__["connection_limit"] == db.UMAMI_CONNECTIONS

@@ -37,7 +37,8 @@ internal ALB: listener rule "X-Martom-Origin = <secret>" → Umami target group 
   ▼
 ECS service on FARGATE_SPOT: official image ghcr.io/umami-software/umami (pinned), 0.25 vCPU, 1 GB, 1 task
   ▼
-the same RDS instance: database `umami`, role `umami` (no access to `martom`, at most 5 connections)
+the same RDS instance: database `umami`, role `umami` (no CONNECT on `martom`, at most 5 connections),
+  created by `martom umami-db-setup` (src/martom/umami_db.py), which sends Postgres only a SCRAM hash of the password
 ```
 
 - **No new load balancer, no new database instance**: one ALB listener rule and one database on the existing instance.
@@ -94,6 +95,7 @@ done) and `/privatnost`, in both the web and mobile layouts.
 - **Off for local and staging**: unset locally, in tests and in Cloudflare Pages preview deploys, so no script is added at all. With the flag on, a missing or malformed host or website id fails the build instead of silently not tracking.
 - **`data-domains`**: even with the flag on, only visits on `martom-savjetnik.pages.dev` count; a preview (`<branch>.martom-savjetnik.pages.dev`) or a local copy sends nothing.
 - **Nothing that identifies a visitor** (Tomislav, 28 Nov 2026): no `data-distinct-id`, `data-tag` or `data-salt`; credentials are never sent (`fetch-credentials` stays `omit`). `data-exclude-search` and `data-exclude-hash` keep the query string and `#hash` out of the URLs Umami stores. A unit test (`web/src/umami.test.ts`) checks the tag and the flag.
+- **Never load Umami's session-replay recorder** (`recorder.js`, which Umami 3.x also serves) and never turn on replay: it would record typed chat text, names and addresses. Heatmaps and session replay are out of scope (#156). Only `script.js` is ever added.
 - **Never send** typed chat text, names, phone numbers, addresses or order contents as event data (#156; this applies to #164's events too).
 
 ### Excluding our own visits

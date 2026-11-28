@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     # privacy notice promises 90 days, so never raise it without changing that text.
     chat_retention_days: int = Field(default=90, ge=1)
 
+    # Password of Umami's database role (#163), read only by `martom umami-db-setup`, the
+    # one-off task that creates the role (infra/umami.tf). Never logged or printed; the
+    # task sends only a SCRAM verifier of it to Postgres (src/martom/umami_db.py).
+    umami_db_password: SecretStr | None = None
+
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")
     @classmethod

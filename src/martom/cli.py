@@ -35,6 +35,7 @@ from martom.retention import purge_old_chats
 from martom.review.report import ReportIssue, format_report, load_open_issues
 from martom.search.manual import ManualSyncStats, sync_manual_products
 from martom.settings import Settings
+from martom.umami_db import check_password, setup_umami_database
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="delete customer chats idle longer than CHAT_RETENTION_DAYS (nightly)",
     )
 
+    commands.add_parser(
+        "umami-db-setup",
+        help="create or update Umami's database and role (one-off, as the master user)",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "umami-db-setup":
+        return run_umami_db_setup_command()
 
     if args.command == "purge-chats":
         return run_purge_chats_command()
@@ -339,6 +348,41 @@ def run_purge_chats_command() -> int:
         print(f"purge-chats failed: database error: {reason}", file=sys.stderr)
         return 1
     print(f"purge-chats: deleted {stats.deleted_threads} threads idle for more than {days} days")
+    return 0
+
+
+def run_umami_db_setup_command() -> int:
+    """`martom umami-db-setup`: exit 0 when Umami's role and database are ready, else 1.
+
+    Connects with DATABASE_URL (the master user) and takes the role's password from
+    UMAMI_DB_PASSWORD. Prints what it did, never the password or a statement.
+    """
+    try:
+        settings = Settings()
+    except ValidationError as exc:
+        print(f"invalid settings: {exc}", file=sys.stderr)
+        return 1
+    configure_logging(settings.log_level)
+    if settings.umami_db_password is None:
+        print("umami-db-setup failed: UMAMI_DB_PASSWORD is not set", file=sys.stderr)
+        return 1
+    password = settings.umami_db_password.get_secret_value()
+    try:
+        check_password(password)  # before connecting; the message never holds it
+        with psycopg.connect(settings.database_url, autocommit=True) as conn:
+            result = setup_umami_database(conn, password)
+    except ValueError as exc:  # a weak password; the message never holds it
+        print(f"umami-db-setup failed: {exc}", file=sys.stderr)
+        return 1
+    except psycopg.Error as exc:
+        # Only the server's primary message: str(exc) can quote the failing statement
+        # ("LINE 1: ..."), which holds the password's SCRAM verifier.
+        reason = exc.diag.message_primary or type(exc).__name__
+        print(f"umami-db-setup failed: database error: {reason}", file=sys.stderr)
+        return 1
+    role = "created" if result.created_role else "updated"
+    database = "created" if result.created_database else "already there"
+    print(f"umami-db-setup: role umami {role}, database umami {database}; ready")
     return 0
 
 

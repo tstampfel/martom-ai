@@ -317,7 +317,7 @@ Tomislav's decision (#129, 27 Nov 2026), and what the start screen's privacy not
 
 ## Umami (visit statistics)
 
-Cookieless visit statistics, self-hosted (#156, #163). What it collects, how the admin UI is protected and how to exclude your own visits: `docs/analytics.md`. Umami runs the **official image** (`var.umami_image`, pinned) at the root of its **own CloudFront distribution** (`umami_url`), because a sub-path would need a custom image build (Tomislav, 28 Nov 2026). It reuses the ALB (a listener rule that requires a secret `X-Martom-Origin` header) and the RDS instance (its own database and role, at most 5 connections).
+Cookieless visit statistics, self-hosted (#156, #163). What it collects, how the admin UI is protected and how to exclude your own visits: `docs/analytics.md`. Umami runs the **official image** (`var.umami_image`, pinned) at the root of its **own CloudFront distribution** (`umami_url`), because a sub-path would need a custom image build (Tomislav, 28 Nov 2026). It reuses the ALB (a listener rule that requires a secret `X-Martom-Origin` header) and the RDS instance (its own database and role, at most 5 connections; see "Connections" below).
 
 The ALB rule's header value is `var.umami_origin_secret`: no default, never committed, and **every `plan` and `apply` needs it**. Keep it in the git-ignored `infra/terraform.tfvars` (`umami_origin_secret = "..."`, see `terraform.tfvars.example`), which Terraform reads on every run, with a copy in the Umami secret (`ORIGIN_HEADER_SECRET`) so it can be recovered.
 
@@ -328,7 +328,7 @@ The ALB rule's header value is `var.umami_origin_secret`: no default, never comm
 
    ```json
    {
-     "DATABASE_URL": "postgresql://umami:<db password>@<db_endpoint output>/umami?sslmode=no-verify",
+     "DATABASE_URL": "postgresql://umami:<db password>@<db_endpoint output>/umami?sslmode=require&uselibpqcompat=true",
      "UMAMI_DB_PASSWORD": "<db password>",
      "APP_SECRET": "<app secret>",
      "ADMIN_PASSWORD": "<admin password>",
@@ -342,8 +342,8 @@ The ALB rule's header value is `var.umami_origin_secret`: no default, never comm
    rm ~/martom-umami-secret.json
    ```
 
-   `sslmode=no-verify` encrypts the connection without checking the RDS certificate, like the API's libpq `sslmode=require`. Umami's Postgres driver (node-postgres) treats `require` as "verify against Node's CA list", which lacks the RDS CA, so `require` would fail to connect. No container reads `ADMIN_PASSWORD` (Umami has no setting for it); it is kept for step 4.
-3. **Create the database and role** with the one-off set-up task (it re-runs safely; run it again after changing `UMAMI_DB_PASSWORD`, then restart Umami):
+   `sslmode=require&uselibpqcompat=true` encrypts the connection without checking the RDS certificate, like the API's libpq `sslmode=require`. Umami 3.5 reads the URL with two drivers: node-postgres for its queries, which on its own treats `require` as "verify against Node's CA list" (that list lacks the RDS CA, so it would fail) and with `uselibpqcompat=true` follows libpq's meaning; and Prisma's migrate engine (`prisma migrate deploy` at start), which understands `require` but not `no-verify`. To be confirmed at the first start: the log shows `✓ Database connection successful` and the migrations applied. No container reads `ADMIN_PASSWORD` (Umami has no setting for it); it is kept for step 4.
+3. **Create the database and role** with the one-off set-up task, `martom umami-db-setup` from the app image, so the app image must be in ECR (first deploy, step 4). It re-runs safely; run it again after changing `UMAMI_DB_PASSWORD`, then restart Umami. It sends Postgres only a SCRAM hash of the password (the plain password is never in a statement, so it can't reach the RDS log export) and prints only what it did:
 
    ```sh
    aws ecs run-task --cluster "$(terraform -chdir=infra output -raw ecs_cluster)" \
@@ -352,11 +352,17 @@ The ALB rule's header value is `var.umami_origin_secret`: no default, never comm
      --network-configuration "$(terraform -chdir=infra output -raw job_network_configuration)"
    ```
 
-   Its log (`/ecs/martom-production/umami`, stream prefix `db-setup`) ends with `umami database and role are ready`.
+   Its log (`/ecs/martom-production/umami`, stream prefix `db-setup`) ends with `umami-db-setup: role umami created, database umami created; ready` (`updated` / `already there` on a re-run). The role can't log in to the app database `martom`; it can still connect to the RDS maintenance database `postgres`, where it has no privileges beyond the defaults (the master doesn't own that database, so it can't revoke them).
 4. **Start Umami and change the default login at once (launch checklist, #33).** `terraform -chdir=infra apply` (`umami_desired_count` back to 1). On its first start Umami creates the admin login **admin / umami**, and the admin UI is on the public `umami_url`. So straight away, before the tracking script goes live: open `umami_url`, log in as admin / umami, change the password in the profile settings to `ADMIN_PASSWORD` from the secret, log out, and check that admin / umami no longer works.
 5. **One admin account only.** Umami has no public sign-up; users exist only when an admin creates them. Never create a second user or a team; check the Users settings list only `admin`.
 6. **Add the website** in the admin UI: name `Martom savjetnik`, domain `martom-savjetnik.pages.dev`. Copy its website id.
 7. **Turn the script on in Cloudflare Pages, production environment only:** `VITE_UMAMI_ENABLED=true`, `VITE_UMAMI_HOST=<umami_url>`, `VITE_UMAMI_WEBSITE_ID=<website id>`, then redeploy. Leave all three unset in the preview environment. Open the site: the visit appears in Umami's realtime view. Then exclude your own browsers (`docs/analytics.md`).
+
+The window between Umami's first start and the password change is a few minutes on a random, unpublished hostname (the review's R1-5). Tomislav asked for this runbook step and the #33 checklist item (28 Nov 2026); closing it entirely (the listener rule off until the change, or the change through an ECS Exec tunnel) is possible later.
+
+### Connections
+
+Umami 3.5 opens its queries through Prisma's node-postgres adapter, which gets only the connection string, and node-postgres's pool defaults to **10** connections; no URL parameter or Umami setting changes that (checked in Umami 3.5's `src/lib/prisma.ts`). The **role's `CONNECTION LIMIT 5`** is the real cap (`UMAMI_CONNECTIONS` in `src/martom/db.py`, counted in the connection budget): Postgres refuses a sixth connection, so a burst of more than 5 queries at once loses those visits (an error in the Umami log) and never takes a connection from the API. At launch traffic Umami uses one or two. If the log shows `too many connections for role "umami"`, raise the limit together with `UMAMI_CONNECTIONS` (the budget test must still pass), then re-run step 3.
 
 ### Checks
 

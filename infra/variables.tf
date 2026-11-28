@@ -168,8 +168,9 @@ variable "log_retention_days" {
   # The Privatnost page promises that technical logs and IP addresses are kept 30 days
   # (Tomislav, 28 Nov 2026). Every log group uses this variable.
   validation {
-    condition     = var.log_retention_days > 0 && var.log_retention_days <= 30
-    error_message = "Logs may be kept at most 30 days: the Privatnost page promises that technical logs and IP addresses are deleted after 30 days."
+    # 1, 3, 5, 7, 14 and 30 are the only CloudWatch retention values up to 30 days.
+    condition     = contains([1, 3, 5, 7, 14, 30], var.log_retention_days)
+    error_message = "Logs may be kept at most 30 days (1, 3, 5, 7, 14 or 30, the values CloudWatch accepts): the Privatnost page promises that technical logs and IP addresses are deleted after 30 days."
   }
 }
 

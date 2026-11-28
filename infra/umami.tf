@@ -164,10 +164,13 @@ resource "aws_ecs_service" "umami" {
 # --- One-off database set-up: role and database `umami` on the shared RDS instance ---
 #
 # Terraform can't reach the private RDS instance, so this task does it (README, "Umami",
-# step 2). It runs psql from the official Postgres image as the master user, re-runs safely,
-# and takes both passwords from Secrets Manager, so none is in a command line or a task
-# override. The umami role gets its own database only: no superuser, no CONNECT on `martom`,
-# and at most 5 connections (src/martom/db.py, UMAMI_CONNECTIONS).
+# step 3): `martom umami-db-setup` (src/martom/umami_db.py) from our own app image, as the
+# master user. The master is rds_superuser, not a superuser, and the code works within
+# that (tests/test_umami_db.py runs it as a non-superuser master). It re-runs safely, and
+# sends Postgres only a SCRAM verifier of the password, never the password itself, so a
+# failing statement in the RDS log export can't show it. The umami role gets its own
+# database only: no CONNECT on the app database, at most 5 connections
+# (src/martom/db.py, UMAMI_CONNECTIONS). Needs an app image in ECR (README step 4).
 resource "aws_ecs_task_definition" "umami_db_setup" {
   family                   = "${local.prefix}-umami-db-setup"
   requires_compatibilities = ["FARGATE"]
@@ -184,16 +187,14 @@ resource "aws_ecs_task_definition" "umami_db_setup" {
   container_definitions = jsonencode([
     {
       name      = "umami-db-setup"
-      image     = "public.ecr.aws/docker/library/postgres:16-alpine"
+      image     = local.image
       essential = true
-      command   = ["sh", "-c", local.umami_db_setup_script]
+      command   = ["martom", "umami-db-setup"]
 
       environment = [
-        { name = "PGHOST", value = aws_db_instance.main.address },
-        { name = "PGPORT", value = tostring(aws_db_instance.main.port) },
-        { name = "PGUSER", value = aws_db_instance.main.username },
-        { name = "PGDATABASE", value = aws_db_instance.main.db_name },
-        { name = "PGSSLMODE", value = "require" },
+        { name = "APP_ENV", value = "production" },
+        { name = "LOG_LEVEL", value = "INFO" },
+        { name = "DATABASE_URL", value = local.database_url },
       ]
       secrets = [
         local.db_password_secret,
@@ -210,23 +211,6 @@ resource "aws_ecs_task_definition" "umami_db_setup" {
       }
     },
   ])
-}
-
-locals {
-  # psql reads the SQL from stdin, where :'pw' is quoted safely as a literal; \gexec runs
-  # CREATE ROLE / CREATE DATABASE only when they don't exist yet (neither has IF NOT EXISTS).
-  # Every run sets the password again, so it also applies a changed UMAMI_DB_PASSWORD.
-  umami_db_setup_script = <<-EOT
-    set -eu
-    psql -v ON_ERROR_STOP=1 -v pw="$UMAMI_DB_PASSWORD" <<'SQL'
-    SELECT 'CREATE ROLE umami' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'umami') \gexec
-    ALTER ROLE umami WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE CONNECTION LIMIT 5 PASSWORD :'pw';
-    SELECT 'CREATE DATABASE umami OWNER umami' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'umami') \gexec
-    REVOKE ALL ON DATABASE umami FROM PUBLIC;
-    REVOKE CONNECT ON DATABASE martom FROM PUBLIC;
-    SQL
-    echo "umami database and role are ready"
-  EOT
 }
 
 # --- Load balancer: target group and the header rule ---
