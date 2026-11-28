@@ -48,7 +48,7 @@ describe('AppShell privacy notice (M5-8)', () => {
     expect(screen.queryByText(copy.privacy.chatNoticeShort, { exact: false })).not.toBeInTheDocument()
   })
 
-  it('has no Privatnost link until a privacy page exists (#129)', () => {
+  it('has no Privatnost link without a privacy page', () => {
     render(
       <AppShell onStartChat={() => {}} showPrivacyNotice>
         content

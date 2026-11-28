@@ -12,6 +12,20 @@ const shop = {
   hours: 'Pon–pet 07–16 · sub 07–14',
 } as const
 
+/**
+ * PLACEHOLDERS on the "Privatnost" page, copied from the canvas as written.
+ * They stay until Martom (Toni) confirms the date and the order retention
+ * period, and the transfer safeguard is checked against the contracts.
+ * Replace them here, and PrivacyPage.test.tsx tells you to update it.
+ */
+export const privacyPlaceholders = {
+  date: '[DATUM]',
+  orderRetention: '[ROK ČUVANJA – potvrđuje Martom, npr. koliko zahtijevaju računovodstveni propisi]',
+  // The safeguard for sending data to Anthropic and Cohere (USA, Canada),
+  // until the contracts are checked.
+  transferSafeguard: '[ZAŠTITA PRIJENOSA – provjeriti ugovore]',
+} as const
+
 /** Builds a `tel:` link in international form (+387) from a BiH number. */
 export function telHref(phone: string): string {
   const digits = phone.replace(/[^\d+]/g, '').replace(/^00/, '+')
@@ -208,6 +222,89 @@ export const copy = {
     chatNoticeShort: 'Razgovore čuvamo 90 dana radi poboljšanja savjetnika. Ne upisujte osobne podatke.',
     orderNotice: 'Ime, telefon i adresu koristimo samo za ovu narudžbu.',
     link: 'Privatnost',
+  },
+  // The "Privatnost" page, canvas version 1795851325-40ff (Tomislav, 28 Nov
+  // 2026): docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
+  // The wording gets an AI review before launch (#33); don't reword it here.
+  // PLACEHOLDERS: `privacyPlaceholders` (`.date`, `.orderRetention`,
+  // `.transferSafeguard`) stay verbatim until they are confirmed;
+  // PrivacyPage.test.tsx finds them.
+  privacyPage: {
+    // document.title while the page is open; index.html keeps the site title.
+    documentTitle: 'Privatnost · Martom savjetnik',
+    eyebrow: 'Martom AI savjetnik',
+    title: 'Privatnost',
+    // Wide screens (web/6-privatnost.html) and phones (mobile/6-privatnost.html).
+    intro: `Kratko i jasno: koje podatke savjetnik koristi, zašto i koliko dugo. Ažurirano: ${privacyPlaceholders.date}.`,
+    introShort: `Koje podatke savjetnik koristi, zašto i koliko dugo. Ažurirano: ${privacyPlaceholders.date}.`,
+    back: '← Natrag na savjetnika',
+    backShort: '← Natrag',
+    // Each section is a heading and one paragraph; a `label` is the bold
+    // lead-in of a line, and lines are separated by line breaks.
+    sections: [
+      {
+        heading: 'Tko smo',
+        lines: [{ text: 'Željezarija Martom d.o.o., Krstine 106, Međugorje. Za sva pitanja o vašim podacima: ' }],
+        // The email (a mailto link) and the shop phone follow the line.
+        contact: true,
+      },
+      {
+        heading: 'Koje podatke prikupljamo',
+        lines: [
+          { label: 'Razgovor sa savjetnikom:', text: ' pitanja koja upišete i odgovore savjetnika.' },
+          {
+            label: 'Narudžba:',
+            text: ' ime, telefon, adresu za dostavu i napomenu, samo ako pošaljete zahtjev za narudžbu.',
+          },
+          {
+            label: 'Tehnički podaci:',
+            text: ' IP adresu i zapise o greškama, radi zaštite od zloupotrebe i ispravljanja grešaka.',
+          },
+        ],
+      },
+      {
+        heading: 'Zašto ih koristimo',
+        lines: [
+          {
+            text: 'Da odgovorimo na vaše pitanje i složimo popis materijala, da obradimo narudžbu i dogovorimo dostavu, da poboljšamo savjetnika i da zaštitimo stranicu od zloupotrebe. Podatke ne koristimo za oglašavanje i nikome ih ne prodajemo.',
+          },
+        ],
+      },
+      {
+        heading: 'Koliko dugo ih čuvamo',
+        lines: [
+          {
+            label: 'Razgovori:',
+            text: ' 90 dana, zatim se automatski brišu. Primjeri koje koristimo za poboljšanje savjetnika prije toga se očiste od imena, telefona i adresa.',
+          },
+          { label: 'Narudžbe:', text: ` ${privacyPlaceholders.orderRetention}.` },
+        ],
+      },
+      {
+        heading: 'Tko još vidi podatke',
+        lines: [
+          {
+            text: `Podatke vidi Martom. Za rad savjetnika koristimo pružatelje usluga koji ih obrađuju samo u naše ime: Anthropic (razumijevanje pitanja i odgovori), Cohere (pretraživanje artikala), Amazon Web Services (poslužitelji u EU, Frankfurt), LangSmith (praćenje rada savjetnika, podaci u EU, čuvaju se najviše 90 dana) i Cloudflare (zaštita od botova). Anthropic i Cohere obrađuju podatke u SAD-u i Kanadi ${privacyPlaceholders.transferSafeguard}. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete.`,
+          },
+        ],
+      },
+      {
+        heading: 'Vaša prava',
+        lines: [
+          {
+            text: 'Možete tražiti uvid u svoje podatke, ispravak ili brisanje, te uložiti prigovor. Javite nam se na e-mail ili telefon iznad. Ako niste zadovoljni odgovorom, možete se obratiti Agenciji za zaštitu ličnih/osobnih podataka u Bosni i Hercegovini.',
+          },
+        ],
+      },
+      {
+        heading: 'Savjet',
+        lines: [
+          {
+            text: 'Ne upisujte u razgovor osobne podatke koji nisu potrebni za pitanje (JMBG, broj kartice i slično).',
+          },
+        ],
+      },
+    ],
   },
   about: {
     label: 'O Martomu',

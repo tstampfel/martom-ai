@@ -29,6 +29,8 @@ const expected: Record<string, string> = {
   '--color-step-question': '#C27A00',
   '--color-photo-stripe': '#DEDED9',
   '--color-photo-stripe-light': '#E8E8E4',
+  '--color-link': '#185FA5',
+  '--color-link-hover': '#0C447C',
   '--hexagon': 'polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%)',
 }
 

@@ -101,3 +101,26 @@ describe('App shell', () => {
     expect(within(about).getAllByRole('listitem')).toHaveLength(4)
   })
 })
+
+describe('Privatnost page (M6-5b)', () => {
+  it('the start-screen footer links Privatnost to /privatnost', () => {
+    render(<App path="/" />)
+    const links = within(screen.getByRole('contentinfo')).getAllByRole('link', { name: copy.privacy.link })
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/privatnost')
+    }
+  })
+
+  it.each(['/privatnost', '/privatnost/'])('%s shows the privacy page instead of the advisor', (path) => {
+    render(<App path={path} />)
+    expect(screen.getByRole('heading', { level: 1, name: copy.privacyPage.title })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('any other path shows the advisor', () => {
+    render(<App path="/nesto" />)
+    expect(screen.queryByRole('heading', { level: 1, name: copy.privacyPage.title })).not.toBeInTheDocument()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent(copy.privacy.chatNotice)
+  })
+})
