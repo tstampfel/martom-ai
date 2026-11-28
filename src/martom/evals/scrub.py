@@ -183,8 +183,11 @@ _HOUSE_NUMBER = (
     r"(?:(?:\d\s?/\s?\d{3}[a-zA-Z]?(?!\w)"
     # "5 A": a spaced letter is upper case only, never "X" ("12 X 3" is a size). Every
     # regex using this is case-insensitive, so the case is pinned: "20 m ograde" is a
-    # length (R5-1), while "5 L" or "5 M" is a building letter.
-    r"|\d{1,4}(?:[a-zA-Z](?!\w)|\s(?-i:(?!X)[A-Z])(?!\w))?"
+    # length (R5-1). M, L and H are also units, so they are a building letter only at
+    # the end of the address ("5 L", "5 L, Mostar"), and a unit when a word follows
+    # ("20 M OGRADE", "5 L BOJE").
+    r"|\d{1,4}(?:[a-zA-Z](?!\w)"
+    r"|\s(?-i:(?![XMLH])[A-Z]|[MLH](?=[ \t]*(?:[,.\n]|$)))(?!\w))?"
     rf"{_HOUSE_RANGE}"
     r"(?:\s?/\s?(?:\d{1,2}|[IVX]{1,4}|[ivx]{1,4})[a-zA-Z]?(?!\w)){0,2})"
     rf"{_HOUSE_RANGE}(?!\w){_NOT_HOUSE_NUMBER}|{_BB})"

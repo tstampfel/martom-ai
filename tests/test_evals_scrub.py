@@ -139,7 +139,12 @@ def test_keeps_the_shops_public_number(shop: str) -> None:
         "dostava u Mostar 5-7 dana",
         "dostava u Mostar 2 - 3 sata",
         "dostava na gradilište 60/400",
-        # A spaced unit or "x" is never a house-number letter (R5-1).
+        # A spaced unit or "x" is never a house-number letter (R5-1), in capitals too.
+        "DOSTAVA U MOSTAR 20 M OGRADE",
+        "5 L BOJE",
+        "dostava na gradilište 5 L BOJE",
+        "Mostar 20 M ograde treba",
+        "dostava u Mostar 20 M ograde treba",
         "dostava u Mostar 20 m ograde",
         "dostava na kuću 15 m ograde",
         "dostava u Čitluk 40 m žice i 10 stubova",
@@ -315,10 +320,13 @@ def test_removes_the_address_given_in_the_order_form() -> None:
         ("Pošaljite na Izmišljena 12/4-2", "Pošaljite na [adresa]"),
         ("Pošaljite na Izmišljena 7/123", "Pošaljite na [adresa]"),
         ("Pošaljite na Izmišljena 5-7b", "Pošaljite na [adresa]"),
-        # An upper-case M, L or H after a number is a building letter, not a unit.
+        # An upper-case M, L or H is a building letter only at the end of the address
+        # (end of text, comma, full stop, newline); with a word after it, it is a unit.
+        ("Ulica Izmišljena 5 L", "[adresa]"),
         ("Ulica Izmišljena 5 L, Mostar", "[adresa], Mostar"),
         ("Pošaljite na Izmišljena 12 H", "Pošaljite na [adresa]"),
-        ("dostava na Izmišljena 3 M sutra", "dostava na [adresa] sutra"),
+        ("dostava na Izmišljena 3 M.", "dostava na [adresa]."),
+        ("Ulica Izmišljena 5 L\nHvala", "[adresa]\nHvala"),
         ("Pošaljite na Izmišljena 5 \u2013 7", "Pošaljite na [adresa]"),
         ("Kuća je Izmišljena bb.", "Kuća je [adresa]."),
     ],
