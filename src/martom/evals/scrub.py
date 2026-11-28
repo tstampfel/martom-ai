@@ -83,7 +83,9 @@ _PHONE_AFTER_PHONE_WORD_RE = re.compile(
 # only digits grouped the way phones are written count ("broj je 61 000 000"), and never
 # after a listing word ("artikal broj ...", "oglas broj ...", "šifra ...").
 _PHONE_AFTER_BROJ_RE = re.compile(
-    r"(?i)(?:\b(artikl\w*|oglas\w*|[sš]ifr\w*)\s+)?"
+    r"(?i)(?:\b(artikal|artikla|artiklu|artikli|artikle|artikala|artiklom"
+    r"|oglas|oglasa|oglasu|oglasi|oglase|oglasom|oglasima"
+    r"|[sš]ifra|[sš]ifre|[sš]ifru|[sš]ifri|[sš]ifrom)\s+)?"
     r"(\bbroj(?:\s+je)?\s*:?\s*)"
     r"([1-9]\d{1,2}(?:(?:\s?[/.-]\s?|\s)\d{2,4}){2,3})(?!\w)"
 )
@@ -123,14 +125,47 @@ _ADDRESS_LABEL_RE = re.compile(
     r"(?im)\b(adresa(?: za dostavu)?\s*:[ \t]*)(?:\b(?:ul|br)\.|[^\n.!?<])+"
 )
 # A number followed by one of these is a size, a price or a count, never a house number.
+# What may follow a number without it being a house number. Every word is a whole word
+# in its real forms, never an open prefix (R3-1: "dan\\w*" swallowed "danas", "mart"
+# swallowed "Martom", so the address before them leaked). `(?!\\w)` closes each form, so
+# "%" and "\u00d7" work too.
+_UNIT_WORDS = (
+    "cm mm m km kg l h x \u00d7 % kom kom. komad komada komadi komadu komade "
+    "metar metra metri metara metru metrima metre "
+    "stub stuba stubu stubovi stubova stubove stubovima "
+    "panel panela panelu paneli panele panelima "
+    "paleta palete paletu paleti paletama "
+    # Times: "dostava u Mostar 3 dana", "za 2 sata".
+    "dan dana danu dani danima sat sata satu sati satima min minut minuta minute minutu "
+    "sedmica sedmice sedmicu sedmici sedmica sedmicama "
+    "tjedan tjedna tjednu tjedni tjedana tjednima"
+)
+# After "15." only a month (a date), so "7. Hvala", "7. Martom", "9. Julija" stay
+# house numbers.
+_MONTH_WORDS = (
+    "januar januara januaru februar februara februaru mart marta martu april aprila aprilu "
+    "maj maja maju jun juna junu juni jul jula julu juli august augusta augustu avgust "
+    "avgusta avgustu septembar septembra septembru oktobar oktobra oktobru novembar "
+    "novembra novembru decembar decembra decembru "
+    "siječanj siječnja siječnju sijecanj sijecnja sijecnju veljača veljače veljači veljaca "
+    "veljace veljaci ožujak ožujka ožujku ozujak ozujka ozujku travanj travnja travnju "
+    "svibanj svibnja svibnju lipanj lipnja lipnju srpanj srpnja srpnju kolovoz kolovoza "
+    "kolovozu rujan rujna rujnu listopad listopada listopadu studeni studenog studenoga "
+    "studenom prosinac prosinca prosincu"
+)
+
+
+def _whole_words(words: str) -> str:
+    # Longest first, so "komada" is tried before "kom"; escaped for "kom." and "%".
+    forms = sorted(set(words.split()), key=len, reverse=True)
+    return "(?:" + "|".join(re.escape(form) for form in forms) + ")(?!\\w)"
+
+
 _NOT_HOUSE_NUMBER = (
-    r"(?!\s*(?i:cm|mm|m|km|kg|l|kom\w*|komad\w*|metr\w*|metar|stub\w*|panel\w*|palet\w*"
-    r"|dan\w*|sat\w*|sedmic\w*|tjed\w*|min\w*|h|x|\u00d7|%)\b"
-    # "15. decembra" (a date: only a month name, so "7. Hvala" stays a house number),
-    # "54,90" (a price), "153x250" (a size).
-    r"|\.\s*(?i:januar|februar|mart|april|maj|jun|jul|august|septemb|oktob|novemb|decemb"
-    r"|siječ|sijec|veljač|veljac|ožuj|ozuj|travanj|travnj|svib|lipan|lipnj|srpan|srpnj"
-    r"|kolovoz|rujan|rujn|listopad|studen|prosin)\w*|[,.]\d|\s*[x\u00d7*/])"
+    rf"(?!\s*(?i:{_whole_words(_UNIT_WORDS)})"
+    # "15. decembra" (a date), "54,90" (a price), "153x250" / "60/40" (a size: a digit
+    # must follow, so "5 xanadu" stays a house number).
+    rf"|\.\s*(?i:{_whole_words(_MONTH_WORDS)})|[,.]\d|\s*[x\u00d7*/]\s*\d)"
 )
 _HOUSE_NUMBER = rf"(?:\d{{1,4}}[a-zA-Z]?\b{_NOT_HOUSE_NUMBER}|bb\b)"
 _STREET_WORDS = rf"(?:{_WORD}\.?\s+)"
