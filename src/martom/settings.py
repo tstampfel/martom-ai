@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     # privacy notice promises 90 days, so never raise it without changing that text.
     chat_retention_days: int = Field(default=90, ge=1)
 
+    # Password of Umami's database role (#163), read only by `martom umami-db-setup`, the
+    # one-off task that creates the role (infra/umami.tf). Never logged or printed; the
+    # task sends only a SCRAM verifier of it to Postgres (src/martom/umami_db.py).
+    umami_db_password: SecretStr | None = None
+
     # The private S3 bucket `martom export-chats` writes scrubbed chats to (#158,
     # infra/chat_export.tf); unset locally, where `--out <folder outside the repo>` is used.
     chat_export_bucket: str | None = None

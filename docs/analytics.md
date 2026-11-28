@@ -1,0 +1,218 @@
+# Analytics
+
+How we count visits, clicks and conversations that end in an order, without cookies,
+without storing IP addresses or anything that names a person, with the data in our own AWS
+account in the EU (#156). Three parts:
+
+| Part | Issue | Status |
+| --- | --- | --- |
+| Umami, self-hosted, and its tracking script | #163 | this document, below |
+| Click events: every clickable element tagged with `data-umami-event` | #164 | after #147 and #152 merge; the event list will live here |
+| Funnel events in our Postgres (`advisor_events`), retention and report | #165 | after #147 merges; the rows will be described here |
+
+## Umami
+
+[Umami](https://umami.is) is open-source web analytics. It sets no cookies and stores no
+IP address. It does **use** the IP address of each request, briefly: a visitor's session is
+a hash of the IP address, the browser's user agent and a salt that changes every month, and
+the country is looked up from the IP. Under the GDPR that brief use is still processing of
+personal data (an IP address is personal data), so the stored statistics are pseudonymous,
+not anonymous, and the privacy text must not say "no personal data" (see "Privacy text"
+below). It shows page views, visitors, referrers, countries, devices and (from #164) custom
+events. We run the official image ourselves; nothing goes to Umami's cloud.
+
+### What Umami stores (Umami 3.5, checked in its source)
+
+Per session (`session` table): a session id (a UUID derived from a hash of website id, IP
+address, user agent and the monthly salt, mixed with a hash of `APP_SECRET`), browser,
+operating system, device, screen size, language, **country** and the time. Per page view
+or event: the page path and title, the referrer, the event name. **Never the IP address:**
+no table has an IP column, and no Umami setting stores one.
+
+`region` and `city` columns exist too, and the official image would fill them: it ships
+the city-level GeoLite2-City database and also trusts location headers (`cf-ipcity`,
+`cloudfront-viewer-city`, ...) that a visitor can send. **We store the country only**
+(Tomislav, #163 review r4), so those two columns stay empty. **The country comes from
+CloudFront**, not from a database of ours: CloudFront looks up the visitor's IP address
+and passes the country code to Umami in the `CloudFront-Viewer-Country` header. How, below.
+
+Left unset on purpose (each would weaken this), guarded by `tests/test_umami_infra.py`:
+`SKIP_LOCATION_HEADERS` (Umami would ignore the CloudFront country), `CLOUD_MODE`,
+`SALT_ROTATION` (any value other than `day`/`week`/`month` fixes the salt for ever, so
+sessions could be linked across months), `ENABLE_CLIENT_SALT`, `CLIENT_IP_HEADER`,
+`TRUSTED_PROXIES` and `LOG_QUERY` (writes Umami's queries to the container log).
+
+The salt is derived from the month, not random: someone holding both `APP_SECRET` and the
+database could test a guessed IP address and user agent against a session id. That is why
+the data is pseudonymous, not anonymous.
+
+Accuracy note: behind CloudFront and the ALB, Umami reads the left-most `X-Forwarded-For`
+address, which a visitor can set, so a visitor can split their own sessions. That affects only the accuracy of the statistics, never someone else's data.
+
+### Country only: the country from CloudFront (Tomislav, #163 review r4)
+
+How Umami 3.5.0 finds a location (`src/lib/detect.ts`, `getLocation`, read in the source
+of the version we run): unless `SKIP_LOCATION_HEADERS` is set, it walks a list of CDN
+header sets (Cloudflare `cf-ipcountry`, Vercel, CloudFront `cloudfront-viewer-country`,
+EdgeOne) and uses the first set whose **country** header is present, taking region and
+city from that set's region and city headers, or empty when they are absent. With no
+country header it opens the MaxMind database at `GEOLITE_DB_PATH` (default: the image's
+`geo/GeoLite2-City.mmdb`) and reads country, subdivision and city. Only `/api/send` (and
+the pixel and link routes, which call it) and error collection look a location up.
+
+Our settings, all of them run-time settings of the official image (no image build, no
+download, no MaxMind account, nothing in Secrets Manager):
+
+- **CloudFront passes an allowlist of headers only** (`aws_cloudfront_origin_request_policy.umami`,
+  `local.umami_forwarded_headers` in `infra/umami.tf`): `CloudFront-Viewer-Country`, plus
+  what Umami needs to work (User-Agent, Authorization for the admin login, Content-Type,
+  Origin, Accept and Umami's own `x-umami-cache` / `x-umami-share-token` /
+  `x-umami-share-context`). Any other header a visitor sends, such as `cf-ipcountry`,
+  `cf-ipcity` or `cloudfront-viewer-city`, never reaches Umami, and CloudFront adds no
+  other `CloudFront-Viewer-*` header, so Umami only ever sees a country. The policy is on
+  every path except the cached `/script.js`, which forwards no viewer headers at all.
+- **The GeoLite2-City lookup is off:** `GEOLITE_DB_PATH` points at a file that doesn't
+  exist. A request that arrives without the country header (CloudFront may leave it out
+  for an address it can't place) makes the lookup fail, so Umami answers 500 and that one
+  visit isn't counted; nothing is stored, never a city. The error in the container log
+  names the missing file only, no visitor data.
+- `SKIP_LOCATION_HEADERS` stays unset (it would ignore the CloudFront country).
+
+Can a visitor fake the country? CloudFront generates `CloudFront-Viewer-Country` itself
+from the connection's IP address; AWS documents that it sets these headers, but not in so
+many words that it replaces a value the visitor sent under the same name. Even if it
+didn't, the visitor could only fake their own country, never region or city (those
+headers aren't forwarded) and never someone else's data. Tomislav checks it once after
+the apply (`infra/README.md`, "Umami", checks).
+
+Checked locally on 28 Nov 2026 with the real `ghcr.io/umami-software/umami:3.5.0` image and
+Postgres 16, sending a visit from an address with city data in GeoLite2:
+
+| Container | Request reaching Umami | Stored `country`, `region`, `city` |
+| --- | --- | --- |
+| Official image, default settings | fake `cf-ipcountry`/`cf-region-code`/`cf-ipcity` headers | `XX`, `XX-FAKE`, `Fakeville` (the visitor's own headers) |
+| Official image, default settings | no location headers | `SE`, `SE-O`, `Lidköping` (GeoLite2-City) |
+| Our settings | `CloudFront-Viewer-Country: SE` only (what the allowlist passes) | `SE`, empty, empty |
+| Our settings | no country header | nothing stored (HTTP 500) |
+
+What stays untested until Tomislav's plan/apply: the policy on real CloudFront (that a
+visitor's `cf-ipcity` is dropped and the country arrives), and the admin UI behind the
+allowlist (Next.js's partial-navigation headers aren't forwarded, so navigation loads
+full pages).
+
+### How it runs (Terraform: `infra/umami.tf`)
+
+```text
+browser on martom-savjetnik.pages.dev
+  │ GET  https://<umami id>.cloudfront.net/script.js   (cached at the edge)
+  │ POST https://<umami id>.cloudfront.net/api/send    (never cached; Umami answers CORS itself)
+  ▼
+CloudFront distribution "umami" (its own free *.cloudfront.net address)
+  │ the API's VPC origin, plus a secret X-Martom-Origin header
+  ▼
+internal ALB: listener rule "X-Martom-Origin = <secret>" → Umami target group (:3000)
+              every other request → the API (default action, unchanged)
+  ▼
+ECS service on FARGATE_SPOT: official image ghcr.io/umami-software/umami (pinned), 0.25 vCPU, 1 GB, 1 task
+  ▼
+the same RDS instance: database `umami`, role `umami` (no CONNECT on `martom`, at most 5 connections),
+  created by `martom umami-db-setup` (src/martom/umami_db.py), which sends Postgres only a SCRAM hash of the password
+```
+
+- **No new load balancer, no new database instance**: one ALB listener rule and one database on the existing instance.
+- **FARGATE_SPOT**: AWS may take the capacity back; ECS starts a new task by itself, and visits in those minutes aren't counted. Nothing else depends on Umami.
+- **Restart on failure**: ECS replaces a task that exits or fails its health check (`/api/heartbeat`); a deploy that keeps failing rolls back.
+- **Secrets**: `martom/production/umami` in Secrets Manager holds the database URL, the app secret, the admin password and the origin header secret, set by hand (`infra/README.md`, "Umami"). None is in the repo, `.env.example`, Terraform variables' defaults or a task override.
+- **Cost**: about $7.50 a month: ~$3.70 Fargate Spot plus ~$3.65 for the task's public IPv4 address (no NAT gateway); the distribution is in CloudFront's free tier. See the cost table in `infra/README.md`.
+- **Logs**: the Umami log group keeps 30 days, like every log group (the Privatnost page promises 30 days for technical logs and IP addresses; `log_retention_days` can't exceed it). No CloudFront or ALB access logs are turned on.
+
+### Why a second CloudFront distribution and not `/umami/*` (checked 28 Nov 2026)
+
+The first plan was a `/umami/*` path on the API's CloudFront distribution. What Umami
+supports (Umami 3.5, [environment variables](https://docs.umami.is/docs/environment-variables),
+[Dockerfile](https://github.com/umami-software/umami/blob/master/Dockerfile)):
+
+- `BASE_PATH` (serving Umami under a sub-path) is a **build-time** variable: "Build time variables are only recognized during the build process. This also includes building custom Docker images." The Dockerfile bakes it in during `pnpm build:docker`. There is no prebuilt image or runtime option for it, so a sub-path means building and maintaining our own image.
+- `TRACKER_SCRIPT_NAME` (default `script.js`) and `COLLECT_API_ENDPOINT` (default `/api/send`) are runtime variables; we keep both defaults.
+- The collect endpoint answers CORS for every origin (`Access-Control-Allow-Origin: *`, set in Umami's `next.config.ts`), so the script on pages.dev can post to another hostname. The API's own CORS rules are unchanged.
+
+Tomislav's decision (28 Nov 2026): **a second CloudFront distribution**, Umami at the root
+of its own `*.cloudfront.net` hostname, official image, no build. It reuses the API's VPC
+origin and ALB.
+
+### How the admin UI is protected
+
+The admin UI is at the root of `umami_url`, on the public internet. It is protected by:
+
+1. **A strong admin password.** Umami creates the login **admin / umami** on its first start and has no setting to choose another. Changing it to `ADMIN_PASSWORD` from the Umami secret is the first thing done after the first deploy, before the tracking script goes live (`infra/README.md`, "Umami", step 4; on the launch checklist, #33).
+2. **One account only.** Umami has no public sign-up. There is only `admin`; nobody creates other users or teams (step 5).
+3. **Reachable only through its own distribution.** The ALB sends a request to Umami only when it carries the secret `X-Martom-Origin` value, which only the Umami distribution adds. The API's distribution forwards every viewer header, so the value must be secret: with it, nobody can reach Umami through the API's address or by guessing a header. The ALB itself is internal (no public address).
+4. **HTTPS only** between browser and CloudFront (HTTP redirects to HTTPS), CloudFront's security headers on every answer, and no telemetry or update checks from the container (`DISABLE_TELEMETRY`, `DISABLE_UPDATES`).
+
+There is no IP allowlist or second factor in front of the admin UI; a CloudFront Function
+or WAF rule could add one later if Tomislav wants it.
+
+### The tracking script (`web/umami.ts`, `web/index.html`)
+
+`web/index.html` has a `<!-- umami -->` marker in `<head>`. At build time the Vite plugin
+in `web/umami.ts` replaces it with the tracker, or removes it when tracking is off. The app
+has no router, so the one script covers every screen of `/` (start, chat, results, cart,
+done) and `/privatnost`, in both the web and mobile layouts.
+
+```html
+<script defer src="https://<umami id>.cloudfront.net/script.js" data-website-id="<uuid>"
+  data-domains="martom-savjetnik.pages.dev" data-exclude-search="true" data-exclude-hash="true"></script>
+```
+
+| Setting (public, `VITE_*`) | Value | Where |
+| --- | --- | --- |
+| `VITE_UMAMI_ENABLED` | `true` turns the script on; anything else (or unset) leaves it out | Cloudflare Pages **production** environment only |
+| `VITE_UMAMI_HOST` | `umami_url` from Terraform, e.g. `https://d1234abcd.cloudfront.net` (https, no path) | same |
+| `VITE_UMAMI_WEBSITE_ID` | the website's id (a UUID) from the Umami admin UI | same |
+
+- **Off for local and staging**: unset locally, in tests and in Cloudflare Pages preview deploys, so no script is added at all. With the flag on, a missing or malformed host or website id fails the build instead of silently not tracking.
+- **`data-domains`**: even with the flag on, only visits on `martom-savjetnik.pages.dev` count; a preview (`<branch>.martom-savjetnik.pages.dev`) or a local copy sends nothing.
+- **Nothing that identifies a visitor** (Tomislav, 28 Nov 2026): no `data-distinct-id`, `data-tag` or `data-salt`; credentials are never sent (`fetch-credentials` stays `omit`). `data-exclude-search` and `data-exclude-hash` keep the query string and `#hash` out of the URLs Umami stores. A unit test (`web/src/umami.test.ts`) checks the tag and the flag.
+- **Never load Umami's session-replay recorder** (`recorder.js`, which Umami 3.x also serves) and never turn on replay: it would record typed chat text, names and addresses. Heatmaps and session replay are out of scope (#156). Only `script.js` is ever added.
+- **Never send** typed chat text, names, phone numbers, addresses or order contents as event data (#156; this applies to #164's events too).
+
+### Excluding our own visits
+
+In each browser you use for Martom (Tomislav, Toni, testers), open the production site,
+then the browser's developer console, and run once:
+
+```js
+localStorage.setItem('umami.disabled', '1')
+```
+
+The tracker checks `umami.disabled` before every send (Umami 3.5, `src/tracker/index.ts`)
+and stays silent in that browser. `localStorage.removeItem('umami.disabled')` turns counting
+back on. It is per browser and per profile, so repeat it after clearing site data.
+
+### Privacy text for the Privatnost page (#152)
+
+#156 asks for one sentence in the Privatnost rewrite; #152 owns that page, so the text is
+only proposed here. #156's wording, "without cookies and without personal data", promises
+more than Umami does: it uses each visitor's IP address briefly (the visitor hash and the
+country, above), and that counts as processing personal data under the GDPR. Proposed
+instead, for Tomislav's privacy review before launch: *visit statistics are collected
+without cookies; your IP address is used only briefly to count unique visits and the
+country, and is never stored. The statistics are kept on our servers in the EU.*
+If the page names a legal basis, it is legitimate interest (Art. 6(1)(f)): that is for the
+privacy review to confirm, not decided here.
+
+The Privatnost text is now frozen (Tomislav, 28 Nov 2026) and is not changed by #163. Its
+sentence "IP adresu koristimo samo trenutno, da posjetu ne bismo brojali dvaput, i ne
+čuvamo je u statistici" holds with the setup above: the IP address is used for the session
+hash (CloudFront does the country lookup) and never stored, and the location stored is the
+country only.
+
+### Upgrading Umami
+
+Change `umami_image` in `infra/variables.tf` to the new tag after reading Umami's release
+notes, then apply. The container runs Umami's database migrations by itself on start.
+Before upgrading, check in the new version's `src/lib/detect.ts` that the CloudFront
+country header is still read, that no new location header set comes before it, and that
+`GEOLITE_DB_PATH` still decides the lookup ("Country only"); then repeat the local check
+above (a visit with only `CloudFront-Viewer-Country` must store the country only, and one
+without it must store nothing).

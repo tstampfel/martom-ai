@@ -1,6 +1,6 @@
 """The API's Postgres connection budget fits the RDS instance (#21 review r2)."""
 
-from martom import checkpointer, db
+from martom import checkpointer, db, umami_db
 from martom.api import threads
 
 
@@ -21,6 +21,12 @@ def test_two_api_tasks_and_the_jobs_leave_headroom_on_the_instance() -> None:
         + db.CHECKPOINTER_POOL_MAX_SIZE
         + db.API_UNPOOLED_CONNECTIONS
     )
-    total = db.API_TASKS_DURING_DEPLOY * per_task + db.JOB_CONNECTIONS
+    total = db.API_TASKS_DURING_DEPLOY * per_task + db.JOB_CONNECTIONS + db.UMAMI_CONNECTIONS
     usable = db.RDS_MAX_CONNECTIONS - db.RDS_RESERVED_CONNECTIONS
     assert total <= 0.75 * usable  # at least a quarter left for psql, retries, spikes
+
+
+def test_umami_role_limit_matches_the_budget() -> None:
+    # `martom umami-db-setup` creates the umami role with this CONNECTION LIMIT
+    # (tests/test_umami_db.py checks it on a real role); the budget above counts it.
+    assert umami_db.setup_umami_database.__kwdefaults__["connection_limit"] == db.UMAMI_CONNECTIONS

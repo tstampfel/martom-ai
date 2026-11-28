@@ -1,0 +1,378 @@
+# Umami: self-hosted, cookieless visit statistics (#156, #163). docs/analytics.md explains
+# the setup; infra/README.md ("Umami") has the deploy runbook.
+#
+#   browser on martom-savjetnik.pages.dev
+#     │ GET /script.js, POST /api/send (HTTPS, cross-origin; Umami answers CORS itself)
+#     ▼
+#   CloudFront "umami" distribution  https://<other id>.cloudfront.net   (Umami at the root)
+#     │ same VPC origin as the API, plus a secret X-Martom-Origin header
+#     ▼
+#   internal ALB: listener rule "header matches the secret" → Umami target group (:3000);
+#                 every other request keeps the default action → the API
+#     ▼
+#   ECS service "umami" on FARGATE_SPOT, official image, 0.25 vCPU / 1 GB, desired 1
+#     │ :5432
+#     ▼
+#   the same RDS instance, its own database `umami` and login role `umami`
+#
+# Why a second distribution and not a /umami/* path on the API's (Tomislav, 28 Nov 2026,
+# option C): Umami's BASE_PATH is a build-time setting, so a sub-path needs a custom image
+# build. Its own hostname runs the official image unchanged, with the admin UI working.
+#
+# Why the header must be a secret: the API distribution forwards every viewer header to the
+# ALB (cloudfront.tf, AllViewerExceptHostHeader), so a fixed, public header value would let
+# anyone reach Umami through the API's address. Only the umami distribution knows the value
+# (var.umami_origin_secret, never committed); CloudFront also overwrites a viewer header of
+# the same name on that distribution.
+
+locals {
+  # Country only (Tomislav, #163 review r4): Umami takes the country from CloudFront's
+  # CloudFront-Viewer-Country header (aws_cloudfront_origin_request_policy.umami below) and
+  # never looks a visitor up in the image's GeoLite2-City database: GEOLITE_DB_PATH points
+  # at a file that doesn't exist, so a request without the country header is answered 500
+  # and stores nothing, instead of storing a city. Checked locally with Umami 3.5.0
+  # (docs/analytics.md, "Country only").
+  umami_no_city_db_path = "/nonexistent/no-city-lookup.mmdb"
+
+  # The only request headers CloudFront passes to Umami (an allowlist: any other header a
+  # visitor sends, such as cf-ipcountry, cf-ipcity or cloudfront-viewer-city, never
+  # reaches Umami, and CloudFront adds no other CloudFront-Viewer-* header).
+  umami_forwarded_headers = [
+    "CloudFront-Viewer-Country", # the country; CloudFront sets it from the viewer's IP
+    "User-Agent",                # browser, OS and device; CloudFront replaces it unless forwarded
+    "Authorization",             # the admin UI's login token (Bearer)
+    "Content-Type",              # JSON bodies
+    "Origin",                    # CORS on /api/send
+    "Accept",
+    "x-umami-cache",       # the tracker's session cache token
+    "x-umami-share-token", # shared report links (admin feature)
+    "x-umami-share-context",
+  ]
+
+  umami_origin_header = "X-Martom-Origin"
+  umami_port          = 3000
+  umami_origin_id     = "alb-umami"
+}
+
+# --- Secrets: one JSON object, set by hand (README, "Umami"), never by Terraform ---
+#
+# Keys: DATABASE_URL (with the umami role's password), APP_SECRET, UMAMI_DB_PASSWORD (the
+# same password, for the database set-up task), ADMIN_PASSWORD (kept here only; Umami has no
+# setting for it, Tomislav types it into the admin UI once) and ORIGIN_HEADER_SECRET (the
+# value of var.umami_origin_secret, a recovery copy of infra/terraform.tfvars).
+resource "aws_secretsmanager_secret" "umami" {
+  name                    = "${var.name}/${var.environment}/umami"
+  description             = "Umami database URL, app secret, admin password and origin header secret as one JSON object; set by hand, never by Terraform"
+  recovery_window_in_days = 7
+}
+
+data "aws_iam_policy_document" "read_umami_secret" {
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.umami.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "task_execution_umami_secret" {
+  name   = "read-umami-secret"
+  role   = aws_iam_role.task_execution.id
+  policy = data.aws_iam_policy_document.read_umami_secret.json
+}
+
+# --- FARGATE_SPOT for the cluster ---
+#
+# The API service and the job tasks keep launch_type FARGATE (on-demand); only the Umami
+# service asks for FARGATE_SPOT through its capacity provider strategy. When AWS takes the
+# Spot capacity back, ECS starts a replacement task: a few minutes without statistics,
+# nothing else is affected.
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name       = aws_ecs_cluster.main.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+}
+
+resource "aws_cloudwatch_log_group" "umami" {
+  name              = "/ecs/${local.prefix}/umami"
+  retention_in_days = var.log_retention_days
+}
+
+# --- The Umami service ---
+
+resource "aws_ecs_task_definition" "umami" {
+  #checkov:skip=CKV_AWS_336:the official Umami image (Next.js) writes its cache and generated files inside the container, and Fargate has no tmpfs
+  family                   = "${local.prefix}-umami"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = var.umami_cpu
+  memory                   = var.umami_memory
+  execution_role_arn       = aws_iam_role.task_execution.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "umami"
+      image     = var.umami_image
+      essential = true
+
+      portMappings = [{ containerPort = local.umami_port, protocol = "tcp" }]
+
+      # At start the image applies its own Prisma migrations to the `umami` database and,
+      # on the very first start, creates the admin login admin / umami: change it at once
+      # (README, "Umami", step 4).
+      environment = [
+        { name = "DISABLE_TELEMETRY", value = "1" }, # no anonymous usage pings to Umami
+        { name = "DISABLE_UPDATES", value = "1" },   # no version check; upgrades are a var.umami_image change
+        # No IP lookup at all: the image's GeoLite2-City would store region and city. The
+        # country comes only from CloudFront-Viewer-Country (locals above). Never unset it
+        # or point it at a real database.
+        { name = "GEOLITE_DB_PATH", value = local.umami_no_city_db_path },
+        # Left unset on purpose (docs/analytics.md, "What Umami stores"): SKIP_LOCATION_HEADERS
+        # (it would ignore CloudFront-Viewer-Country), SALT_ROTATION
+        # (a value other than day/week/month fixes the salt for ever), ENABLE_CLIENT_SALT,
+        # CLIENT_IP_HEADER, TRUSTED_PROXIES and LOG_QUERY.
+      ]
+      secrets = [
+        for key in ["DATABASE_URL", "APP_SECRET"] :
+        { name = key, valueFrom = "${aws_secretsmanager_secret.umami.arn}:${key}::" }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.umami.name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "umami"
+        }
+      }
+    },
+  ])
+}
+
+resource "aws_ecs_service" "umami" {
+  name            = "${local.prefix}-umami"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.umami.arn
+  desired_count   = var.umami_desired_count
+
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+  }
+
+  # Stop the old task before starting the new one: a deploy costs a minute of statistics,
+  # and Umami never holds two connection pools at once (src/martom/db.py, UMAMI_CONNECTIONS).
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
+
+  # A task that exits or fails its health checks is replaced by ECS ("restart on
+  # failure"); a deploy whose tasks keep failing rolls back.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  # The first start runs Umami's database migrations; don't count health checks before then.
+  health_check_grace_period_seconds = 180
+
+  network_configuration {
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.umami.id]
+    assign_public_ip = true # no NAT gateway (network.tf): pulls the image from ghcr.io
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.umami.arn
+    container_name   = "umami"
+    container_port   = local.umami_port
+  }
+
+  depends_on = [aws_lb_listener_rule.umami, aws_ecs_cluster_capacity_providers.main]
+}
+
+# --- One-off database set-up: role and database `umami` on the shared RDS instance ---
+#
+# Terraform can't reach the private RDS instance, so this task does it (README, "Umami",
+# step 3): `martom umami-db-setup` (src/martom/umami_db.py) from our own app image, as the
+# master user. The master is rds_superuser, not a superuser, and the code works within
+# that (tests/test_umami_db.py runs it as a non-superuser master). It re-runs safely, and
+# sends Postgres only a SCRAM verifier of the password, never the password itself, so a
+# failing statement in the RDS log export can't show it. The umami role gets its own
+# database only: no CONNECT on the app database, at most 5 connections
+# (src/martom/db.py, UMAMI_CONNECTIONS). Needs an app image in ECR (README step 4).
+resource "aws_ecs_task_definition" "umami_db_setup" {
+  family                   = "${local.prefix}-umami-db-setup"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.task_execution.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "umami-db-setup"
+      image     = local.image
+      essential = true
+      command   = ["martom", "umami-db-setup"]
+
+      environment = [
+        { name = "APP_ENV", value = "production" },
+        { name = "LOG_LEVEL", value = "INFO" },
+        { name = "DATABASE_URL", value = local.database_url },
+      ]
+      secrets = [
+        local.db_password_secret,
+        { name = "UMAMI_DB_PASSWORD", valueFrom = "${aws_secretsmanager_secret.umami.arn}:UMAMI_DB_PASSWORD::" },
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.umami.name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "db-setup"
+        }
+      }
+    },
+  ])
+}
+
+# --- Load balancer: target group and the header rule ---
+
+resource "aws_lb_target_group" "umami" {
+  name                 = "${local.prefix}-umami"
+  port                 = local.umami_port
+  protocol             = "HTTP"
+  target_type          = "ip"
+  vpc_id               = aws_vpc.main.id
+  deregistration_delay = 15
+
+  # Umami's own liveness endpoint: answers {"ok": true} without touching the database
+  # (src/app/api/heartbeat/route.ts in Umami 3.5).
+  health_check {
+    path                = "/api/heartbeat"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+# Only requests carrying the secret header reach Umami. The listener's default action
+# (alb.tf) still sends everything else to the API, unchanged.
+resource "aws_lb_listener_rule" "umami" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
+
+  condition {
+    http_header {
+      http_header_name = local.umami_origin_header
+      values           = [var.umami_origin_secret]
+    }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.umami.arn
+  }
+}
+
+# --- CloudFront: Umami's own distribution and hostname ---
+
+# What CloudFront sends to Umami: the allowlisted headers only (locals above), every query
+# string (the admin UI's API calls and Next.js's `_rsc`), no cookies (Umami uses none; the
+# admin login travels in Authorization). Not the Host header, like the API distribution.
+# Next.js's client-side navigation headers (RSC, Next-Router-State-Tree) aren't forwarded,
+# so the admin UI loads a full page on navigation instead of a partial update.
+resource "aws_cloudfront_origin_request_policy" "umami" {
+  name    = "${local.prefix}-umami"
+  comment = "Umami: allowlisted headers only, country from CloudFront-Viewer-Country"
+
+  headers_config {
+    header_behavior = "whitelist"
+    headers {
+      items = local.umami_forwarded_headers
+    }
+  }
+
+  cookies_config {
+    cookie_behavior = "none"
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
+}
+
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+
+resource "aws_cloudfront_distribution" "umami" {
+  enabled         = true
+  comment         = "${local.prefix} Umami (visit statistics)"
+  is_ipv6_enabled = true
+  price_class     = "PriceClass_100"
+
+  # The API's VPC origin and ALB, with the secret header that the listener rule matches.
+  origin {
+    origin_id   = local.umami_origin_id
+    domain_name = aws_lb.api.dns_name
+
+    vpc_origin_config {
+      vpc_origin_id            = aws_cloudfront_vpc_origin.alb.id
+      origin_read_timeout      = 30
+      origin_keepalive_timeout = 5
+    }
+
+    custom_header {
+      name  = local.umami_origin_header
+      value = var.umami_origin_secret
+    }
+  }
+
+  # Admin UI and the collect endpoint (POST /api/send): never cached. Every viewer header
+  # goes through (Origin for CORS, the admin's Authorization); Host is left out.
+  default_cache_behavior {
+    target_origin_id       = local.umami_origin_id
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = aws_cloudfront_origin_request_policy.umami.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
+  }
+
+  # The tracker script is the same file for every visitor: cache it at the edge.
+  ordered_cache_behavior {
+    path_pattern           = "/script.js"
+    target_origin_id       = local.umami_origin_id
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}

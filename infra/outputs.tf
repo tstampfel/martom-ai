@@ -49,6 +49,21 @@ output "db_password_secret_arn" {
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
 
+output "umami_url" {
+  description = "Umami's HTTPS address: admin UI at the root, tracker at /script.js (the frontend's VITE_UMAMI_HOST)."
+  value       = "https://${aws_cloudfront_distribution.umami.domain_name}"
+}
+
+output "umami_secret_name" {
+  description = "Secrets Manager secret whose JSON value (Umami database URL, app secret, admin password, origin header secret) you set by hand."
+  value       = aws_secretsmanager_secret.umami.name
+}
+
+output "umami_db_setup_task_definition" {
+  description = "Task definition family of the one-off task that creates Umami's database and role."
+  value       = aws_ecs_task_definition.umami_db_setup.family
+}
+
 output "chat_export_bucket" {
   description = "Private bucket `martom export-chats` writes scrubbed chats to (objects deleted within 90 days)."
   value       = aws_s3_bucket.chat_export.bucket
