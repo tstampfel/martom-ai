@@ -64,6 +64,53 @@ export const manualProduct: ChatEvent[] = [
   { type: 'done', thread_id: '3c7b9e2a-6f1d-4a85-9b0e-2d4f8a1c6e53' },
 ]
 
+/**
+ * Reply to "Dodaj panele s popisa i anker u korpu": the panels come with the
+ * materials list's quantity and price; the anchor is not on the list, so it is
+ * 1 piece (the customer changes it in the korpa), here "na upit".
+ */
+export const cartAdded: ChatEvent[] = [
+  { type: 'step', id: 'parse', text: 'Razumio: panel 153 cm', status: 'done' },
+  { type: 'token', text: 'Dodao sam panele i anker u korpu. Količinu možete promijeniti u korpi.' },
+  {
+    type: 'cart',
+    lines: [
+      {
+        source: 'olx',
+        listing_id: 63996799,
+        manual_key: null,
+        url: 'https://martom.olx.ba/artikal/panelna-ograda-3d-63996799',
+        title: 'Panelna ograda 3D (Nylofor)',
+        variant_label: '153 × 250',
+        quantity: 10,
+        unit_price: '53.00',
+        line_total: '530.00',
+      },
+      {
+        source: 'manual',
+        listing_id: null,
+        manual_key: 'anchor_m8x70',
+        url: null,
+        title: 'Anker M8×70',
+        variant_label: null,
+        quantity: 1,
+        unit_price: null,
+        line_total: null,
+      },
+    ],
+  },
+  { type: 'done', thread_id: '8d1e4c52-0b9f-4a6e-bf3c-5a7d2e9c1f04' },
+]
+
+/** Reply to "Pletivo 30 m": no rules for chain link yet, so contact Martom. */
+export const chainLink: ChatEvent[] = [
+  { type: 'step', id: 'parse', text: 'Razumio: pletivo · 30 m', status: 'done' },
+  { type: 'token', text: 'Za pletivo još nemamo pravila za izračun materijala. ' },
+  { type: 'token', text: 'Javite se direktno Martomu: 036 651 427' },
+  { type: 'contact_martom' },
+  { type: 'done', thread_id: '5f8a2c1e-9d3b-4e70-a6c4-1b7e3d9f2a08' },
+]
+
 /** The agent failed midway: some text arrived, then an internal error. */
 export const internalError: ChatEvent[] = [
   { type: 'step', id: 'parse', text: 'Razumio: panelna ograda', status: 'done' },

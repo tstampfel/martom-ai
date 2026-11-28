@@ -16,6 +16,8 @@ from martom.api.chat_events import (
     EVENT_TYPES,
     BomEvent,
     BomLineOut,
+    CartEvent,
+    CartLine,
     ErrorEvent,
     ProductCard,
     chat_event_schema,
@@ -76,6 +78,35 @@ def card(**overrides: Any) -> dict[str, Any]:
     return product
 
 
+def cart_line(**overrides: Any) -> dict[str, Any]:
+    line: dict[str, Any] = {
+        "source": "olx",
+        "listing_id": 63996799,
+        "manual_key": None,
+        "url": "https://martom.olx.ba/artikal/panelna-ograda-3d-63996799",
+        "title": "Panelna ograda 3D (Nylofor)",
+        "variant_label": "153 × 250",
+        "quantity": 10,
+        "unit_price": "53.00",
+        "line_total": "530.00",
+    }
+    line.update(overrides)
+    return line
+
+
+MANUAL_CART_LINE = {
+    "source": "manual",
+    "listing_id": None,
+    "manual_key": "anchor_m8x70",
+    "url": None,
+    "title": "Anker M8×70",
+    "variant_label": None,
+    "quantity": 4,
+    "unit_price": "0.80",
+    "line_total": "3.20",
+}
+
+
 # --- prices -----------------------------------------------------------------------
 
 
@@ -131,6 +162,9 @@ def test_every_event_type_parses_by_its_type_field() -> None:
         },
         {"type": "product_cards", "cards": [card()]},
         bom_event([panel_line()], "530.00", unpriced_count=0),
+        {"type": "bom_cleared"},
+        {"type": "cart", "lines": [cart_line()]},
+        {"type": "contact_martom"},
         {"type": "error", "kind": "internal", "retry_after_seconds": None},
         {"type": "done", "thread_id": "t-1"},
     ]
@@ -602,3 +636,61 @@ def test_every_docs_example_is_a_valid_event() -> None:
     for example in examples:
         parse_event(example)
     assert {example["type"] for example in examples} == set(EVENT_TYPES)
+
+
+# --- cart, contact_martom, bom_cleared (#147) ---------------------------------------
+
+
+def test_cart_line_total_is_unit_price_times_quantity() -> None:
+    with pytest.raises(ValidationError, match="line_total"):
+        CartLine.model_validate(cart_line(line_total="53.00"))
+
+
+def test_cart_line_without_a_price_has_no_total() -> None:
+    line = CartLine.model_validate(cart_line(unit_price=None, line_total=None))
+    assert (line.unit_price, line.line_total) == (None, None)
+    with pytest.raises(ValidationError, match="line_total"):
+        CartLine.model_validate(cart_line(unit_price=None, line_total="530.00"))
+
+
+def test_cart_quantity_is_at_least_one() -> None:
+    with pytest.raises(ValidationError, match="quantity"):
+        CartLine.model_validate(cart_line(quantity=0, line_total="0.00"))
+
+
+def test_manual_cart_line_has_no_listing_or_link() -> None:
+    assert CartLine.model_validate(MANUAL_CART_LINE).manual_key == "anchor_m8x70"
+    with pytest.raises(ValidationError, match="url"):
+        CartLine.model_validate(
+            {**MANUAL_CART_LINE, "url": "https://martom.olx.ba/artikal/anker-1"}
+        )
+    with pytest.raises(ValidationError, match="listing_id"):
+        CartLine.model_validate({**MANUAL_CART_LINE, "listing_id": 1})
+
+
+def test_olx_cart_line_needs_its_listing_and_matching_link() -> None:
+    with pytest.raises(ValidationError, match="listing_id"):
+        CartLine.model_validate(cart_line(url="https://martom.olx.ba/artikal/panel-1"))
+    with pytest.raises(ValidationError, match="manual_key"):
+        CartLine.model_validate(cart_line(manual_key="anchor_m8x70"))
+
+
+def test_cart_line_from_the_add_to_cart_tool_output() -> None:
+    # agent/tools.py `_add_to_cart` returns this shape (no line_total): the total is
+    # computed here, in Python, never by the model or the browser.
+    tool_line = {key: value for key, value in MANUAL_CART_LINE.items() if key != "line_total"}
+    assert CartLine.from_tool(tool_line).line_total == "3.20"
+    no_price = {**tool_line, "unit_price": None}
+    assert CartLine.from_tool(no_price).line_total is None
+
+
+def test_cart_event_needs_a_line() -> None:
+    with pytest.raises(ValidationError):
+        CartEvent.model_validate({"type": "cart", "lines": []})
+
+
+@pytest.mark.parametrize("event_type", ["bom_cleared", "contact_martom"])
+def test_signal_events_carry_no_fields(event_type: str) -> None:
+    assert parse_event({"type": event_type}).model_dump(mode="json") == {"type": event_type}
+    with pytest.raises(ValidationError):
+        parse_event({"type": event_type, "text": "x"})

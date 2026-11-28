@@ -348,6 +348,20 @@ describe('ChatView', () => {
     }
   })
 
+  it('hides the old materials list and its total once the fence changed (#147)', async () => {
+    const { client, requests } = recordingClient((request) =>
+      request.message === 'Ipak 103 cm' ? fixtures.fenceChanged : fixtures.fenceBom,
+    )
+    renderChat('x', client)
+    await screen.findByRole('region', { name: 'Popis materijala' })
+    fireEvent.change(screen.getByLabelText(copy.chat.composer.label), { target: { value: 'Ipak 103 cm' } })
+    fireEvent.click(screen.getByRole('button', { name: copy.chat.composer.submit }))
+    await expect.poll(() => requests.length).toBe(2)
+    expect(await screen.findByText(/pa računam popis ispočetka\./)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Popis materijala' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('bom-total')).not.toBeInTheDocument()
+  })
+
   it('shows the materials list title and lines from the bom event', async () => {
     renderChat('x', recordingClient(() => fixtures.fenceConcretePosts).client)
     const bom = await screen.findByRole('region', { name: 'Popis materijala' })

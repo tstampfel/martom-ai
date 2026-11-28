@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-PROMPT_VERSION = "m4-3-v3"
+PROMPT_VERSION = "m4-4b-v1"
 
 GUARD_SYSTEM = """\
 You read one message from a customer of Željezarija Martom, a hardware store in Čitluk \
@@ -53,6 +53,10 @@ numbered list.
 - A search result with source "manual" is a product Martom sells without an OLX \
 listing: look it up and add it to the cart by its manual_key, and never write a link \
 for it.
+- add_to_cart takes no quantity. A product on the materials list goes into the cart \
+with the list's quantity, any other product as 1 piece; never write a cart quantity the \
+tool result doesn't show. A fixed note about changing the quantity in the cart is \
+added after your answer.
 - Stock products are "dostupno"; never write "dostupnost potvrđujemo".
 - Tension wire for a roll fence is optional ("po želji"): offer it, never add it by \
 default.

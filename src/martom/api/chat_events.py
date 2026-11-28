@@ -10,7 +10,7 @@ in web/src/api/events.ts mirror that schema. Regenerate the schema after any cha
 
 Prices are strings with exactly two decimals ("53.00"), never floats, so no binary
 rounding error reaches the customer. They come only from tools (database, BOM
-calculator), never from the model. The endpoint itself lands with #21 [M4-4].
+calculator), never from the model. The endpoint is api/chat.py (#21 [M4-4]).
 """
 
 # Field descriptions quote Bosnian labels with the real "×" and "–" signs.
@@ -380,6 +380,103 @@ class BomEvent(_Event):
         return self
 
 
+class BomClearedEvent(_Event):
+    """The materials list shown so far no longer fits: hide it and its total.
+
+    Sent when the customer changed the fence (type, height, sides, posts, colour, ...)
+    and the advisor dropped the old list (`bom_changed` with no new list), also on a
+    turn that asks clarify questions. The next `bom` event brings the new list
+    (Tomislav, 28 Nov 2026, #147: no stale list or total may stay on screen).
+    """
+
+    type: Literal["bom_cleared"] = "bom_cleared"
+
+
+# --- cart, contact_martom ---------------------------------------------------------
+
+
+class CartLine(_Event):
+    """One product the advisor added to the cart (korpa) this turn (add_to_cart tool).
+
+    Title, link, variant and price come from the database or manual_products.toml; the
+    quantity is the one add_to_cart accepted. A manual product (#132) has no listing id
+    and no link, like a manual ProductCard.
+    """
+
+    source: Literal["olx", "manual"]
+    listing_id: int | None = Field(ge=1, description="null for a manual product.")
+    manual_key: str | None = Field(description="The manual_products.toml key, else null.")
+    url: str | None = Field(
+        pattern=LISTING_URL_PATTERN,
+        description="https://martom.olx.ba/artikal/{slug}; null for a manual product.",
+    )
+    title: str = Field(min_length=1)
+    variant_label: str | None = Field(
+        description="As written in the listing, e.g. '153 × 250'; null without variants."
+    )
+    quantity: int = Field(ge=1)
+    unit_price: Price | None = Field(description="null: 'cijena na upit'.")
+    line_total: Price | None = Field(description="unit_price × quantity; null when on request.")
+
+    @model_validator(mode="after")
+    def _matches_source_and_adds_up(self) -> Self:
+        if self.source == "manual":
+            if not self.manual_key:
+                raise ValueError("a manual cart line needs its manual_key")
+            if self.listing_id is not None:
+                raise ValueError("a manual cart line has no listing_id")
+            if self.url is not None:
+                raise ValueError("a manual cart line has no url (no OLX listing)")
+        else:
+            if self.manual_key is not None:
+                raise ValueError("an OLX cart line has no manual_key")
+            if self.listing_id is None or self.url is None:
+                raise ValueError("an OLX cart line needs its listing_id and url")
+            if not self.url.endswith(f"-{self.listing_id}"):
+                raise ValueError(f"url {self.url!r} must end in -{{listing_id}}")
+        expected = (
+            None
+            if self.unit_price is None
+            else format_price(Decimal(self.unit_price) * self.quantity)
+        )
+        if self.line_total != expected:
+            raise ValueError(f"line_total {self.line_total} must be {expected}")
+        return self
+
+    @classmethod
+    def from_tool(cls, cart_line: dict[str, Any]) -> Self:
+        """The wire line for one `cart_line` that agent/tools.py `_add_to_cart` returned.
+
+        The total is worked out here in Python, so neither the model nor the browser
+        multiplies a price. Raises ValueError (a pydantic ValidationError) for a line
+        that breaks the contract.
+        """
+        unit_price = cart_line.get("unit_price")
+        quantity = cart_line.get("quantity")
+        line_total = None
+        if unit_price is not None and isinstance(quantity, int):
+            line_total = format_price(Decimal(unit_price) * quantity)
+        return cls.model_validate({**cart_line, "line_total": line_total})
+
+
+class CartEvent(_Event):
+    """Add these lines to the cart (korpa) the browser keeps; only this turn's additions."""
+
+    type: Literal["cart"] = "cart"
+    lines: list[CartLine] = Field(min_length=1)
+
+
+class ContactMartomEvent(_Event):
+    """Offer the "contact Martom" button: the advisor can't make a list for this request.
+
+    Sent for a chain-link fence (no rules yet, fence-rules.md) and a fence too large to
+    calculate. The answer text says why; the browser offers the WhatsApp order button
+    with the customer's request as the note (the order form is #27).
+    """
+
+    type: Literal["contact_martom"] = "contact_martom"
+
+
 # --- error, done ------------------------------------------------------------------
 
 
@@ -407,7 +504,16 @@ class DoneEvent(_Event):
 
 
 ChatEvent = Annotated[
-    TokenEvent | StepEvent | ChipsEvent | ProductCardsEvent | BomEvent | ErrorEvent | DoneEvent,
+    TokenEvent
+    | StepEvent
+    | ChipsEvent
+    | ProductCardsEvent
+    | BomEvent
+    | BomClearedEvent
+    | CartEvent
+    | ContactMartomEvent
+    | ErrorEvent
+    | DoneEvent,
     Field(discriminator="type"),
 ]
 
@@ -417,6 +523,9 @@ EVENT_TYPES: tuple[str, ...] = (
     "chips",
     "product_cards",
     "bom",
+    "bom_cleared",
+    "cart",
+    "contact_martom",
     "error",
     "done",
 )

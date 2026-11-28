@@ -20,11 +20,15 @@ import {
   ERROR_KINDS,
   PRODUCT_SOURCES,
   STEP_STATUSES,
+  type BomClearedEvent,
   type BomEvent,
   type BomLine,
+  type CartEvent,
+  type CartLine,
   type ChipOption,
   type ChipQuestion,
   type ChipsEvent,
+  type ContactMartomEvent,
   type DoneEvent,
   type ErrorEvent,
   type ExtraLine,
@@ -100,6 +104,20 @@ const SHAPES = {
     extra_lines: false,
     notes: false,
   } satisfies Nullability<BomEvent>,
+  BomClearedEvent: { type: false } satisfies Nullability<BomClearedEvent>,
+  CartLine: {
+    source: false,
+    listing_id: true,
+    manual_key: true,
+    url: true,
+    title: false,
+    variant_label: true,
+    quantity: false,
+    unit_price: true,
+    line_total: true,
+  } satisfies Nullability<Pick<CartLine, keyof CartLine>>,
+  CartEvent: { type: false, lines: false } satisfies Nullability<CartEvent>,
+  ContactMartomEvent: { type: false } satisfies Nullability<ContactMartomEvent>,
   ErrorEvent: { type: false, kind: false, retry_after_seconds: true } satisfies Nullability<ErrorEvent>,
   DoneEvent: { type: false, thread_id: false } satisfies Nullability<DoneEvent>,
   ExtraLine: { name: false, note: true } satisfies Nullability<ExtraLine>,
@@ -110,6 +128,7 @@ const ENUMS: Record<string, readonly string[]> = {
   'ChipQuestion.kind': CHIP_KINDS,
   'ErrorEvent.kind': ERROR_KINDS,
   'ProductCard.source': PRODUCT_SOURCES,
+  'CartLine.source': PRODUCT_SOURCES,
 }
 
 interface SchemaProperty {
@@ -128,6 +147,12 @@ function allBoms(): BomEvent[] {
   return Object.values(fixtures)
     .flat()
     .filter((event): event is BomEvent => event.type === 'bom')
+}
+
+function allCartLines(): CartLine[] {
+  return Object.values(fixtures)
+    .flat()
+    .flatMap((event) => (event.type === 'cart' ? event.lines : []))
 }
 
 describe('chat event contract', () => {
@@ -181,6 +206,12 @@ describe('chat event contract', () => {
   }
 
   // The backend models check these rules too; JSON Schema can't express them.
+  it.each(allCartLines().map((line) => [line.title, line] as const))('cart line %s adds up', (_title, line) => {
+    const expected = line.unit_price === null ? null : cents(line.unit_price) * line.quantity
+    expect(line.line_total === null ? null : cents(line.line_total)).toBe(expected)
+    expect(line.source === 'manual' ? line.url === null && line.listing_id === null : line.url !== null).toBe(true)
+  })
+
   it.each(allBoms().map((bom) => [bom.summary, bom] as const))('BOM %s has prices that add up', (_summary, bom) => {
     const lines = bom.lines.map((line) => ({
       onRequest: line.price_on_request,

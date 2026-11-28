@@ -3,6 +3,23 @@
   "title": "ChatEvent",
   "description": "One event of the POST /api/chat SSE stream. Generated from src/martom/api/chat_events.py; do not edit by hand.",
   "$defs": {
+    "BomClearedEvent": {
+      "additionalProperties": false,
+      "description": "The materials list shown so far no longer fits: hide it and its total.\n\nSent when the customer changed the fence (type, height, sides, posts, colour, ...)\nand the advisor dropped the old list (`bom_changed` with no new list), also on a\nturn that asks clarify questions. The next `bom` event brings the new list\n(Tomislav, 28 Nov 2026, #147: no stale list or total may stay on screen).",
+      "properties": {
+        "type": {
+          "const": "bom_cleared",
+          "default": "bom_cleared",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "BomClearedEvent",
+      "type": "object"
+    },
     "BomEvent": {
       "additionalProperties": false,
       "description": "The materials list (popis materijala) with an approximate total.",
@@ -169,6 +186,145 @@
         "label"
       ],
       "title": "BomLineOut",
+      "type": "object"
+    },
+    "CartEvent": {
+      "additionalProperties": false,
+      "description": "Add these lines to the cart (korpa) the browser keeps; only this turn's additions.",
+      "properties": {
+        "type": {
+          "const": "cart",
+          "default": "cart",
+          "title": "Type",
+          "type": "string"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/CartLine"
+          },
+          "minItems": 1,
+          "title": "Lines",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "lines"
+      ],
+      "title": "CartEvent",
+      "type": "object"
+    },
+    "CartLine": {
+      "additionalProperties": false,
+      "description": "One product the advisor added to the cart (korpa) this turn (add_to_cart tool).\n\nTitle, link, variant and price come from the database or manual_products.toml; the\nquantity is the one add_to_cart accepted. A manual product (#132) has no listing id\nand no link, like a manual ProductCard.",
+      "properties": {
+        "source": {
+          "enum": [
+            "olx",
+            "manual"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "listing_id": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null for a manual product.",
+          "title": "Listing Id"
+        },
+        "manual_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The manual_products.toml key, else null.",
+          "title": "Manual Key"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "pattern": "^https://martom\\.olx\\.ba/artikal/[a-z0-9-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "https://martom.olx.ba/artikal/{slug}; null for a manual product.",
+          "title": "Url"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "variant_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "As written in the listing, e.g. '153 × 250'; null without variants.",
+          "title": "Variant Label"
+        },
+        "quantity": {
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "unit_price": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null: 'cijena na upit'.",
+          "title": "Unit Price"
+        },
+        "line_total": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+\\.[0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "unit_price × quantity; null when on request.",
+          "title": "Line Total"
+        }
+      },
+      "required": [
+        "source",
+        "listing_id",
+        "manual_key",
+        "url",
+        "title",
+        "variant_label",
+        "quantity",
+        "unit_price",
+        "line_total"
+      ],
+      "title": "CartLine",
       "type": "object"
     },
     "ChipOption": {
@@ -350,6 +506,23 @@
         "questions"
       ],
       "title": "ChipsEvent",
+      "type": "object"
+    },
+    "ContactMartomEvent": {
+      "additionalProperties": false,
+      "description": "Offer the \"contact Martom\" button: the advisor can't make a list for this request.\n\nSent for a chain-link fence (no rules yet, fence-rules.md) and a fence too large to\ncalculate. The answer text says why; the browser offers the WhatsApp order button\nwith the customer's request as the note (the order form is #27).",
+      "properties": {
+        "type": {
+          "const": "contact_martom",
+          "default": "contact_martom",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ContactMartomEvent",
       "type": "object"
     },
     "DoneEvent": {
@@ -790,7 +963,10 @@
   "discriminator": {
     "mapping": {
       "bom": "#/$defs/BomEvent",
+      "bom_cleared": "#/$defs/BomClearedEvent",
+      "cart": "#/$defs/CartEvent",
       "chips": "#/$defs/ChipsEvent",
+      "contact_martom": "#/$defs/ContactMartomEvent",
       "done": "#/$defs/DoneEvent",
       "error": "#/$defs/ErrorEvent",
       "product_cards": "#/$defs/ProductCardsEvent",
@@ -814,6 +990,15 @@
     },
     {
       "$ref": "#/$defs/BomEvent"
+    },
+    {
+      "$ref": "#/$defs/BomClearedEvent"
+    },
+    {
+      "$ref": "#/$defs/CartEvent"
+    },
+    {
+      "$ref": "#/$defs/ContactMartomEvent"
     },
     {
       "$ref": "#/$defs/ErrorEvent"

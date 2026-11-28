@@ -24,9 +24,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from martom.agent import copy
+from martom.agent.cart_quantity import (
+    DEFAULT_QUANTITY,
+    CartQuantityError,
+    bom_quantity,
+    price_sources,
+)
 from martom.agent.catalogue import Catalogue, ProductInfo
 from martom.agent.understand import FenceSpec, default_panel_width, total_length_text
 from martom.api.chat_events import BomEvent, BomLineOut, ExtraLine, format_price
@@ -35,8 +41,6 @@ from martom.bom.manual_products import ManualProduct
 from martom.bom.panel import panel_fence_bom
 from martom.bom.roll import RollPostModel, roll_fence_bom
 from martom.search.retrieve import Retrieval, RetrievedHit
-
-MAX_CART_QUANTITY = 10_000
 
 type Retriever = Callable[[str], Awaitable[Retrieval]]
 
@@ -60,6 +64,8 @@ class ToolContext:
     pricer: BomPricer | None
     # manual_products.toml, loaded once when the graph is built (key -> entry).
     manual_products: Mapping[str, ManualProduct]
+    # The current materials list (bom event dict): add_to_cart takes its quantities.
+    bom: Mapping[str, Any] | None = None
 
 
 class ToolError(Exception):
@@ -237,6 +243,8 @@ async def _fence_bom(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
         lines, ctx.pricer, summary=summary, extra_lines=ctx.extra_lines, notes=notes
     )
     result: dict[str, Any] = event.model_dump(mode="json")
+    # Each line's price source, for the cart (agent/cart_quantity.py); not in the event.
+    result["price_sources"] = price_sources(lines)
     if addon:
         # The suggested "Dodaj nosivu žicu" add-on (fence-rules.md): counted, not in the BOM.
         result["wire_addon"] = [
@@ -279,56 +287,69 @@ async def build_bom_event(
 
 
 class CartArgs(ProductRef):
+    # No quantity argument (Tomislav, #147): the model never sets one. extra="forbid":
+    # a quantity sent anyway is a ToolError, never silently dropped or used.
+    model_config = ConfigDict(extra="forbid")
+
     variant_label: str | None = Field(
         default=None, description="Exactly as get_product returned it; null without variants."
     )
-    quantity: int = Field(ge=1, le=MAX_CART_QUANTITY)
 
 
 async def _add_to_cart(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
+    """One cart line, quantity and price from tool output only (agent/cart_quantity.py).
+
+    On the current materials list: that line's quantity and unit price. Otherwise 1
+    piece at the catalogue price; `quantity_from` says which, so the reply can tell the
+    customer they change the quantity in the korpa.
+    """
     assert isinstance(args, CartArgs)
     if args.manual_key is not None:
         manual = _manual_product(ctx, args.manual_key)
         if args.variant_label is not None:
             raise ToolError(f"manual product {args.manual_key!r} has no variants")
-        return {
-            "cart_line": {
-                "source": "manual",
-                "listing_id": None,
-                "manual_key": manual.key,
-                "title": manual.name,
-                "url": None,
-                "variant_label": None,
-                "quantity": args.quantity,
-                "unit_price": _manual_price(manual),
-            }
+        line: dict[str, Any] = {
+            "source": "manual",
+            "listing_id": None,
+            "manual_key": manual.key,
+            "title": manual.name,
+            "url": None,
+            "variant_label": None,
+            "unit_price": _manual_price(manual),
         }
-    assert args.listing_id is not None  # ProductRef holds exactly one of the two
-    product = await ctx.catalogue.get_product(args.listing_id)
-    if product is None:
-        raise ToolError(f"no active listing {args.listing_id}")
-    if args.variant_label is None:
-        if product.variants:
-            labels = [variant.label for variant in product.variants]
-            raise ToolError(f"pick one of the variants: {labels}")
-        unit_price = product.listing_price
     else:
-        match = next((v for v in product.variants if v.label == args.variant_label), None)
-        if match is None:
-            raise ToolError(f"listing {args.listing_id} has no variant {args.variant_label!r}")
-        unit_price = match.price
-    return {
-        "cart_line": {
+        assert args.listing_id is not None  # ProductRef holds exactly one of the two
+        product = await ctx.catalogue.get_product(args.listing_id)
+        if product is None:
+            raise ToolError(f"no active listing {args.listing_id}")
+        if args.variant_label is None:
+            if product.variants:
+                labels = [variant.label for variant in product.variants]
+                raise ToolError(f"pick one of the variants: {labels}")
+            unit_price = product.listing_price
+        else:
+            match = next((v for v in product.variants if v.label == args.variant_label), None)
+            if match is None:
+                raise ToolError(f"listing {args.listing_id} has no variant {args.variant_label!r}")
+            unit_price = match.price
+        line = {
             "source": "olx",
             "listing_id": product.listing_id,
             "manual_key": None,
             "title": product.title,
             "url": product.url,
             "variant_label": args.variant_label,
-            "quantity": args.quantity,
             "unit_price": _price(unit_price),
         }
-    }
+    try:
+        from_list = bom_quantity(line, ctx.bom)
+    except CartQuantityError as exc:
+        raise ToolError(str(exc)) from exc
+    if from_list is not None:
+        line["quantity"], line["unit_price"] = from_list
+        return {"cart_line": line, "quantity_from": "materials_list"}
+    line["quantity"] = DEFAULT_QUANTITY
+    return {"cart_line": line, "quantity_from": "default"}
 
 
 TOOLS: tuple[ToolSpec, ...] = (
@@ -356,7 +377,9 @@ TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "add_to_cart",
         "Add one product variant to the customer's cart when they ask for it: by listing_id, "
-        "or by manual_key for a manual product (which has no variants).",
+        "or by manual_key for a manual product (which has no variants). It takes no "
+        "quantity: a product on the materials list goes in with the list's quantity, any "
+        "other as 1 piece, and the customer changes the quantity in the cart.",
         CartArgs,
         _add_to_cart,
     ),

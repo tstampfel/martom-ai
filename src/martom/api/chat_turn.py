@@ -18,12 +18,17 @@ from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 
+from martom.agent.cart_quantity import matches_bom
 from martom.agent.understand import total_length_text
 from martom.api import chat_copy
 from martom.api.chat_events import (
+    BomClearedEvent,
     BomEvent,
+    CartEvent,
+    CartLine,
     ChatEvent,
     ChipsEvent,
+    ContactMartomEvent,
     ProductCard,
     ProductCardsEvent,
     StepEvent,
@@ -72,8 +77,18 @@ def product_cards(state: Mapping[str, Any]) -> list[ProductCard]:
 
 
 def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
-    """The reply after the turn: [clarify step], tokens, chips | cards, bom (no `done`)."""
+    """The reply after the turn, without `done`.
+
+    [bom_cleared], [clarify step], tokens, then chips | (cards, bom, cart, contact).
+    """
     events: list[ChatEvent] = []
+    bom = state.get("bom")
+    bom_changed = state.get("bom_changed")
+    if bom_changed and not bom:
+        # The fence changed (or can't be calculated) and the old list was dropped: tell
+        # the browser first, so no stale list or total stays on screen (#147). It goes
+        # on a clarify turn too, which is when a changed fence usually lands.
+        events.append(BomClearedEvent())
     chips = state.get("chips")
     if chips:
         events.append(StepEvent(id="clarify", text=chat_copy.STEP_CLARIFY, status="needs_input"))
@@ -84,13 +99,43 @@ def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
     cards = product_cards(state)
     if cards:
         events.append(ProductCardsEvent(cards=cards))
-    bom = state.get("bom")
-    # Only a list this turn made: an unchanged one is already on screen. A cleared list
-    # (the fence changed) has no event yet (#147, blocks launch); the next calculation
-    # replaces it.
-    if bom and state.get("bom_changed"):
+    # Only a list this turn made: an unchanged one is already on screen.
+    if bom and bom_changed:
         events.append(BomEvent.model_validate(_bom_event_fields(bom)))
+    cart = cart_lines(state)
+    if cart:
+        events.append(CartEvent(lines=cart))
+    if state.get("contact_martom"):
+        events.append(ContactMartomEvent())
     return events
+
+
+def cart_lines(state: Mapping[str, Any]) -> list[CartLine]:
+    """This turn's cart additions (the add_to_cart results the graph collected).
+
+    Title, link and price come from tools; the line total is worked out in Python
+    (`CartLine.from_tool`). add_to_cart takes the quantity and price from the current
+    materials list, or 1 piece at the catalogue price (agent/cart_quantity.py); this checks
+    each line against the materials list again as a second guard (`matches_bom`). Nothing
+    goes out on a fallback turn, whose answer grounding rejected. A dropped line is logged
+    by count only.
+    """
+    cart = state.get("cart") or []
+    if not cart or state.get("fallback") or state.get("generate_failed"):
+        return []
+    lines: list[CartLine] = []
+    ungrounded = invalid = 0
+    for cart_line in cart:
+        if not matches_bom(cart_line, state.get("bom")):
+            ungrounded += 1
+            continue
+        try:
+            lines.append(CartLine.from_tool(cart_line))
+        except (ValueError, TypeError, ArithmeticError):
+            invalid += 1
+    if ungrounded or invalid:
+        logger.info("cart lines dropped", extra={"ungrounded": ungrounded, "invalid": invalid})
+    return lines
 
 
 def search_step_text(count: int) -> str:

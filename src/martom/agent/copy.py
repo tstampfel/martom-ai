@@ -85,3 +85,7 @@ PROJECT_PANEL = "Panelna ograda"
 PROJECT_ROLL = "Ograda u roli"
 PROJECT_FENCE = "Ograda"
 BOM_TITLE = "Popis materijala"
+
+# #147 (Tomislav, 28 Nov 2026): a product not on the materials list goes into the korpa
+# as 1 piece; the model never sets a quantity, so the customer changes it there.
+CART_QUANTITY = "Količinu možete promijeniti u korpi."
