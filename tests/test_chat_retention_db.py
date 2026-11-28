@@ -27,13 +27,22 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+CHECKPOINT_TABLES = ("checkpoints", "checkpoint_blobs", "checkpoint_writes")
+
+
 async def write_checkpoint(saver: AsyncPostgresSaver, thread: str, ts: datetime) -> None:
-    """One checkpoint (with a pending write) on `thread`, stamped `ts`."""
+    """One checkpoint on `thread`, stamped `ts`, with a row in each checkpoint table.
+
+    The message list is stored in `checkpoint_blobs` (the library inlines only plain
+    values), and the pending write in `checkpoint_writes`.
+    """
     checkpoint = empty_checkpoint()
     checkpoint["ts"] = ts.isoformat()
+    checkpoint["channel_values"] = {"messages": ["Zovem se Pero"]}
+    checkpoint["channel_versions"] = {"messages": "1"}
     config: dict[str, Any] = {"configurable": {"thread_id": thread, "checkpoint_ns": ""}}
-    saved = await saver.aput(config, checkpoint, {"source": "input", "step": 0}, {})
-    await saver.aput_writes(saved, [("messages", "Zovem se Ivan")], task_id="task-1")
+    saved = await saver.aput(config, checkpoint, {"source": "input", "step": 0}, {"messages": "1"})
+    await saver.aput_writes(saved, [("messages", "Zovem se Pero")], task_id="task-1")
 
 
 def threads_in(database_url: str, table: str) -> set[str]:
@@ -62,8 +71,28 @@ async def test_deletes_only_threads_idle_longer_than_the_retention(database_url:
     assert stats.deleted_threads == 2
     assert stats.cutoff == NOW - timedelta(days=90)
     kept = {"just-under", "fresh", "returning"}
-    assert threads_in(database_url, "checkpoints") == kept
-    assert threads_in(database_url, "checkpoint_writes") == kept
+    # The whole thread goes: its checkpoints, its stored messages and its pending writes.
+    for table in CHECKPOINT_TABLES:
+        assert threads_in(database_url, table) == kept, table
+
+
+async def test_deletes_a_thread_whose_checkpoints_have_no_timestamp(database_url: str) -> None:
+    # The library always writes `ts`; a thread without one can't be dated, so it is
+    # deleted rather than kept forever past the promised 90 days.
+    await seed(database_url)
+    async with open_checkpointer(database_url) as saver:
+        await write_checkpoint(saver, "undated", NOW - timedelta(days=1))
+    with psycopg.connect(database_url) as conn:
+        conn.execute(
+            "UPDATE checkpoints SET checkpoint = checkpoint - 'ts' WHERE thread_id = 'undated'"
+        )
+
+    stats = await purge_old_chats(database_url, retention_days=90, now=NOW)
+
+    assert stats.deleted_threads == 3
+    assert stats.undated_threads == 1
+    for table in CHECKPOINT_TABLES:
+        assert "undated" not in threads_in(database_url, table), table
 
 
 async def test_a_second_run_deletes_nothing(database_url: str) -> None:

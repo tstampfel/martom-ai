@@ -26,12 +26,15 @@ from martom.checkpointer import open_checkpointer
 logger = logging.getLogger(__name__)
 
 # Every checkpoint carries `ts`, the ISO 8601 time the library wrote it. A thread's age
-# is its newest checkpoint across all namespaces (subgraphs write their own).
+# is its newest checkpoint across all namespaces (subgraphs write their own). A thread
+# with no `ts` at all (max() is NULL) can't be dated: it is deleted too, never kept
+# forever, and counted as `undated`.
 EXPIRED_THREADS_SQL = """
-SELECT thread_id
+SELECT thread_id, max((checkpoint ->> 'ts')::timestamptz) IS NULL AS undated
 FROM checkpoints
 GROUP BY thread_id
-HAVING max((checkpoint ->> 'ts')::timestamptz) < %s
+HAVING max((checkpoint ->> 'ts')::timestamptz) IS NULL
+    OR max((checkpoint ->> 'ts')::timestamptz) < %s
 ORDER BY thread_id
 """
 
@@ -40,14 +43,18 @@ ORDER BY thread_id
 class PurgeStats:
     deleted_threads: int
     cutoff: datetime
+    # Of the deleted threads, those without any checkpoint timestamp (not expected: the
+    # library always writes one; a WARNING is logged when there are any).
+    undated_threads: int = 0
 
 
-async def expired_thread_ids(pool: AsyncConnectionPool, cutoff: datetime) -> list[str]:
-    """Threads whose last checkpoint is older than `cutoff`."""
+async def expired_threads(pool: AsyncConnectionPool, cutoff: datetime) -> list[tuple[str, bool]]:
+    """(thread id, undated) for each thread whose last checkpoint is older than `cutoff`,
+    or which has no checkpoint timestamp at all."""
     async with pool.connection() as conn, conn.cursor(row_factory=tuple_row) as cur:
         await cur.execute(EXPIRED_THREADS_SQL, (cutoff,))
         rows = await cur.fetchall()
-    return [row[0] for row in rows]
+    return [(row[0], row[1]) for row in rows]
 
 
 async def purge_old_chats(
@@ -61,18 +68,24 @@ async def purge_old_chats(
     """
     cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
     async with open_checkpointer(database_url) as saver:
-        thread_ids = await expired_thread_ids(_pool(saver), cutoff)
-        for thread_id in thread_ids:
+        threads = await expired_threads(_pool(saver), cutoff)
+        for thread_id, _undated in threads:
             await saver.adelete_thread(thread_id)
+    undated = sum(1 for _thread_id, is_undated in threads if is_undated)
+    if undated:
+        logger.warning(
+            "deleted chats without a checkpoint timestamp",
+            extra={"event": "chat_purge_undated", "undated_threads": undated},
+        )
     logger.info(
         "chat purge finished",
         extra={
             "event": "chat_purge",
-            "deleted_threads": len(thread_ids),
+            "deleted_threads": len(threads),
             "retention_days": retention_days,
         },
     )
-    return PurgeStats(deleted_threads=len(thread_ids), cutoff=cutoff)
+    return PurgeStats(deleted_threads=len(threads), cutoff=cutoff, undated_threads=undated)
 
 
 def _pool(saver: AsyncPostgresSaver) -> AsyncConnectionPool:

@@ -78,7 +78,7 @@ Write the JSON to a file **outside the repo**, upload it, delete the file:
 {
   "ANTHROPIC_API_KEY": "sk-ant-...",
   "COHERE_API_KEY": "...",
-  "LANGSMITH_API_KEY": "lsv2_...",
+  "LANGSMITH_API_KEY": "lsv2_... (a key from the EU organization, see \"Chat retention and LangSmith traces\")",
   "ADMIN_TOKEN": "<openssl rand -hex 32>"
 }
 ```
@@ -133,7 +133,7 @@ curl -s "$(terraform -chdir=infra output -raw api_url)/health"
 
 `/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}` (with Redis down: 200, `"status": "degraded"`, `"redis": "error"`; with Postgres down: 503). Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on.
 
-Then set the LangSmith trace retention of the production project (see "Chat retention and LangSmith traces" below); it is a launch step.
+Then do the LangSmith steps (EU organization and key, EU endpoint check, trace retention): see "Chat retention and LangSmith traces" below; they are launch steps (#33).
 
 The morning after the first night, check that it ran: a `purge-chats: deleted N threads` line in the job log group around 00:15 local time, a `sync_run` row started around 01:00 local time, and no messages in the dead-letter queue (`aws sqs get-queue-attributes --queue-url "$(terraform -chdir=infra output -raw scheduler_dlq_url)" --attribute-names ApproximateNumberOfMessages`). A message there means EventBridge Scheduler couldn't start the task (for example permissions or Fargate capacity); the message says why.
 
@@ -168,9 +168,10 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `ADMIN_TOKEN` | `app` → `ADMIN_TOKEN` | not set | secret (by hand) |
 | `LANGSMITH_TRACING` | `true` | `true` | plain |
 | `LANGSMITH_PROJECT` | `martom-ai-production` | same | plain |
-| `LANGSMITH_API_KEY` | `app` → `LANGSMITH_API_KEY` | same | secret (by hand) |
+| `LANGSMITH_ENDPOINT` | `https://eu.api.smith.langchain.com` (EU region, #129) | same | plain |
+| `LANGSMITH_API_KEY` | `app` → `LANGSMITH_API_KEY` (an EU organization key) | same | secret (by hand) |
 
-Not set in AWS: `TEST_DATABASE_URL`, `TEST_REDIS_URL`, `POSTGRES_PORT`, `REDIS_PORT` (local and CI only), and `ORDER_PHONE`, `TURNSTILE_SECRET_KEY`, `RATE_LIMIT_PER_MINUTE`, `MAX_TOKENS_PER_CONVERSATION` until M5-6/M5-7 read them. If your LangSmith account is in the EU region, add `LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com` to `common_environment` in `ecs.tf`.
+Not set in AWS: `TEST_DATABASE_URL`, `TEST_REDIS_URL`, `POSTGRES_PORT`, `REDIS_PORT` (local and CI only), and `ORDER_PHONE`, `TURNSTILE_SECRET_KEY`, `RATE_LIMIT_PER_MINUTE`, `MAX_TOKENS_PER_CONVERSATION` until M5-6/M5-7 read them. Production traces go to LangSmith's EU region (`LANGSMITH_ENDPOINT` in `common_environment`, `ecs.tf`); see "Chat retention and LangSmith traces".
 
 ## Monthly cost estimate
 
@@ -291,7 +292,16 @@ So the latest a task can still be running is 17:00 UTC (a 01:00 UTC start after 
 Tomislav's decision (#129, 27 Nov 2026), and what the start screen's privacy notice tells customers: **chats are kept 90 days, then deleted.** Chat text lives in two places, and both must hold to it:
 
 1. **Postgres (the checkpointer tables):** `martom purge-chats` deletes them every night (see "Schedules"). Orders (`order_request`, kept 12 months under the plan's customer-data rule) are separate and never touched by it.
-2. **LangSmith:** every conversation is traced, and LangSmith keeps its own copy under its own retention. This is a LangSmith setting, not Terraform, and agents have no LangSmith keys, so **Tomislav sets it by hand before launch** (launch checklist, #33):
+2. **LangSmith:** every conversation is traced (Tomislav, 28 Nov 2026: tracing stays on in production), and LangSmith keeps its own copy. The Privatnost page (#145) tells customers that this copy is **in the EU and kept at most 90 days**. Both are LangSmith settings, not Terraform, and agents have no LangSmith keys, so **Tomislav does these steps by hand before launch** (they are on the launch checklist, #33). The facts below are from LangSmith's docs (Cloud regions: <https://docs.langchain.com/langsmith/cloud#regions>; retention: <https://docs.langchain.com/langsmith/usage-and-billing#data-retention>), not checked in the account yet.
+
+   **a. An EU organization.** LangSmith Cloud stores an organization's data in the region where it was signed up, and an organization can't be moved to another region. Sign up (or create the production organization) at **<https://eu.smith.langchain.com>**, create the production workspace there, and create the production API key in it (**Settings → API Keys**). A key from a US organization (`smith.langchain.com`) doesn't work in the EU region. Put that key in the `app` secret as `LANGSMITH_API_KEY` (step 3).
+   - Check: you reach the production workspace at `eu.smith.langchain.com` (on `smith.langchain.com` it isn't there), and the key you put in the secret was created on the EU site.
+
+   **b. The EU endpoint in both tasks.** `ecs.tf` sets `LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com` (a plain value in `common_environment`, so the API task, which traces the chats, and the job task, which traces extraction, both send to the EU). Nothing to do but apply.
+   - Check: `aws ecs describe-task-definition --task-definition martom-production-api --query "taskDefinition.containerDefinitions[?name=='api'].environment[?name=='LANGSMITH_ENDPOINT']"` (and `martom-production-job`) shows the EU URL. Then send one chat on the site: its trace appears in the `martom-ai-production` project on `eu.smith.langchain.com`, and the API log group has no LangSmith authentication errors (a 401/403 from LangSmith means the key belongs to another region).
+   - Any script you run by hand against the production workspace (uploading an eval dataset, for example) needs the same `LANGSMITH_ENDPOINT` and the EU key in its environment.
+
+   **c. Trace retention of 90 days or less.**
    - In LangSmith, open the production tracing project (`LANGSMITH_PROJECT`, `martom-ai-production`; in the newer UI: the agent → **Tracing** → its environment) → **Retention** in the top bar → **Base**. On LangSmith Cloud, Base keeps traces **14 days**; **Extended** keeps them 180 days, which would break the 90-day promise.
    - **Settings → Usage configuration** → the workspace's **Data retention policy** / default trace tier: **Base** too, so a project created later (a renamed `LANGSMITH_PROJECT`) also starts at 14 days.
    - Automation rules on the production project must keep every **Extend Data Retention** toggle off (note: the "Add to Annotation Queue" action has it **on** by default), and online evaluators their retention option off: LangSmith upgrades every matching trace (with a thread rule, every trace in the thread) to 180 days. Never add the "Extend Data Retention" action itself. Feedback (thumbs) and notes added in the UI don't change a trace's retention.
