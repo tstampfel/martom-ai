@@ -15,11 +15,15 @@ const shop = {
 /**
  * PLACEHOLDERS on the "Privatnost" page, copied from the canvas as written.
  * They stay until Martom (Toni) confirms the date and the order retention
- * period; replace them here, and PrivacyPage.test.tsx tells you to update it.
+ * period, and the transfer safeguard is checked against the contracts.
+ * Replace them here, and PrivacyPage.test.tsx tells you to update it.
  */
 export const privacyPlaceholders = {
   date: '[DATUM]',
   orderRetention: '[ROK ČUVANJA – potvrđuje Martom, npr. koliko zahtijevaju računovodstveni propisi]',
+  // The safeguard for sending data to Anthropic and Cohere (USA, Canada),
+  // until the contracts are checked.
+  transferSafeguard: '[ZAŠTITA PRIJENOSA – provjeriti ugovore]',
 } as const
 
 /** Builds a `tel:` link in international form (+387) from a BiH number. */
@@ -219,11 +223,12 @@ export const copy = {
     orderNotice: 'Ime, telefon i adresu koristimo samo za ovu narudžbu.',
     link: 'Privatnost',
   },
-  // The "Privatnost" page, canvas version 1795850976-906d (Tomislav, 28 Nov
+  // The "Privatnost" page, canvas version 1795851325-40ff (Tomislav, 28 Nov
   // 2026): docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // The wording gets an AI review before launch (#33); don't reword it here.
-  // PLACEHOLDERS: `privacyPlaceholders.date` and `.orderRetention` stay
-  // verbatim until Martom (Toni) confirms them; PrivacyPage.test.tsx finds them.
+  // PLACEHOLDERS: `privacyPlaceholders` (`.date`, `.orderRetention`,
+  // `.transferSafeguard`) stay verbatim until they are confirmed;
+  // PrivacyPage.test.tsx finds them.
   privacyPage: {
     // document.title while the page is open; index.html keeps the site title.
     documentTitle: 'Privatnost · Martom savjetnik',
@@ -279,7 +284,7 @@ export const copy = {
         heading: 'Tko još vidi podatke',
         lines: [
           {
-            text: 'Podatke vidi Martom. Za rad savjetnika koristimo pružatelje usluga koji ih obrađuju samo u naše ime: Anthropic (razumijevanje pitanja i odgovori), Cohere (pretraživanje artikala), Amazon Web Services (poslužitelji u EU, Frankfurt) i Cloudflare (zaštita od botova). Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete.',
+            text: `Podatke vidi Martom. Za rad savjetnika koristimo pružatelje usluga koji ih obrađuju samo u naše ime: Anthropic (razumijevanje pitanja i odgovori), Cohere (pretraživanje artikala), Amazon Web Services (poslužitelji u EU, Frankfurt), LangSmith (praćenje rada savjetnika, podaci u EU, čuvaju se najviše 90 dana) i Cloudflare (zaštita od botova). Anthropic i Cohere obrađuju podatke u SAD-u i Kanadi ${privacyPlaceholders.transferSafeguard}. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete.`,
           },
         ],
       },

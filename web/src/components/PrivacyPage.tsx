@@ -1,17 +1,16 @@
 import { useEffect } from 'react'
 import logo from '../assets/martom-logo.png'
-import logoWhite from '../assets/martom-logo-white.png'
-import { copy, telHref } from '../copy'
+import { copy } from '../copy'
+import { SiteFooter, TopStrip } from './AppShell'
 import './AppShell.css'
 import './PrivacyPage.css'
 
-const phoneHref = telHref(copy.shop.phone)
 const page = copy.privacyPage
 
 /**
  * The "Privatnost" page (docs/mockups/{web,mobile}/6-privatnost.html). It has
  * its own header, with a link back to the advisor instead of the categories
- * and the cart; the top strip and the wide footer reuse AppShell's styles.
+ * and the cart; the top strip and the footer are AppShell's.
  */
 export function PrivacyPage() {
   // The tab title follows the page; index.html keeps the site's own title.
@@ -25,17 +24,7 @@ export function PrivacyPage() {
 
   return (
     <div className="shell">
-      <div className="top-strip">
-        <div className="top-strip__inner">
-          <span>{copy.topStrip.delivery}</span>
-          <span>
-            {copy.shop.hours} ·{' '}
-            <a className="top-strip__phone" href={phoneHref}>
-              {copy.shop.phone}
-            </a>
-          </span>
-        </div>
-      </div>
+      <TopStrip />
 
       <header className="site-header">
         <div className="site-header__inner privacy-page__header">
@@ -80,24 +69,8 @@ export function PrivacyPage() {
         ))}
       </main>
 
-      <footer className="site-footer">
-        <div className="site-footer__inner site-footer__inner--wide">
-          <span className="site-footer__brand">
-            <img src={logoWhite} alt={copy.shop.name} width={992} height={308} />
-            <span>{copy.shop.address}</span>
-          </span>
-          <span>
-            <a href={`mailto:${copy.shop.email}`}>{copy.shop.email}</a> · <a href={phoneHref}>{copy.shop.phone}</a>
-          </span>
-        </div>
-        {/* On phones this footer shows the address, not the hours (mobile/6-privatnost.html). */}
-        <div className="site-footer__inner site-footer__inner--narrow">
-          <span>{copy.shop.address}</span>
-          <a className="site-footer__phone" href={phoneHref}>
-            {copy.shop.phone}
-          </a>
-        </div>
-      </footer>
+      {/* On phones this footer shows the address, not the hours (mobile/6-privatnost.html). */}
+      <SiteFooter narrowStart={copy.shop.address} />
     </div>
   )
 }
