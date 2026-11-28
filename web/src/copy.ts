@@ -117,7 +117,8 @@ export const copy = {
       },
     ],
   },
-  // AI notice (EU AI Act Art. 50, #151), canvas version 1795853807-d861
+  // AI notice (EU AI Act Art. 50, #151), canvas version 1795853807-d861; "(vještačka
+  // inteligencija)" from 1795858687-3aab (#174)
   // (Tomislav, 28 Nov 2026). `start` sits under the question box before the
   // first message (docs/mockups/{web,mobile}/1-start.html), `chat` under the
   // chat input from the first message on (2-clarify.html). `lead` is bold;
@@ -126,14 +127,14 @@ export const copy = {
     start: {
       wide: {
         lead: 'Odgovara AI savjetnik',
-        rest: ' (umjetna inteligencija), ne osoba. Cijene i količine potvrđuje Martom.',
+        rest: ' (vještačka inteligencija), ne osoba. Cijene i količine potvrđuje Martom.',
       },
       short: { lead: 'Odgovara AI savjetnik', rest: ', ne osoba. Cijene potvrđuje Martom.' },
     },
     chat: {
       wide: {
         lead: 'Razgovarate s AI savjetnikom',
-        rest: ' (umjetna inteligencija), ne s osobom. Može pogriješiti, a cijene i količine potvrđuje Martom prije narudžbe.',
+        rest: ' (vještačka inteligencija), ne s osobom. Može pogriješiti, a cijene i količine potvrđuje Martom prije narudžbe.',
       },
       short: {
         lead: 'Razgovarate s AI savjetnikom',
@@ -251,12 +252,14 @@ export const copy = {
     creditLead: 'Izradio i održava',
     credit: 'Stampfel Consulting',
     creditUrl: 'https://stampfelconsulting.com/',
+    // Martom's legal details line (companyDetails.ts), shown on every page
+    // once the values are filled in. Not on the canvas yet: the labels and
+    // layout follow the canvas when Tomislav or Toni add the values there.
+    company: { jibLabel: 'JIB:', vatLabel: 'PDV broj:', separator: ' · ' },
   },
-  // The "Privatnost" page, canvas version 1795857694-7d1b (Tomislav, 28 Nov
-  // 2026, after the #149 provider decision, Amazon Bedrock in eu-central-1,
-  // with the legal bases, the rights, the right to object, the complaint and
-  // court sections, orders kept 30 days, the WhatsApp copy Martom keeps
-  // only while the order needs it, and backups kept at most 7 more days):
+  // The "Privatnost" page, canvas version 1795858888-a499 (Tomislav, 28 Nov
+  // 2026: Claude's legal review plus Gemini's checklist, the final text,
+  // frozen until launch unless Tomislav sends changes):
   // docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // Don't reword it here; change the canvas first.
   // PLACEHOLDER: `privacyPlaceholders.date` stays verbatim until Tomislav
@@ -271,18 +274,24 @@ export const copy = {
     introShort: `Koje podatke savjetnik koristi, zašto i koliko dugo. Ažurirano: ${privacyPlaceholders.date}.`,
     back: '← Nazad na savjetnika',
     backShort: '← Nazad',
-    // Each section is a heading and one paragraph; a `label` is the bold
-    // lead-in of a line, and lines are separated by line breaks. A line's
-    // `langSmith` sentence sits between `text` and `textAfter` and is shown
-    // only when LangSmith tracing is on (VITE_LANGSMITH_ENABLED; the canvas
-    // marks it with an HTML comment). A line's `link` (opened in a new tab)
-    // sits between `text` and `textAfter` as well.
+    // Each section is a heading and one paragraph; lines are separated by
+    // line breaks. A line is `lead` (plain), then `label` (bold), then
+    // `text`; a `link` (opened in a new tab) and `textAfter` follow. A line
+    // with `langSmith: true` is shown only when LangSmith tracing is on
+    // (VITE_LANGSMITH_ENABLED; the canvas marks it with an HTML comment).
     sections: [
       {
         heading: 'Ko smo',
-        lines: [{ text: 'Željezarija Martom d.o.o., Krstine 106, Međugorje. Za sva pitanja o vašim podacima: ' }],
-        // The email (a mailto link) and the shop phone (a tel link) follow the line.
+        lines: [
+          {
+            text: 'Kontrolor vaših podataka, odnosno firma koja za njih odgovara, je Željezarija Martom d.o.o., Krstine 106, 88266 Međugorje, Općina Čitluk (u daljem tekstu: Martom). Za sva pitanja o vašim podacima: ',
+          },
+        ],
+        // The email (a mailto link) and the shop phone (a tel link) follow
+        // the line, then `contactAfter`.
         contact: true,
+        contactAfter:
+          '. Kao mala trgovina nismo obavezni imenovati službenika za zaštitu ličnih podataka, pa se za sva pitanja javite direktno na ove kontakte.',
       },
       {
         heading: 'Koje podatke prikupljamo',
@@ -294,42 +303,56 @@ export const copy = {
           },
           {
             label: 'Tehnički podaci:',
-            text: ' IP adresu i zapise o greškama, radi zaštite od zloupotrebe i ispravljanja grešaka. Čuvaju se 30 dana.',
+            text: ' IP adresu i zapise o greškama, radi zaštite od zloupotrebe i ispravljanja grešaka.',
           },
           {
             label: 'Statistika posjeta:',
-            text: ' broj posjeta i klikova, bez kolačića i bez ličnih podataka, na našim serverima u EU.',
+            text: ' brojimo posjete i klikove bez kolačića. IP adresu koristimo samo trenutno, da posjetu ne bismo brojali dvaput, i ne čuvamo je u statistici. Ne koristimo kolačiće za praćenje ni oglašavanje.',
           },
         ],
       },
       {
-        heading: 'Zašto ih koristimo',
+        heading: 'Zašto ih koristimo i na kojem osnovu',
         lines: [
-          // The legal basis of each purpose.
           {
-            label: 'Odgovor na pitanje i popis materijala:',
-            text: ' jer ste to zatražili, kao korak prije moguće kupovine.',
+            label: 'Odgovor na pitanje i spisak materijala:',
+            text: ' obrađujemo ono što upišete jer ste sami zatražili savjet. Ako se savjet odnosi na kupovinu kod nas, to su radnje na vaš zahtjev prije zaključenja ugovora; ako tražite samo opći savjet, osnov je naš legitimni interes da kupcima pružimo besplatan savjet o proizvodima.',
           },
           { label: 'Narudžba i dostava:', text: ' da izvršimo ugovor s vama.' },
-          { label: 'Računi i knjigovodstvo:', text: ' jer nas na to obavezuje zakon.' },
           {
-            label: 'Poboljšanje savjetnika, statistika posjeta i zaštita stranice:',
-            text: ' na osnovu našeg legitimnog interesa da savjetnik radi dobro i sigurno.',
+            label: 'Računi i knjigovodstvo:',
+            text: ' to nam nalažu Zakon o računovodstvu i reviziji u FBiH, propisi o PDV-u u BiH i Zakon o fiskalizaciji transakcija u FBiH.',
           },
-          { text: 'Podatke ne koristimo za oglašavanje i nikome ih ne prodajemo.' },
+          {
+            label: 'Poboljšanje savjetnika:',
+            text: ' naš legitimni interes je da otkrijemo i ispravimo pogrešne ili nejasne odgovore, npr. pogrešan obračun stupova ili žice. Za to koristimo primjere razgovora iz kojih smo uklonili ime, telefon i adresu.',
+          },
+          {
+            label: 'Zaštita stranice:',
+            text: ' naš legitimni interes je da spriječimo napade, lažne narudžbe i automatske programe (botove).',
+          },
+          {
+            text: '„Legitimni interes“ znači naš opravdan poslovni razlog, koji ne smije biti jači od vaših prava. Podatke ne koristimo za oglašavanje i nikome ih ne prodajemo.',
+          },
         ],
       },
       {
         heading: 'Koliko dugo ih čuvamo',
         lines: [
+          { label: 'Razgovori:', text: ' 90 dana, zatim se automatski brišu.' },
           {
-            label: 'Razgovori:',
-            text: ' 90 dana, zatim se automatski brišu. Primjeri koje koristimo za poboljšanje savjetnika prije toga se očiste od imena, telefona i adresa.',
+            label: 'Očišćeni primjeri razgovora',
+            text: ' (za poboljšanje savjetnika): najduže 90 dana, zatim se brišu.',
           },
           {
-            label: 'Narudžbe:',
-            text: ' zahtjev za narudžbu u sistemu savjetnika čuvamo 30 dana, da možemo riješiti eventualne nejasnoće, zatim se automatski briše. Narudžba Martomu stiže i kao WhatsApp poruka; nju Martom čuva samo dok je potrebno da se narudžba završi. Martom ne vodi bazu kupaca. Ako kupovina završi računom, račun se čuva onoliko koliko propisuje zakon.',
+            label: 'Zahtjev za narudžbu',
+            text: ' u sistemu savjetnika: 30 dana, zatim se automatski briše. Poruku s narudžbom koju nam pošaljete preko WhatsAppa brišemo iz našeg WhatsAppa najkasnije 30 dana nakon što narudžba bude isporučena ili otkazana. Martom ne vodi bazu kupaca.',
           },
+          {
+            label: 'Računi:',
+            text: ' ako kupovina završi računom, račun i knjigovodstvene isprave čuvamo najmanje 10 godina od kraja poslovne godine u kojoj je račun izdat, jer to propisuje Zakon o računovodstvu i reviziji u FBiH.',
+          },
+          { label: 'Tehnički podaci:', text: ' 30 dana.' },
           {
             label: 'Sigurnosne kopije:',
             text: ' obrisani podaci mogu ostati u automatskim sigurnosnim kopijama baze najviše još 7 dana, zatim nestaju.',
@@ -340,10 +363,45 @@ export const copy = {
         heading: 'Ko još vidi podatke',
         lines: [
           {
-            text: 'Podatke vidi Martom. Za rad savjetnika koristimo pružaoce usluga koji ih obrađuju samo u naše ime i po našim uputama. Amazon Web Services (AWS): serveri i baza podataka u EU (Frankfurt). Preko AWS-a, također u EU, rade i AI modeli koji razumiju pitanja i pretražuju artikle (Anthropic Claude i Cohere); proizvođači tih modela ne dobijaju vaše podatke i ne koriste ih za treniranje. ',
-            langSmith: 'LangSmith nam pomaže pratiti rad savjetnika (podaci u EU, čuvaju se najviše 14 dana). ',
-            textAfter:
-              'Cloudflare štiti stranicu od botova. Kad pošaljete narudžbu, otvara se WhatsApp (Meta) s porukom koju vi šaljete. Podaci se obrađuju u EU, dakle izvan Bosne i Hercegovine, na osnovu ugovora o obradi podataka s tim pružaocima i zaštitnih mjera za prijenos podataka koje propisuje zakon. Cloudflare može IP adresu obrađivati i izvan EU.',
+            text: 'Razgovore mogu pročitati ovlaštene osobe Martoma i firma koja održava savjetnika (Stampfel Consulting), samo da bismo provjerili i popravili odgovore.',
+          },
+          {
+            text: 'Za rad savjetnika koristimo pružaoce usluga koji podatke obrađuju samo u naše ime i po našim uputama, uz pisane ugovore o obradi podataka:',
+          },
+          { lead: '· ', label: 'Amazon Web Services (AWS):', text: ' serveri i baza podataka u EU (Njemačka).' },
+          // Canvas comment: Bedrock's data_retention_mode must be 'none'. If a
+          // model needs AWS review retention (up to 30 days), the canvas adds:
+          // 'AWS može radi otkrivanja zloupotreba neke zahtjeve čuvati do 30 dana.'
+          {
+            lead: '· ',
+            label: 'AI modeli',
+            text: ' (Anthropic Claude i Cohere) rade isključivo preko AWS-a (Amazon Bedrock) u EU. Prema uslovima AWS-a, Anthropic i Cohere nemaju pristup vašim pitanjima i odgovorima i ne koriste ih za treniranje modela.',
+          },
+          // Canvas comment: the LangSmith line only if LangSmith is enabled at
+          // launch (VITE_LANGSMITH_ENABLED).
+          {
+            lead: '· ',
+            label: 'LangSmith',
+            text: ' (firma LangChain, Inc.): pomaže da pratimo rad savjetnika; podaci u EU, čuvaju se najviše 14 dana.',
+            langSmith: true,
+          },
+          { lead: '· ', label: 'Cloudflare, Inc.:', text: ' štiti stranicu od botova.' },
+          {
+            text: 'Ime, telefon i adresu dajemo i kurirskoj službi, samo radi dostave, te knjigovodstvu ako kupovina završi računom.',
+          },
+          {
+            text: `Kad narudžbu pošaljete preko WhatsAppa, poruku obrađuje i WhatsApp (Meta) kao samostalna firma, prema svojim pravilima privatnosti, a ne po našim uputama. Ako ne želite koristiti WhatsApp, narudžbu nam možete javiti telefonom na ${shop.phone} ili e-mailom.`,
+          },
+        ],
+      },
+      {
+        heading: 'Prijenos podataka izvan BiH',
+        lines: [
+          {
+            text: 'Serveri AWS-a i LangSmitha nalaze se u EU (Njemačka), dakle izvan BiH. Prema Zakonu o zaštiti ličnih podataka BiH smatra se da države članice EU osiguravaju odgovarajući nivo zaštite podataka, pa za taj prijenos nisu potrebne posebne dozvole. Eventualni udaljeni tehnički pristup matične firme AWS-a u SAD-u zasniva se na EU–US Data Privacy Framework i AWS-ovom ugovoru o obradi podataka sa standardnim ugovornim klauzulama.',
+          },
+          {
+            text: `Cloudflare, Inc. može vašu IP adresu i sigurnosne zapise obraditi u Sjedinjenim Američkim Državama i drugim državama izvan EU, a poruka preko WhatsAppa prolazi kroz Metine servere, koji mogu biti i u SAD-u. Ti prijenosi se zasnivaju na odluci EU o odgovarajućem nivou zaštite za američke firme uključene u EU–US Data Privacy Framework, koju primjenjujemo na osnovu Zakona o zaštiti ličnih podataka BiH; prijenos preko WhatsAppa i na tome što poruku s narudžbom šaljete sami. Za ostale države Cloudflare primjenjuje standardne ugovorne klauzule iz svog ugovora o obradi podataka. Kopiju tih zaštitnih mjera možete dobiti na zahtjev na ${shop.email}.`,
           },
         ],
       },
@@ -351,27 +409,30 @@ export const copy = {
         heading: 'Vaša prava',
         lines: [
           {
-            text: 'Imate pravo na pristup svojim podacima, ispravku, brisanje, ograničenje obrade i prenosivost podataka koje ste nam dali. Javite nam se e-mailom ili telefonom iznad; odgovorit ćemo najkasnije u roku od mjesec dana.',
+            text: 'Imate pravo: da saznate koje podatke o vama imamo i dobijete kopiju; da ispravimo netačne podatke; da ih obrišemo; da privremeno zaustavimo njihovo korištenje dok se ne riješi vaš zahtjev (ograničenje obrade); te da podatke koje ste nam dali dobijete u uobičajenom elektronskom obliku ili da ih pošaljemo drugoj firmi (prenosivost).',
+          },
+          {
+            text: 'Javite nam se e-mailom ili telefonom iznad. Odgovorit ćemo bez odgađanja, a najkasnije u roku od 30 dana od prijema zahtjeva. Ako je zahtjev složen, rok možemo produžiti za još najviše 60 dana, o čemu ćemo vas obavijestiti u prvih 30 dana i navesti razlog. Ostvarivanje prava je besplatno.',
           },
         ],
       },
       {
-        heading: 'Pravo na prigovor',
+        heading: 'Pravo da se protivite obradi (prigovor nama)',
         lines: [
           {
-            text: 'Kad podatke koristimo na osnovu legitimnog interesa (poboljšanje savjetnika, statistika posjeta, zaštita stranice), možete se tome u bilo kojem trenutku usprotiviti. Tada prestajemo, osim ako postoje uvjerljivi zakonski razlozi za nastavak.',
+            text: 'Kad podatke koristimo na osnovu legitimnog interesa (opći savjet, poboljšanje savjetnika, zaštita stranice), možete nam u svakom trenutku reći da ne želite da ih koristimo u te svrhe. Tada prestajemo, osim ako dokažemo da imamo jače opravdane razloge za nastavak koji prevladavaju nad vašim interesima i pravima, ili ako su podaci potrebni za ostvarivanje ili odbranu pravnih zahtjeva.',
           },
         ],
       },
       {
-        heading: 'Pritužba i sudska zaštita',
+        heading: 'Prigovor Agenciji i tužba sudu',
         lines: [
-          // AZLP address from the Council of Europe DPA list; re-check on
-          // azlp.ba before launch (canvas comment).
+          // Canvas comment: verify the AZLP address, e-mail and phone on
+          // azlp.ba before launch.
           {
-            text: 'Ako smatrate da vaše podatke obrađujemo protivno zakonu, možete podnijeti prigovor Agenciji za zaštitu ličnih podataka u Bosni i Hercegovini, Dubrovačka 6, 71000 Sarajevo, ',
+            text: 'Ako smatrate da vaše podatke obrađujemo protivno zakonu, možete podnijeti prigovor Agenciji za zaštitu ličnih podataka u Bosni i Hercegovini, Dubrovačka br. 6, 71000 Sarajevo, e-mail: azlpinfo@azlp.ba, tel. 033 726 250, ',
             link: { href: 'https://www.azlp.ba', label: 'www.azlp.ba' },
-            textAfter: '. Imate i pravo na sudsku zaštitu pred nadležnim sudom.',
+            textAfter: '. Možete i podnijeti tužbu nadležnom sudu protiv nas.',
           },
         ],
       },
@@ -379,7 +440,7 @@ export const copy = {
         heading: 'Savjet',
         lines: [
           {
-            text: 'Savjetnik je umjetna inteligencija, ne osoba, i može pogriješiti. Cijene, količine i stanje uvijek potvrđuje Martom prije narudžbe. Savjetnik ne donosi odluke o vama koje imaju pravne ili slično važne posljedice. Ne upisujte u razgovor lične podatke koji nisu potrebni za pitanje (JMBG, broj kartice i slično).',
+            text: 'Savjetnik je vještačka inteligencija (AI), a ne osoba, i može pogriješiti. Cijene, količine i stanje uvijek potvrđuje Martom prije narudžbe. Savjetnik ne donosi odluke o vama koje imaju pravne ili slično važne posljedice. Ne upisujte u razgovor osjetljive podatke (npr. o zdravlju), JMBG, brojeve kartica ni druge lične podatke koji nisu potrebni za pitanje.',
           },
         ],
       },
