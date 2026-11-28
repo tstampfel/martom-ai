@@ -775,3 +775,51 @@ def test_every_bom_line_name_is_a_product_noun() -> None:
         if not any("rough count" in problem for problem in result.problems):
             missing.add(name)
     assert missing == set()
+
+
+# --- #171: gates and installation stay unpriced; drill bits name the anchor -------------
+
+
+def test_price_next_to_a_gate_made_to_order_still_fails() -> None:
+    # Gates are made to order now (Tomislav, 28 Nov 2026), and still never priced.
+    assert not check_grounding("Kapije radimo po narudžbi, od 53,00 KM.", facts()).ok
+    assert not check_grounding("Montaža na betonski zid je 53,00 KM.", facts()).ok
+
+
+def test_the_gate_and_installation_copy_has_no_price() -> None:
+    for text in (copy.GATE, copy.INSTALLATION):
+        assert check_grounding(text, Facts()).ok, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Trebate svrdlo 8 mm.",
+        "Za stupove uzmite svrdlo ø10.",
+        "Svrdlo fi 10 i SDS bušilica.",
+        "Bušite svrdlom 10 mm SDS.",
+    ],
+)
+def test_a_drill_bit_size_without_the_anchor_type_fails(text: str) -> None:
+    result = check_grounding(text, Facts(), known_numbers=[Decimal(8), Decimal(10)])
+    assert any("anchor type" in problem for problem in result.problems), result.problems
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Tiplo anker M8x80 traži svrdlo ø10 mm SDS.",
+        "Za anker vijak M8x70 uzmite svrdlo 8 mm.",
+        "Trebate SDS bušilicu i svrdlo.",
+    ],
+)
+def test_a_drill_bit_with_the_anchor_type_or_no_size_passes(text: str) -> None:
+    known = [Decimal(8), Decimal(10), Decimal(70), Decimal(80)]
+    assert check_grounding(text, Facts(), known_numbers=known).ok
+
+
+def test_the_anchor_names_and_bits_are_known_numbers() -> None:
+    assert check_grounding("Tiplo anker M8×80 → svrdlo ø10 mm SDS.", Facts()).ok
+    assert check_grounding("Anker vijak M8x70 ili M8x80 → svrdlo ø8 mm.", Facts()).ok
+    # Only inside the phrase: a bare count still fails.
+    assert not check_grounding("Trebate 80 ankera.", Facts()).ok

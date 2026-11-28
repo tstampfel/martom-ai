@@ -63,8 +63,9 @@ class Understanding(BaseModel):
 
     in_scope: bool = Field(
         description="True when the customer asks about anything a hardware store "
-        "(željezarija) like Martom sells or does: fences, posts, mesh, tools, fittings, "
-        "screws, chains, building hardware, garden and farm supplies. False for anything "
+        "(željezarija) like Martom sells or does: fences, gates, fence installation, posts, "
+        "mesh, tools, fittings, screws, chains, building hardware, garden and farm "
+        "supplies. False for anything "
         "else (weather, politics, homework, other shops)."
     )
     request: RequestKind = Field(
@@ -75,6 +76,14 @@ class Understanding(BaseModel):
     )
     asks_gate: bool = Field(description="Mentions a gate (kapija, vrata u ogradi).")
     asks_installation: bool = Field(description="Asks about installation (montaža, ugradnja).")
+    asks_anchors_included: bool = Field(
+        description="Asks whether anchors come with the posts or are sold separately "
+        "(dolaze li ankeri uz stupove)."
+    )
+    asks_drilling: bool = Field(
+        description="Asks about drilling or the drill bit for the anchors or posts "
+        "(svrdlo, bušenje, kojom bušilicom)."
+    )
     asks_concrete: bool = Field(
         description="Asks to buy concrete or for construction work (beton, temelj, zidanje)."
     )
@@ -249,17 +258,22 @@ def plan_turn(
     eurofence_heights: list[int] | None = None,
 ) -> Plan:
     """Where this turn goes. `follow_up`: the message answers the previous chips."""
-    notes = _topic_notes(understanding)
+    notes = _topic_notes(understanding, spec)
     extra_lines: list[ExtraLine] = []
-    if not understanding.in_scope:
+    # The anchors answer is added by the graph at the end of the turn (it depends on
+    # whether this chat's materials list has anchors), so it counts as a topic here.
+    topical = bool(notes) or understanding.asks_anchors_included
+    if not understanding.in_scope and not topical:
         return Plan("respond", answer=copy.OUT_OF_SCOPE)
 
     request = understanding.request
     fence_follow_up = follow_up and spec.kind is not None
     if request == "fence_chain_link":
         return Plan("respond", answer=_join(copy.CHAIN_LINK, *notes), contact_martom=True)
-    if request == "other" and not fence_follow_up:
-        answer = _join(*notes) if notes else copy.OUT_OF_SCOPE
+    # A gate, installation, anchors or drilling question is answered with Martom's fixed
+    # texts (#171), also when the guardrail called it out of scope.
+    if (request == "other" and not fence_follow_up) or not understanding.in_scope:
+        answer = _join(*notes) if topical else copy.OUT_OF_SCOPE
         return Plan("respond", answer=answer)
     if request == "fence_eurofence":
         missing = _eurofence_missing(spec.height_cm, eurofence_heights)
@@ -471,7 +485,7 @@ def _project(spec: FenceSpec) -> ProjectSummary:
     return ProjectSummary(title=title, length_m=spec.total_length_m, facts=facts)
 
 
-def _topic_notes(understanding: Understanding) -> list[str]:
+def _topic_notes(understanding: Understanding, spec: FenceSpec) -> list[str]:
     notes = []
     if understanding.asks_gate:
         notes.append(copy.GATE)
@@ -479,7 +493,23 @@ def _topic_notes(understanding: Understanding) -> list[str]:
         notes.append(copy.INSTALLATION)
     if understanding.asks_concrete:
         notes.append(copy.NO_CONCRETE_SALES)
+    if understanding.asks_drilling:
+        notes.extend(drilling_notes(spec))
     return notes
+
+
+def drilling_notes(spec: FenceSpec) -> list[str]:
+    """The anchor type with its drill bit, for this fence (Toni, 28 Nov 2026, #171).
+
+    Panel posts take tiplo anker M8x80 (10 mm SDS bit); roll-fence foot-plate posts
+    take anker vijak M8x70 or M8x80 (8 mm bit). T-posts need no anchors, so a roll fence gets the
+    foot-plate text, the only anchored roll post. With no fence type yet, both.
+    """
+    if spec.kind == "panel":
+        return [copy.DRILLING_PANEL]
+    if spec.kind == "roll":
+        return [copy.DRILLING_FOOT_PLATE]
+    return [copy.DRILLING_PANEL, copy.DRILLING_FOOT_PLATE]
 
 
 def _eurofence_missing(height_cm: int | None, heights: list[int] | None) -> str | None:

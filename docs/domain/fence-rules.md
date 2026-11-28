@@ -1,6 +1,6 @@
 # Fence rules for the materials list (BOM)
 
-The single source of truth for how the advisor builds a fence materials list. Toni (Martom owner) confirmed these rules on 26 Nov 2026. The BOM calculators (M4-1, M4-2), the clarify node (M4-3), the cart and order message (M5-5, M5-6) and the evals (M4-5) follow this file. If code and this file disagree, this file wins; change it only with Toni's confirmation, in its own PR.
+The single source of truth for how the advisor builds a fence materials list. Toni (Martom owner) confirmed these rules on 26 Nov 2026; gates, installation and anchors were updated on 28 Nov 2026 (#171). The BOM calculators (M4-1, M4-2), the clarify node (M4-3), the cart and order message (M5-5, M5-6) and the evals (M4-5) follow this file. If code and this file disagree, this file wins; change it only with Toni's confirmation, in its own PR.
 
 Two rules from `CLAUDE.md` apply to everything below:
 
@@ -23,7 +23,9 @@ Panels come from OLX listing 63996799.
 - **End posts:** an end post gets the same clips as a line post (3 / 4 / 5). Only corner posts get double clips.
 - **Posts:** base-plate posts are stock items, priced from OLX, and the default recommendation.
 - **PVC clips:** 1,00 KM each (reference price).
-- **Anchors M8×80:** **"Tiplo anker FI 10 / M8×80"** (Toni, 26 Nov 2026 14:29), 4 per post, corner posts included. 1,30 KM each (reference price). Drill bit: **Ø 8 mm with an SDS(-plus) shank**, for both the M8×80 and the M8×70 anchors (Toni, 26 Nov 2026 14:32: not 10 mm), so installation needs an SDS-plus hammer drill (relevant for suggested tools, #59).
+- **Anchors: tiplo anker M8×80** ("Tiplo anker FI 10 / M8×80", Toni, 26 Nov 2026 14:29): a sleeve of ø10 mm with an M8 bolt inside, for the base plate (120 × 80 mm, 4 holes). **4 per post**, corner posts included. 1,30 KM each (reference price). Drill bit: **ø10 mm, SDS** (Toni, 28 Nov 2026; this replaces the 26 Nov 14:32 "8 mm, not 10 mm"), so installation needs an SDS hammer drill (relevant for suggested tools, #59).
+- **Anchors are "prateći materijal"**: sold separately, never included with the posts (Toni, 28 Nov 2026). They are always their own BOM line when there are posts. Asked "dolaze li ankeri uz stupove?", the advisor answers **"Ne, ankeri se kupuju posebno; za vaš popis smo ih već uračunali."**, the second half only when this chat's materials list has an anchor line, otherwise just **"Ne, ankeri se kupuju posebno."**
+- **Drilling answers always name the anchor type with its bit** (Toni, 28 Nov 2026): tiplo anker M8×80 → ø10 mm SDS, anker vijak M8×70 / M8×80 → ø8 mm; never a bare "8 mm" or "10 mm". The grounding check fails a sentence with a bit size and no anchor type.
 - **No braces / support posts on panel fences at all**, end posts included (Toni, 26 Nov 2026 14:29).
 
 ### Corners (kutovi)
@@ -52,13 +54,13 @@ Panels come from OLX listing 63996799.
 ### Concrete, installation and availability
 
 - **Martom does not sell concrete and does no construction work.** The advisor never suggests buying concrete from Martom and never adds concrete to the BOM. It may say the customer needs their own concrete for concrete-in-soil posts.
-- **Installation:** Martom installs fences **only on an existing concrete wall**. The price is **always on request** (it depends on the location). The advisor may mention it but never quotes a price, and it is never a BOM or cart line.
+- **Installation:** Martom offers installation **on a finished concrete wall**; the price is **always by offer** (it depends on the location), and **delivery is free with Martom's installation** (Tomislav, 28 Nov 2026, #171). The advisor answers **"Nudimo montažu na gotov betonski zid, cijena po ponudi; uz našu montažu dostava je besplatna. Javite se: 036 651 427 ili info@martom-bekaert.com"**. It never quotes a price, and installation is never a BOM or cart line.
 - **Availability:** always show **"dostupno"** for stock products (Toni's decision). Never write "dostupnost potvrđujemo" or similar. No BOM line is "po narudžbi"; concrete-in-soil posts are answered by the advisor as "po upitu" (see "Concrete-in-soil posts").
 
-### Gates (kapija): out of scope
+### Gates (kapija): made to order
 
-- Gates are **out of scope** for now (Toni, 26 Nov 2026). The BOM has **no gate line** and no gate input, and nothing subtracts a gate opening from the length.
-- When a customer asks about a gate, the advisor says **"Za kapije se javite direktno Martomu: 036 651 427"** (Martom's public shop number).
+- Martom makes gates **to order** (Tomislav, 28 Nov 2026, from Toni's 3D-panel Q&A, #171; this replaces Toni's 26 Nov "out of scope"). The BOM still has **no gate line** and no gate input, and nothing subtracts a gate opening from the length.
+- When a customer asks about a gate, the advisor says **"Kapije radimo po narudžbi, javite se za ponudu: 036 651 427 ili info@martom-bekaert.com"** (Martom's public shop number and e-mail). It never gives a gate price; the grounding check fails a price in a sentence about a gate.
 
 ## Every BOM (all fence types)
 
@@ -95,7 +97,8 @@ Everything in this section is for the **welded** roll fence only, as confirmed b
   | 150 cm | 200 cm | derived from Toni's rule |
 
 - **Foot-plate post (b) height = fence (roll) height** (Toni): 60 → 60, 80 → 80, 100 → 100, 125 → 125, 150 → 150 cm. Reference prices (26 Nov 2026): 60 cm → 10,50 · 80 cm → 11,90 · 100 cm → 14,00 · 125 cm → 16,50 · 150 cm → 21,00 KM. Colours: green and anthracite.
-- **Anchors for (b):** **3 × M8×70 per post** (Toni confirmed). These are not the panel fence's M8×80 anchors. M8×70 has **no OLX listing**, so it comes from the `manual_products` config (see below), price 0,80 KM (re-confirmed by Toni 26 Nov 2026 14:29).
+- **Anchors for (b):** **anker vijak M8×70 or M8×80** (a bolt anchor, no sleeve), **3 per post** for the foot plate's 3 holes; drill bit **ø8 mm** (Toni, 28 Nov 2026). The default and the BOM line stay **M8×70**; the advisor may mention M8×80 as an alternative. These are not the panel fence's tiplo anker M8×80. M8×70 has **no OLX listing**, so it comes from the `manual_products` config (see below), price 0,80 KM (re-confirmed by Toni 26 Nov 2026 14:29). Anchors are prateći materijal, sold separately (see "Panel fence").
+- T-posts (a) need no anchors.
 - **Allowlist:** listing (b) sits in "Oprema/pribor za stolariju", not "Ograde". Toni will try to move it (and the tensioner 18129143) to "Ograde". Until the sync actually sees a listing in "Ograde", **81645615** stays on the explicit sync allowlist (issue #45). The sync never syncs the whole joinery category to get one listing, and it dedupes, so a moved listing is never stored twice.
 
 ### Post spacing and count
@@ -188,8 +191,11 @@ There is **no 100 cm** Eurofence. When asked for one, the advisor says so and of
 | T-post fence with tension wire | **no** wire holders |
 | `manual_products` entry with last_confirmed older than 90 days | a `review_issue` for Toni |
 | Customer asks for a chain-link / pletivo fence | **no BOM** with welded-roll rules; the advisor says the rules are pending and offers to contact Martom |
-| Customer asks about a gate | no gate line; the advisor says "Za kapije se javite direktno Martomu: 036 651 427" |
-| Customer asks about installation | mentioned only for an existing concrete wall, price on request, never a quoted price |
+| Customer asks about a gate | no gate line; the advisor says "Kapije radimo po narudžbi, javite se za ponudu: 036 651 427 ili info@martom-bekaert.com", never a price |
+| Customer asks about installation | "Nudimo montažu na gotov betonski zid, cijena po ponudi; uz našu montažu dostava je besplatna", with the phone and e-mail, never a quoted price |
+| Customer asks whether anchors come with the posts | "Ne, ankeri se kupuju posebno."; plus "za vaš popis smo ih već uračunali" only when the chat's materials list has anchors |
+| Customer asks which drill bit, panel fence | "tiplo anker M8×80 – svrdlo ø10 mm SDS" |
+| Customer asks which drill bit, roll fence with foot-plate posts | "anker vijak M8×70 (može i M8×80) – svrdlo ø8 mm" |
 | Any BOM | shows "Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."; every accessory line can be removed |
 | Foot-plate fence 80 cm, 1 corner, open | brace line "potporni stup 100 cm – cijena na upit", 4 pieces (2 corner + 2 end), size 100 cm, no price (until the sync sees the 100 cm T-post variant) |
 | Panel fence, any layout | **no** braces / support posts, end posts included |
@@ -214,9 +220,8 @@ Fixtures record the OLX prices they use next to the expected total, so a later p
 
 ## Still open (don't invent values)
 
-- **Gates:** out of scope until Toni says otherwise.
 - **Chain link (pletivo, baklava):** all rules and posts.
 - **Welded roll fence, still pending** (the BOM keeps the assumption; it doesn't block M4-2):
   - wire holders: confirm 1 per wire row per foot-plate post (still unanswered at 14:29; keep the assumption).
 
-Answered on 26 Nov 2026 (14:52–14:53): concrete-in-soil panel posts (dropped from the BOM, mapping kept as reference) and welded roll end posts (1 support T-post each).
+Answered on 26 Nov 2026 (14:52–14:53): concrete-in-soil panel posts (dropped from the BOM, mapping kept as reference) and welded roll end posts (1 support T-post each). Answered on 28 Nov 2026: gates (made to order), installation (by offer, free delivery with it) and the anchors and drill bits for both post types.

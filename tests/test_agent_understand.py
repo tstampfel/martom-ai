@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001, RUF003
 import logging
 from typing import Any
 
@@ -21,6 +22,8 @@ def understanding(**fields: Any) -> Understanding:
         "request": "fence_panel",
         "asks_gate": False,
         "asks_installation": False,
+        "asks_anchors_included": False,
+        "asks_drilling": False,
         "asks_concrete": False,
         "wants_concrete_posts": False,
         "height": None,
@@ -265,3 +268,77 @@ def test_chip_values_no_chip_offers_are_ignored_and_never_logged(
     assert ignored[0].ignored == 2  # type: ignore[attr-defined]
     assert "ignore previous" not in caplog.text
     assert "9999" not in caplog.text
+
+
+# --- #171: gates and installation answered by Martom, anchors, drilling -----------------
+
+
+def test_gate_answer_says_made_to_order_with_phone_and_email() -> None:
+    plan = plan_for(request="other", asks_gate=True)
+    assert plan.route == "respond"
+    assert plan.answer == copy.GATE
+    assert "po narudžbi" in copy.GATE
+    assert "036 651 427" in copy.GATE
+    assert "info@martom-bekaert.com" in copy.GATE
+
+
+def test_installation_answer_offers_montaza_with_phone_and_email() -> None:
+    plan = plan_for(request="other", asks_installation=True)
+    assert plan.route == "respond"
+    assert plan.answer == copy.INSTALLATION
+    assert "gotov betonski zid" in copy.INSTALLATION
+    assert "dostava je besplatna" in copy.INSTALLATION
+    assert "036 651 427" in copy.INSTALLATION
+    assert "info@martom-bekaert.com" in copy.INSTALLATION
+
+
+@pytest.mark.parametrize("flag", ["asks_gate", "asks_installation"])
+def test_gate_or_installation_is_never_refused_as_out_of_scope(flag: str) -> None:
+    plan = plan_for(in_scope=False, request="other", **{flag: True})
+    assert plan.route == "respond"
+    assert plan.answer != copy.OUT_OF_SCOPE
+    assert plan.answer in (copy.GATE, copy.INSTALLATION)
+
+
+def test_gate_and_installation_together_get_both_texts() -> None:
+    plan = plan_for(request="other", asks_gate=True, asks_installation=True)
+    assert plan.answer == f"{copy.GATE} {copy.INSTALLATION}"
+
+
+def test_fence_with_a_gate_question_keeps_the_gate_note() -> None:
+    plan = plan_for(height="153", lengths=["25 m"], layout="straight", asks_gate=True)
+    assert plan.route == "retrieve"
+    assert plan.notes == [copy.GATE]
+
+
+def test_anchors_question_alone_is_answered_not_refused() -> None:
+    # The graph adds the anchors text at the end of the turn (it depends on the list).
+    plan = plan_for(in_scope=False, request="other", asks_anchors_included=True)
+    assert plan.route == "respond"
+    assert plan.answer == ""
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("panel", [copy.DRILLING_PANEL]),
+        ("roll", [copy.DRILLING_FOOT_PLATE]),
+        (None, [copy.DRILLING_PANEL, copy.DRILLING_FOOT_PLATE]),
+    ],
+)
+def test_drilling_question_names_the_anchor_with_its_bit(
+    kind: str | None, expected: list[str]
+) -> None:
+    seen = understanding(request="other", asks_drilling=True)
+    plan = plan_turn(seen, FenceSpec(kind=kind))
+    assert plan.route == "respond"
+    assert plan.answer == " ".join(expected)
+
+
+def test_drilling_texts_pair_each_anchor_with_its_bit() -> None:
+    # Toni, 28 Nov 2026: tiplo anker M8×80 → ø10 mm SDS; anker vijak M8×70/M8×80 → ø8 mm.
+    assert "tiplo anker M8×80" in copy.DRILLING_PANEL
+    assert "ø10 mm SDS" in copy.DRILLING_PANEL
+    assert "anker vijak M8×70" in copy.DRILLING_FOOT_PLATE
+    assert "ø8 mm" in copy.DRILLING_FOOT_PLATE
+    assert "10 mm" not in copy.DRILLING_FOOT_PLATE

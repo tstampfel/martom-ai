@@ -400,3 +400,17 @@ def test_panel_fence_never_gets_braces_or_support_posts(
     assert Item.BRACE_T_POST not in quantities(lines)
     assert Item.POST_T not in quantities(lines)
     assert not any("potporn" in line.name.lower() for line in lines)
+
+
+# --- anchors are "prateći materijal", always their own line (Toni, 28 Nov 2026, #171) ---
+
+
+@pytest.mark.parametrize("height", sorted(PANEL_RULES))
+@pytest.mark.parametrize(("sides", "closed"), [([3], False), ([10, 5], False), ([4] * 4, True)])
+def test_every_panel_fence_lists_4_anchors_per_post(
+    height: int, sides: list[int], closed: bool
+) -> None:
+    lines = panel_fence_bom(sides_m=sides, panel_height_cm=height, closed=closed)
+    posts = line_for(lines, Item.POST_BASE_PLATE).quantity
+    assert posts > 0
+    assert line_for(lines, Item.ANCHOR_M8X80).quantity == 4 * posts

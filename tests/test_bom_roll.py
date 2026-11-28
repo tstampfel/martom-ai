@@ -602,3 +602,21 @@ def test_total_over_1000m_is_too_large() -> None:
 def test_exactly_the_limits_is_allowed() -> None:
     lines = quantities(bom([300, 300, 300, 100]))
     assert lines[Item.ROLL_WELDED] == 40
+
+
+@pytest.mark.parametrize("height", sorted(ROLL_RULES))
+@pytest.mark.parametrize(("sides", "closed"), [([3], False), ([30, 10], False), ([10] * 4, True)])
+def test_every_foot_plate_fence_lists_3_anchors_per_post(
+    height: int, sides: list[int], closed: bool
+) -> None:
+    # Anchors are "prateći materijal", sold separately (Toni, 28 Nov 2026, #171).
+    result = bom(sides, roll_height_cm=height, post_model=FOOT_PLATE, closed=closed)
+    posts = line_for(result, Item.POST_FOOT_PLATE).quantity
+    assert posts > 0
+    assert line_for(result, Item.ANCHOR_M8X70).quantity == 3 * posts
+
+
+def test_t_post_fence_has_no_anchor_line() -> None:
+    items = {line.item for line in bom([25]).lines}
+    assert Item.ANCHOR_M8X70 not in items
+    assert Item.ANCHOR_M8X80 not in items

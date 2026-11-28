@@ -141,6 +141,8 @@ def understanding(**fields: Any) -> Understanding:
         "request": "fence_panel",
         "asks_gate": False,
         "asks_installation": False,
+        "asks_anchors_included": False,
+        "asks_drilling": False,
         "asks_concrete": False,
         "wants_concrete_posts": False,
         "height": None,

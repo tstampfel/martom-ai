@@ -30,7 +30,8 @@ answer and asks where it came from:
 
 A sentence that names a price together with something that never has one (a gate,
 installation, "po narudžbi", "na upit", concrete posts, or an unpriced BOM line) fails
-even when the amount itself is known.
+even when the amount itself is known. A sentence that names a drill bit size ("svrdlo
+8 mm") without an anchor type fails too (#171): the bit depends on the anchor.
 
 The check is deliberately strict: a false alarm costs a retry (and at worst the plain
 search results); a missed one would show the customer an invented price or quantity.
@@ -217,8 +218,13 @@ _THOUSAND_WORDS = frozenset(
 )
 _WORD = re.compile(r"\w+")
 # The number phrases of agent/copy.py; `test_every_copy_text_passes` keeps them in step.
+# The anchor names and their drill bits (#171: "tiplo anker M8×80 → svrdlo ø10 mm") are
+# fixed facts too, so the model may follow the drilling rule; a bit without its anchor
+# still fails (`_drill_bit_without_anchor`).
 _COPY_PHRASES = re.compile(
-    r"\b10\s*[\u2013-]\s*15\s+dan\w*|\bRAL\s*(?:7016|6005)\b|\bod\s+0\s*m\b", re.IGNORECASE
+    r"\b10\s*[\u2013-]\s*15\s+dan\w*|\bRAL\s*(?:7016|6005)\b|\bod\s+0\s*m\b"
+    r"|\bM8\s*[×xX]\s*(?:70|80)\b|(?:ø|Ø|⌀|\bfi)\s*(?:8|10)\s*mm\b",
+    re.IGNORECASE,
 )
 # A currency after a vague amount ("pedesetak KM", "stotinjak maraka", "pola KM", "par
 # maraka", "nekoliko KM"): a price no tool gave (R3-2). A currency after any other word,
@@ -406,6 +412,7 @@ def check_grounding(
     for match in _VAGUE_PRICE.finditer(text):
         problems.append(f"price '{match.group(0)}' is not an amount from any tool result")
     problems.extend(_priced_never_priced(text, facts.unpriced_names))
+    problems.extend(_drill_bit_without_anchor(text))
     return GroundingResult(problems)
 
 
@@ -567,6 +574,24 @@ def _priced_never_priced(text: str, unpriced_names: Iterable[str]) -> list[str]:
             problems.append(
                 f"sentence '{sentence.strip()}' gives a price for something that is "
                 "never priced (gate, installation, made to order or on request)"
+            )
+    return problems
+
+
+# A drill bit size: "8 mm", "ø10", "fi 10", "Ø 8".
+_BIT_SIZE = re.compile(r"\d+(?:[.,]\d+)?\s*mm\b|(?:ø|Ø|⌀|\bfi)\s*\d", re.IGNORECASE)
+
+
+def _drill_bit_without_anchor(text: str) -> list[str]:
+    """A sentence naming a drill bit size must name the anchor type too (Toni, 28 Nov
+    2026, #171): "tiplo anker M8x80 → svrdlo ø10 mm", never a bare "svrdlo 8 mm"."""
+    problems = []
+    for sentence in _SENTENCE_END.split(text):
+        lowered = sentence.lower()
+        if "svrdl" in lowered and _BIT_SIZE.search(sentence) and "anker" not in lowered:
+            problems.append(
+                f"sentence '{sentence.strip()}' gives a drill bit size without the anchor "
+                "type (tiplo anker M8x80 → ø10 mm, anker vijak M8x70 → ø8 mm)"
             )
     return problems
 
