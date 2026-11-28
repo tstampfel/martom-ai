@@ -17,6 +17,7 @@ export const CHAT_EVENT_TYPES = ['token', 'step', 'chips', 'product_cards', 'bom
 // The closed sets of values; events.test.ts compares each with the schema.
 export const STEP_STATUSES = ['working', 'done', 'needs_input'] as const
 export const CHIP_KINDS = ['single', 'layout'] as const
+export const PRODUCT_SOURCES = ['olx', 'manual'] as const
 export const ERROR_KINDS = ['rate_limited', 'invalid_request', 'internal'] as const
 
 /** A piece of the answer text; append it to the current message. */
@@ -94,10 +95,7 @@ export interface Variant {
   price: Price | null
 }
 
-export interface ProductCard {
-  listing_id: number
-  /** https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id. */
-  url: string
+interface ProductCardFields {
   title: string
   subtitle: string | null
   /** Why it fits this customer. */
@@ -111,6 +109,30 @@ export interface ProductCard {
   price_unit: string | null
   variants: Variant[]
 }
+
+/** A product with an OLX listing. */
+export interface OlxProductCard extends ProductCardFields {
+  source: 'olx'
+  listing_id: number
+  manual_key: null
+  /** https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id. */
+  url: string
+}
+
+/**
+ * A product Martom sells without an OLX listing (manual_products.toml): no
+ * listing id and no link. Never build an olx.ba link for it.
+ */
+export interface ManualProductCard extends ProductCardFields {
+  source: 'manual'
+  listing_id: null
+  /** The manual_products.toml key, e.g. "anchor_m8x70". */
+  manual_key: string
+  url: null
+}
+
+/** Narrow on `source` (the backend checks the same rule). */
+export type ProductCard = OlxProductCard | ManualProductCard
 
 export interface ProductCardsEvent {
   type: 'product_cards'

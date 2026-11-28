@@ -448,17 +448,58 @@
     },
     "ProductCard": {
       "additionalProperties": false,
+      "description": "One product: an OLX listing, or a manual product (#132) without one.\n\nA manual product (`source` \"manual\", from manual_products.toml) has no listing id and\nno link, only its `manual_key`; never build an olx.ba link for it.",
       "properties": {
+        "source": {
+          "default": "olx",
+          "description": "'manual': sold without an OLX listing (no link).",
+          "enum": [
+            "olx",
+            "manual"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
         "listing_id": {
-          "minimum": 1,
-          "title": "Listing Id",
-          "type": "integer"
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "null for a manual product.",
+          "title": "Listing Id"
+        },
+        "manual_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The manual_products.toml key; null for an OLX product.",
+          "title": "Manual Key"
         },
         "url": {
-          "description": "https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id.",
-          "pattern": "^https://martom\\.olx\\.ba/artikal/[a-z0-9-]+$",
-          "title": "Url",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^https://martom\\.olx\\.ba/artikal/[a-z0-9-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "https://martom.olx.ba/artikal/{slug}; the slug ends in listing_id. null for a manual product.",
+          "title": "Url"
         },
         "title": {
           "title": "Title",
@@ -541,7 +582,9 @@
         }
       },
       "required": [
+        "source",
         "listing_id",
+        "manual_key",
         "url",
         "title",
         "subtitle",

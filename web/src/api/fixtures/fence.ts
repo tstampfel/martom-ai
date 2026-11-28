@@ -103,7 +103,9 @@ export const fenceBom: ChatEvent[] = [
     type: 'product_cards',
     cards: [
       {
+        source: 'olx',
         listing_id: 63996799,
+        manual_key: null,
         url: 'https://martom.olx.ba/artikal/panelna-ograda-83-103-123-i-153cm-fi-420440mm-200-i-250cm-duzi-63996799',
         title: 'Panelna ograda 3D (Nylofor)',
         subtitle: 'Žica Ø 4,20/4,40 mm · plastificirana · antracit ili zelena',
@@ -119,7 +121,9 @@ export const fenceBom: ChatEvent[] = [
         ],
       },
       {
+        source: 'olx',
         listing_id: 24449780,
+        manual_key: null,
         url: 'https://martom.olx.ba/artikal/farmer-pletivo-ograda-za-zemljista-njive-sume-farme-24449780',
         title: 'Farmer pletivo',
         subtitle: 'Pocinčano pletivo za zemljišta, njive i farme',

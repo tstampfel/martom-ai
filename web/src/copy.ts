@@ -151,6 +151,8 @@ export const copy = {
       olx: 'OLX oglas',
       olxLabel: (title: string) => `${title}, oglas na OLX-u (otvara se u novoj kartici)`,
       noPhoto: 'Slika s OLX oglasa',
+      // A product Martom sells without an OLX listing has no listing photo.
+      noPhotoManual: 'Bez slike',
     },
     project: {
       label: 'Vaš projekt',

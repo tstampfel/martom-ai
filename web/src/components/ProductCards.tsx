@@ -3,12 +3,20 @@ import type { ProductCard as Card, Variant } from '../api/events'
 import { formatPrice } from '../clarify'
 import { copy } from '../copy'
 
-/** The products of one reply (3-results.html). The first card is the recommendation. */
+/** A product with an OLX listing by its id, a manual product (no listing) by its TOML key. */
+function cardKey(card: Card): string {
+  return card.source === 'manual' ? `manual:${card.manual_key}` : `olx:${card.listing_id}`
+}
+
+/**
+ * The products of one reply (3-results.html). The first card is the recommendation.
+ * A manual product (sold without an OLX listing) has no OLX button and no link.
+ */
 export function ProductCards({ cards }: { cards: Card[] }) {
   return (
     <ul className="product-cards" aria-label={copy.chat.cards.label}>
       {cards.map((card, index) => (
-        <li key={card.listing_id}>
+        <li key={cardKey(card)}>
           <ProductCard card={card} featured={index === 0} />
         </li>
       ))}
@@ -33,7 +41,9 @@ function ProductCard({ card, featured }: { card: Card; featured: boolean }) {
         {card.photo_url ? (
           <img src={card.photo_url} alt="" loading="lazy" />
         ) : (
-          <span className="product-card__placeholder">{copy.chat.cards.noPhoto}</span>
+          <span className="product-card__placeholder">
+            {card.source === 'manual' ? copy.chat.cards.noPhotoManual : copy.chat.cards.noPhoto}
+          </span>
         )}
         {card.badge ? <span className="product-card__badge">{card.badge}</span> : null}
       </div>
@@ -68,15 +78,17 @@ function ProductCard({ card, featured }: { card: Card; featured: boolean }) {
               ) : null}
             </span>
           )}
-          <a
-            className="product-card__olx"
-            href={card.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={copy.chat.cards.olxLabel(card.title)}
-          >
-            {copy.chat.cards.olx}
-          </a>
+          {card.source === 'olx' ? (
+            <a
+              className="product-card__olx"
+              href={card.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={copy.chat.cards.olxLabel(card.title)}
+            >
+              {copy.chat.cards.olx}
+            </a>
+          ) : null}
         </div>
       </div>
     </article>

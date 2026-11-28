@@ -185,8 +185,11 @@ Question ids are unique within the event.
 
 ### `product_cards`
 
-Products that fit (`docs/mockups/*/3-results.html`). `url` is always
-`https://martom.olx.ba/artikal/{slug}`, and the slug ends in `listing_id`. `price` is the
+Products that fit (`docs/mockups/*/3-results.html`). For an OLX product (`source`
+`"olx"`), `url` is always `https://martom.olx.ba/artikal/{slug}`, and the slug ends in
+`listing_id`. A manual product (`source` `"manual"`, from `manual_products.toml`, #132)
+has no OLX listing: `listing_id` and `url` are null and `manual_key` names its TOML entry;
+show it without the OLX button, and never build an olx.ba link for it. `price` is the
 price of the shown variant per `price_unit`; each variant has its own price.
 
 ```json
@@ -194,7 +197,9 @@ price of the shown variant per `price_unit`; each variant has its own price.
   "type": "product_cards",
   "cards": [
     {
+      "source": "olx",
       "listing_id": 63996799,
+      "manual_key": null,
       "url": "https://martom.olx.ba/artikal/panelna-ograda-3d-nylofor-63996799",
       "title": "Panelna ograda 3D (Nylofor)",
       "subtitle": "Žica Ø 4,20/4,40 mm · plastificirana · antracit ili zelena",
@@ -208,6 +213,20 @@ price of the shown variant per `price_unit`; each variant has its own price.
         {"label": "153 × 250", "price": "53.00"},
         {"label": "153 × 200", "price": null}
       ]
+    },
+    {
+      "source": "manual",
+      "listing_id": null,
+      "manual_key": "anchor_m8x70",
+      "url": null,
+      "title": "Anker M8×70",
+      "subtitle": null,
+      "why": "Za stup s pločicom na betonu.",
+      "badge": null,
+      "photo_url": null,
+      "price": "0.80",
+      "price_unit": "kom",
+      "variants": []
     }
   ]
 }
