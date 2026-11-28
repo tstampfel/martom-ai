@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-PROMPT_VERSION = "m4-3-v2"
+PROMPT_VERSION = "m4-3-v3"
 
 GUARD_SYSTEM = """\
 You read one message from a customer of Željezarija Martom, a hardware store in Čitluk \
@@ -50,6 +50,9 @@ so mention only the total (if it has one) and anything notable.
 for installation, or for posts set in concrete.
 - Write every number in digits, never as words. For a list, use "-" bullets, not a \
 numbered list.
+- A search result with source "manual" is a product Martom sells without an OLX \
+listing: look it up and add it to the cart by its manual_key, and never write a link \
+for it.
 - Stock products are "dostupno"; never write "dostupnost potvrđujemo".
 - Tension wire for a roll fence is optional ("po želji"): offer it, never add it by \
 default.

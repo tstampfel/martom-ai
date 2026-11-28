@@ -343,3 +343,44 @@ def test_upper_case_prices_and_counts_fail(text: str) -> None:
 def test_upper_case_grounded_text_passes(text: str) -> None:
     found = facts().merge(Facts(prices=["150"]))
     assert check_grounding(text, found).ok, check_grounding(text, found).problems
+
+
+# --- manual products (#132) -------------------------------------------------------------
+
+MANUAL_OUTPUT = {
+    "source": "manual",
+    "listing_id": None,
+    "manual_key": "anchor_m8x70",
+    "title": "Anker M8×70",
+    "url": None,
+    "price": "0.80",
+}
+
+
+def test_facts_collect_manual_keys_and_prices() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert facts.manual_keys == ["anchor_m8x70"]
+    assert facts.prices == ["0.80"]
+    assert facts.listing_ids == []
+
+
+def test_manual_price_from_a_tool_passes() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert check_grounding("Anker M8×70 je 0,80 KM po komadu.", facts).ok
+
+
+def test_manual_price_not_from_a_tool_fails() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert not check_grounding("Anker M8×70 je 0,85 KM.", facts).ok
+
+
+def test_manual_key_from_a_tool_passes_like_a_listing_id() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    assert check_grounding("Šifra: anchor_m8x70.", facts).ok
+
+
+def test_unknown_manual_key_fails_like_a_listing_id() -> None:
+    facts = facts_from_output(MANUAL_OUTPUT)
+    result = check_grounding("Šifra: anchor_m10x90.", facts)
+    assert not result.ok
+    assert any("anchor_m10x90" in problem for problem in result.problems)

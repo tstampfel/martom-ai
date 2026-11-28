@@ -10,7 +10,9 @@ answer and asks where it came from:
 - A price (a number with a currency before or after it: KM, BAM, marka/maraka, €, EUR,
   or the ",-" of a whole amount) must equal a price a tool returned (`price`,
   `unit_price`, `line_total`, `total`). A euro amount always fails: Martom prices in KM.
-- A listing id (7–9 digits) must be one a tool or the Retrieve step returned.
+- A listing id (7–9 digits) must be one a tool or the Retrieve step returned, and so
+  must a manual product's key (a `manual_products.toml` key such as "anchor_m8x70",
+  #132): a product without an OLX listing is identified by that key instead.
 - Bosnian number words ("pedeset tri KM", "dvanaest stubova") are read as numbers and
   checked the same way; a lone "jedan/jedna" (the article) and numbered-list markers are
   not claims.
@@ -54,6 +56,8 @@ _PRICE = re.compile(
 _DASH_PRICE = re.compile(r"(?<![\d.,])(\d+(?:[.\u00a0 ]\d{3})*),-")
 # OLX listing ids have 7 to 9 digits.
 _LISTING_ID = re.compile(r"(?<![\d.,])\d{7,9}(?!\d|[.,]\d)")
+# A manual product's key (manual_products.toml table name = BOM item key): "anchor_m8x70".
+_MANUAL_KEY = re.compile(r"(?<![\w-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w-])")
 # Any other number: "25", "25,5", "2.70".
 _NUMBER = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?(?!\d)")
 # "53,00 KM za 1 kom" / "po 1 kom": the per-unit 1 isn't a quantity claim.
@@ -140,6 +144,7 @@ class Facts(BaseModel):
 
     prices: list[str] = Field(default_factory=list)  # Decimal as text, e.g. "53.00"
     listing_ids: list[int] = Field(default_factory=list)
+    manual_keys: list[str] = Field(default_factory=list)  # manual products (#132)
     numbers: list[str] = Field(default_factory=list)  # every other number, as Decimal text
     unpriced_names: list[str] = Field(default_factory=list)
 
@@ -147,6 +152,7 @@ class Facts(BaseModel):
         return Facts(
             prices=_unique(self.prices + other.prices),
             listing_ids=_unique(self.listing_ids + other.listing_ids),
+            manual_keys=_unique(self.manual_keys + other.manual_keys),
             numbers=_unique(self.numbers + other.numbers),
             unpriced_names=_unique(self.unpriced_names + other.unpriced_names),
         )
@@ -174,6 +180,7 @@ def facts_from_output(output: Any, *, skip_keys: Iterable[str] = ()) -> Facts:
     skipped = frozenset(skip_keys)
     prices: list[str] = []
     listing_ids: list[int] = []
+    manual_keys: list[str] = []
     numbers: list[str] = []
     unpriced: list[str] = []
 
@@ -189,6 +196,8 @@ def facts_from_output(output: Any, *, skip_keys: Iterable[str] = ()) -> Facts:
                         continue
                 if key == "listing_id" and _is_int(item):
                     listing_ids.append(item)
+                if key == "manual_key" and isinstance(item, str):
+                    manual_keys.append(item)
                 walk(item)
             if value.get("price_on_request") is True and isinstance(value.get("name"), str):
                 unpriced.append(value["name"])
@@ -206,6 +215,7 @@ def facts_from_output(output: Any, *, skip_keys: Iterable[str] = ()) -> Facts:
     return Facts(
         prices=_unique(prices),
         listing_ids=_unique(listing_ids),
+        manual_keys=_unique(manual_keys),
         numbers=_unique(numbers),
         unpriced_names=_unique(unpriced),
     )
@@ -250,6 +260,13 @@ def check_grounding(
     text = _PER_ONE.sub(" ", text)
     text = _LIST_MARKER.sub(r"\1", text)
     text = _strip_suggestion_counts(text)
+    # A manual product's key is checked like a listing id, then taken out, so the digits
+    # inside it ("m8x70") aren't read as numbers.
+    known_keys = set(facts.manual_keys)
+    for match in _MANUAL_KEY.finditer(text):
+        if match.group(0) not in known_keys:
+            problems.append(f"product key {match.group(0)} is not in any tool result")
+    text = _MANUAL_KEY.sub(" ", text)
     known_prices = facts.price_set()
     for match in _PRICE.finditer(text):
         amount = parse_km(match.group("after") or match.group("before"))

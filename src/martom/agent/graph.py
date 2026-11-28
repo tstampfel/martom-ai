@@ -44,7 +44,7 @@ the customer's last message as the note) and `fallback` in the final state.
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Annotated, Any, Literal, TypedDict
@@ -98,6 +98,7 @@ from martom.agent.understand import (
 )
 from martom.api.chat_events import ExtraLine
 from martom.api.chat_request import ClarifyAnswers
+from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.bom.roll import POST_SPACING_CM
 
 logger = logging.getLogger(__name__)
@@ -167,13 +168,22 @@ class AgentDeps:
     retriever: Retriever
     catalogue: Catalogue
     pricer: BomPricer | None = None  # PostgresBomPricer; None: every line "cijena na upit"
+    # manual_products.toml (#132); None: read the shipped file when the graph is built.
+    manual_products: Mapping[str, ManualProduct] | None = None
 
 
 def build_graph(
     deps: AgentDeps, *, checkpointer: BaseCheckpointSaver | None = None
 ) -> CompiledStateGraph:
-    """The compiled advisor graph; pass a checkpointer to keep conversations by thread_id."""
+    """The compiled advisor graph; pass a checkpointer to keep conversations by thread_id.
+
+    Reads manual_products.toml once, here, unless `deps` passes it: a broken file raises
+    ValueError at startup (like `PostgresBomPricer`), never during a chat.
+    """
     chat = deps.models.chat.bind_tools([tool.schema() for tool in TOOLS])
+    manual_products = (
+        deps.manual_products if deps.manual_products is not None else load_manual_products()
+    )
 
     def llm_config(name: str, model: str) -> RunnableConfig:
         return {
@@ -327,6 +337,7 @@ def build_graph(
             retriever=deps.retriever,
             catalogue=deps.catalogue,
             pricer=deps.pricer,
+            manual_products=manual_products,
         )
         facts = _facts(state)
         bom = state.get("bom")
@@ -487,14 +498,25 @@ def _generate_context(state: AgentState) -> str:
 
 
 def _fallback(state: AgentState, *, remove: BaseMessage | None) -> dict[str, Any]:
-    """Plain search results: titles and links, no prices (docs/PLAN.md)."""
+    """Plain search results: titles and links, no prices (docs/PLAN.md).
+
+    A manual product (#132) is listed by its name alone: it has no OLX listing, so no link
+    (never an olx.ba link built from it). A listing without a slug has no link either and
+    is left out, as before: the customer couldn't find it.
+    """
     hits = state.get("hits", []) if state.get("grade") == "ok" else []
-    lines = [f"- {hit['title']}: {hit['url']}" for hit in hits[:FALLBACK_RESULTS] if hit["url"]]
+    lines = [line for hit in hits[:FALLBACK_RESULTS] if (line := _fallback_line(hit))]
     text = "\n".join([copy.FALLBACK_INTRO, *lines]) if lines else copy.FALLBACK_NO_RESULTS
     answer = _join(text, *state.get("notes", []))
     messages: list[BaseMessage] = [RemoveMessage(id=remove.id)] if remove and remove.id else []
     messages.append(AIMessage(answer))
     return {"answer": answer, "fallback": True, "messages": messages}
+
+
+def _fallback_line(hit: dict[str, Any]) -> str | None:
+    if hit.get("source") == "manual":
+        return f"- {hit['title']}"
+    return f"- {hit['title']}: {hit['url']}" if hit["url"] else None
 
 
 def _spec(state: AgentState) -> FenceSpec | None:
@@ -503,7 +525,7 @@ def _spec(state: AgentState) -> FenceSpec | None:
 
 
 def _hit_facts(hit: dict[str, Any]) -> dict[str, Any]:
-    keys = ("listing_id", "title", "url", "product_type")
+    keys = ("source", "listing_id", "manual_key", "title", "url", "product_type")
     return {key: hit[key] for key in keys}
 
 
