@@ -9,13 +9,15 @@ Every claim has a source number like [A3]. The sources, with the date each was r
 
 The privacy and transfer review (Tomislav, 28 Nov 2026) found that the Claude API (Anthropic) and the Cohere API (embed and rerank) process customer text outside the EU. The question is whether moving the three model calls to Amazon Bedrock, in or near eu-central-1 (Frankfurt, where RDS and ECS already run), keeps that text inside the EU. It also asks what the move would cost us in features, money and latency.
 
+Staying on the direct Claude API can't give EU processing. Its `inference_geo` setting accepts only `"global"` and `"us"`, and workspace data storage is `"us"` only. The same limits apply to Claude Platform on AWS [N5].
+
 What we call today, and where it is in the code:
 
 | Call | Model today | Where | Live limits we rely on |
 | --- | --- | --- | --- |
-| Agent answer and tools | `claude-sonnet-5-5`, effort `medium`, thinking left at its default (Sonnet 5.5 rejects disabled thinking) | `agent/factory.py` | none beyond the SDK defaults |
+| Agent answer and tools | `claude-sonnet-5-5`, effort `medium`, thinking left at its default (Sonnet 5.5 rejects disabled thinking) | `agent/factory.py` | `max_retries=2`, 60 s per request (`AGENT_TIMEOUT_SECONDS`), `max_tokens` 4,096 |
 | Query parser | `claude-haiku-5-5`, `thinking={"type": "disabled"}`, `effort="low"`, `with_structured_output(..., method="json_schema")`, `max_retries=0` | `search/query_parser.py` | 2.5 s (`PARSE_TIMEOUT_SECONDS`) |
-| Understanding, grading | `claude-haiku-5-5`, structured output, thinking disabled, effort `low` | `agent/factory.py` | — |
+| Understanding, grading | `claude-haiku-5-5`, structured output, thinking disabled, effort `low` | `agent/factory.py` | `max_retries=1`, 10 s per request (`FAST_TIMEOUT_SECONDS`), `max_tokens` 1,024 |
 | Extraction (nightly) | `claude-haiku-5-5`, thinks by default, `json_schema` structured output (forcing a tool isn't allowed while thinking) | `extract/extractor.py` | 4 at a time, `MAX_TOKENS` 16,000 |
 | Query embedding | Cohere `embed-multilingual-v3.0`, 1024 numbers | `embeddings.py` | 3 s per request (`COHERE_QUERY_TIMEOUT_SECONDS`), one attempt; `search_hybrid` caps the whole wait at 5 s |
 | Rerank | Cohere `rerank-v5.0-fast` | `search/rerank.py` | 1.5 s overall (`RERANK_TIMEOUT_SECONDS`), 2 s HTTP, no retry |
@@ -42,6 +44,7 @@ What we call today, and where it is in the code:
    - The EU profile is a "limited model selection" profile, so future models may not reach it [A1].
    - Conversation threads can't move provider mid-thread, because thinking blocks are bound to the AWS account and model [A1][A2].
    - Re-tuning the rerank cutoff.
+7. **Zero retention on Bedrock is a setting we must turn on, not a default.** Today none of our four models is on Bedrock's list of models that keep traffic for abuse detection [A16]. Setting `data_retention_mode` to `none` in eu-central-1 turns that into a guarantee the account enforces [A15]. Everything a switch touches is listed in [What changes if we switch](#what-changes-if-we-switch).
 
 ## Availability in eu-central-1
 
@@ -63,10 +66,14 @@ Notes:
   - With cross-region inference, prompts and outputs may be processed in any destination Region of the profile [A10].
   - Data is stored only in the source Region by default. If abuse detection needs to store something, it stores it in the destination Region, still inside the EU here [A10].
 - **What Bedrock does with the text.**
-  - Bedrock doesn't store or log prompts and completions, doesn't use them for training, and doesn't share them with model providers [A12][A13].
+  - Retention is controlled per Region by the account's `data_retention_mode`. A Region we haven't configured stays at `inherit` and falls back to each model's own default. Under `default`, "AWS may retain the data for safety and abuse-prevention purposes" [A15].
+  - Setting `data_retention_mode: none` means "No request or response data is written to durable storage by AWS or shared with the model provider". A model that needs retention is then blocked with an error instead of keeping the data. The setting is per Region and doesn't carry over to other Regions [A15].
+  - Today's list of models that keep traffic for abuse detection covers most OpenAI models (flagged traffic, up to 30 days) and Claude Fable 5, 5.1 and 5.2 (all traffic, up to 30 days). Haiku 5.5, Sonnet 5.5 and the Cohere models aren't on it [A16]. The list can change. With `none` set, a model that starts needing retention fails instead of quietly keeping data.
+  - For geo profiles, it is **unconfirmed** whether the eu-central-1 setting governs a request that runs in another EU destination Region. [A15] says the setting governs every request in the Region where it is set. Set `none` in eu-central-1 and confirm the effective mode before launch.
+  - "Amazon Bedrock does not share your content with model providers for any current mode" [A15][A13].
   - Anthropic says the Bedrock endpoint runs on AWS-managed infrastructure with no operator access by Anthropic staff [N4]. That page covers `bedrock-mantle`. The `bedrock-runtime` page says 5.5 models are "served by the same infrastructure" [N3].
 - **Billing.** Both Claude models and both Cohere models are AWS Marketplace products, billed on the AWS invoice under the model provider [A1][A2][A5][A6].
-- **The `bedrock-mantle` endpoint** (Anthropic Messages API, served by `ChatAnthropicMantle` in LangChain) lists Haiku 5.5 only in `us-gov-west-1` [A1]. It isn't an option for us today. Sonnet 5.5's mantle Region list was not visible on the page I read (**unconfirmed**).
+- **The `bedrock-mantle` endpoint** (Anthropic Messages API, served by `ChatAnthropicMantle` in LangChain) lists Haiku 5.5 only in `us-gov-west-1` [A1]. Sonnet 5.5 is also on mantle only in `us-gov-west-1` [A2]. It isn't an option for us today.
 - **Claude Platform on AWS** (Anthropic-operated, billed through AWS) is "available in North America" for Haiku 5.5 [A3]. It doesn't solve EU residency.
 - **Cohere direct API region:** Cohere's security and data-usage pages don't name a processing region or an EU option [C3][C4]. The USA/Canada finding in the issue comes from the earlier privacy review, not from this spike.
 
@@ -118,11 +125,14 @@ Prices read 28 Nov 2026.
 - **Rerank:**
   - Bedrock: Rerank 3.5 costs $2.00 per 1,000 queries; one query holds up to 100 document chunks [A8].
   - Cohere's own price for `rerank-v5.0-fast` was not on any official page I could read (**unconfirmed**). The plan's estimate is about $2 per 1,000 searches (`docs/PLAN.md`, Running costs). Cohere counts one search as one query with up to 100 documents [C1].
-- **Embed:** Bedrock's on-demand price for Embed Multilingual v3 didn't render on the pricing page (**unconfirmed**). Third-party calculators list the Cohere direct price at about $0.10 per million tokens (**unconfirmed**). At our volume this line is a few cents either way.
+- **Embed:**
+  - Bedrock: about $0.10 per million tokens. An AWS blog gives "Cohere Embeddings: Price per 1,000 input tokens – $0.0001" [A19]. It doesn't name the Embed version, and its date isn't shown in the copy I read; it prices Claude 4 Sonnet, so it is from 2025 or later. The pricing page's Embed table didn't render.
+  - Direct: third-party calculators list the Cohere price at about $0.10 per million tokens (**unconfirmed**).
+  - At our volume this line is a few cents either way.
 
 ### Volume assumptions
 
-These are my assumptions, not measurements. They are tuned so the launch case lands inside the plan's "$10–30 Claude" line. M6-3's cost-per-conversation metric should replace them.
+These are my assumptions, not measurements. They put the launch case at the top of the plan's "$10–30 Claude" line: $30.71 direct, just over it. On Bedrock it comes to $33.78, over the line, so the PLAN "Running costs" row would need updating after a switch. M6-3's cost-per-conversation metric should replace them.
 
 - Launch: **10 chats a day** (300 a month, the plan's "a few hundred"). Busy: **50 a day** (1,500 a month).
 - **4 turns per chat**; **1 search per turn** (1 query embedding + 1 rerank of 30 candidates = 1 rerank query).
@@ -139,14 +149,14 @@ These are my assumptions, not measurements. They are tuned so the launch case la
 | Haiku 5.5 live (2.88M in / 0.24M out; ×5 busy) | 0.41 | 0.45 | 2.04 | 2.24 |
 | Haiku 5.5 nightly extraction (3.75M in / 2.25M out) | 1.50 | 1.65 | 1.50 | 1.65 |
 | Rerank (1,200 / 6,000 queries) | ~2.40 (v5.0-fast, plan estimate, unconfirmed) | 2.40 (Rerank 3.5) | ~12.00 (unconfirmed) | 12.00 |
-| Embed (~0.32M / ~0.42M tokens) | ~0.03 (unconfirmed) | unconfirmed, likely cents | ~0.04 (unconfirmed) | unconfirmed, likely cents |
+| Embed (~0.32M / ~0.42M tokens) | ~0.03 (unconfirmed) | ~0.03 (AWS blog price) | ~0.04 (unconfirmed) | ~0.04 (AWS blog price) |
 | **Total** | **~33.14** | **~36.21** | **~159.58** | **~174.33** |
 | **Delta** | | **+~3.07 (+9%)** | | **+~14.75 (+9%)** |
 
 One-off costs:
 
 - A full re-extraction of ~2,600 listings: about $2.60 direct, $2.86 on Bedrock.
-- A full re-embed: products, knowledge chunks and manual products, about 2,800 texts × 200 tokens = 0.56M tokens. That's cents at the third-party price (unconfirmed).
+- A full re-embed: products, knowledge chunks and manual products, about 2,800 texts × 200 tokens = 0.56M tokens. That's about $0.06 on Bedrock at the AWS blog price [A19].
 - The AWS line (Fargate, RDS, ALB) doesn't change: Bedrock is called over the public endpoint or a VPC endpoint. A VPC interface endpoint would add its own hourly cost (not priced here).
 
 ## How the eval would run (next step after the decision)
@@ -189,7 +199,31 @@ Not built in this round. When Tomislav decides to try Bedrock, the follow-up iss
 - **Conversation threads can't switch provider mid-thread.**
   - On Bedrock, thinking blocks for Haiku 5.5 and Sonnet 5.5 "are also bound to the AWS account that produced them". Replaying a changed earlier turn returns a 400 [A1][A2].
   - Our Postgres checkpointer keeps earlier turns, including Sonnet's thinking. My inference: threads started on the direct API should not continue on Bedrock, and the reverse too. A switch should start new threads, or drop thinking blocks from replayed history (**unconfirmed** whether the API accepts that).
-- **Two vendors' terms instead of one.** The Bedrock EULAs for each model apply [A12], plus the AWS DPA. Which legal basis covers the transfer is out of scope here (the Privatnost rewrite is a separate issue).
+- **Two vendors' terms instead of one.** Both Claude models and both Cohere models are AWS Marketplace products with their own provider terms [A1][A2][A5][A6], plus the AWS DPA. Which legal basis covers the transfer is out of scope here (the Privatnost rewrite is a separate issue).
+
+## What changes if we switch
+
+These are facts for the decision, not a plan. Each item would be its own follow-up issue.
+
+- **Code:**
+  - `agent/factory.py`, `search/query_parser.py` and `extract/extractor.py` need a Bedrock chat client (see [LangChain classes](#langchain-classes)).
+  - `embeddings.py` and `search/rerank.py` need Bedrock implementations behind the existing `Embedder` and `Reranker` interfaces.
+  - `settings.py` and `.env.example` need the Bedrock model IDs and Region in place of `ANTHROPIC_API_KEY` and `COHERE_API_KEY`.
+  - Tests use fake boto3 clients; there is no network in CI.
+- **Infra (Terraform, `infra/`):**
+  - The ECS task role needs `bedrock:InvokeModel` on the EU inference profile and on the foundation model in **every destination Region**: eu-central-1, eu-north-1, eu-south-1, eu-south-2, eu-west-1 and eu-west-3. A deny SCP on any one of them fails the whole request, unless the deny is scoped with the `bedrock:InferenceProfileArn` condition key [A10][A17].
+  - The Anthropic and Cohere API-key secrets go away. Credentials come from the task role.
+  - Set `data_retention_mode: none` in eu-central-1, and confirm the effective mode for each of our four models before launch [A15].
+- **Audit evidence:** CloudTrail logs every cross-region call in the source Region. `additionalEventData.inferenceRegion` records the Region that actually processed each request [A18]. The Privatnost text or a DPA answer can rely on that.
+- **Evals and data:**
+  - A full re-embed under a new `embedding_model` name, unless the cosine check proves the vectors equal (see [How the eval would run](#how-the-eval-would-run-next-step-after-the-decision)).
+  - Re-tune `RELEVANCE_CUTOFF` on Rerank 3.5, re-check the #102 cases, and add new rows to `evals/baselines.md`.
+  - Start new conversation threads at the switch, because thinking blocks are bound to the account (see [Open risks](#open-risks)).
+- **Privatnost text:**
+  - Name AWS (Amazon Bedrock) as the processor for model calls, in place of Anthropic and Cohere.
+  - Name the six EU Regions where a Claude call may run, and Frankfurt for embed and rerank.
+- **Not covered by this switch:** LangSmith traces carry the customers' chat text too. Its region is a separate check. `infra/README.md` already notes the EU endpoint (`LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com`) for an EU LangSmith account. Which region our account is in is **unconfirmed** here.
+- **Plan:** `docs/PLAN.md`'s tech table ("API credits now, Bedrock later") and its Running costs row change with the decision. The Bedrock launch figure is over the current Claude line (see [Cost](#cost)).
 
 ## Sources
 
@@ -208,9 +242,14 @@ AWS:
 - [A9] Unlocking AI flexibility in Europe: cross-region inference for EU data processing (AWS ML blog) — https://aws.amazon.com/blogs/machine-learning/unlocking-ai-flexibility-in-europe-a-guide-to-cross-region-inference-for-eu-data-processing-and-model-access/
 - [A10] How do I restrict Amazon Bedrock cross-Region inference routing to specific Regions? (AWS re:Post Knowledge Center) — https://repost.aws/knowledge-center/bedrock-cross-region-inference-routing
 - [A11] Global cross-Region inference ("approximately 10% savings … compared to geographic") — https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html
-- [A12] Data protection and responsible use of Amazon Bedrock (AWS Alps blog: "doesn't store or log your prompts and completions") — https://aws.amazon.com/blogs/alps/security_bedrock/
+- [A12] Not cited any more. Round 1 cited an AWS Alps blog (https://aws.amazon.com/blogs/alps/security_bedrock/) for "doesn't store or log your prompts and completions"; [A15] and [A16] replace it, because retention now depends on `data_retention_mode`.
 - [A13] Does Amazon Bedrock share input and output data with model providers? (AWS re:Post Knowledge Center) — https://repost.aws/knowledge-center/amazon-bedrock-model-data-use
 - [A14] Quotas for the bedrock-runtime endpoint — https://docs.aws.amazon.com/bedrock/latest/userguide/quotas-runtime.html
+- [A15] Data retention (`data_retention_mode`: `inherit`, `none`, `default`, `aws_review`) — https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html
+- [A16] Amazon Bedrock abuse detection (models that retain traffic) — https://docs.aws.amazon.com/bedrock/latest/userguide/abuse-detection.html
+- [A17] Geographic cross-Region inference (SCP and IAM requirements for all destination Regions) — https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html
+- [A18] Securing Amazon Bedrock cross-Region inference: Geographic and global (AWS ML blog; CloudTrail `additionalEventData.inferenceRegion`) — https://aws.amazon.com/blogs/machine-learning/securing-amazon-bedrock-cross-region-inference-geographic-and-global/
+- [A19] Demystifying Amazon Bedrock Pricing for a Chatbot Assistant (AWS ML blog; Cohere Embeddings $0.0001 per 1,000 input tokens; date not shown in the copy read) — https://aws.amazon.com/blogs/machine-learning/demystifying-amazon-bedrock-pricing-for-a-chatbot-assistant/
 
 Anthropic:
 
@@ -218,6 +257,7 @@ Anthropic:
 - [N2] Pricing, "Regional and multi-region endpoint pricing for Claude 4.5 models and beyond" (same page as N1)
 - [N3] Claude on Amazon Bedrock (`bedrock-runtime`) — https://platform.claude.com/docs/en/build-with-claude/claude-on-amazon-bedrock-legacy
 - [N4] Claude in Amazon Bedrock (`bedrock-mantle`), page description — https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock
+- [N5] Data residency (`inference_geo`: only `"global"` and `"us"`; workspace geo: only `"us"`) — https://platform.claude.com/docs/en/manage-claude/data-residency
 
 Cohere:
 
