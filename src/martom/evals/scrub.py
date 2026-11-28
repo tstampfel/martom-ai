@@ -326,6 +326,11 @@ _NOT_NAME_WORDS = frozenset(
 )
 
 
+# A lower-case word after a name is kept only with a typical surname ending: -ić / -ic
+# (which covers -ović and -ević), with or without the accent.
+_SURNAME_ENDING_RE = re.compile(r"(?i)i[cć]$")
+
+
 def introduced_names(text: str) -> list[str]:
     """The names a customer introduces in `text` ("Zovem se Pero Perić", "Ime: Ana").
 
@@ -334,10 +339,16 @@ def introduced_names(text: str) -> list[str]:
 
     Every word returned is matched in every message, so only words that look like a name
     are kept (R1-2): the intro's first word (customers type "zovem se pero" in lower
-    case), then the capitalised words right after it (lower-case ones too when the first
-    was lower case), each of 3+ letters or joined by "-" / "'" ("Ana-Marija"). "Zovem se
-    Ivan zanima me cijena" gives "Ivan", never "zanima me", and "Ime: Marko Marić trebam
-    panel 153 cm" gives "Marko Marić", so "panel" and "153 cm" survive elsewhere.
+    case), then the words right after it that are capitalised or, in lower case, end like
+    a surname (-ić / -ic, so -ović and -ević too), each of 3+ letters or joined by "-" /
+    "'" ("Ana-Marija"). "Zovem se Ivan zanima me cijena" gives "Ivan", "zovem se pero
+    kupujem nylofor panele" gives "pero", and "Ime: Marko Marić trebam panel 153 cm" gives
+    "Marko Marić", so product words survive elsewhere in the chat.
+
+    It prefers missing a rare surname to mangling product text (R3-1), so it misses a
+    lower-case surname with another ending ("zovem se ana kovač", "ivo jurina",
+    "pero babić-zovko") and a name with no intro at all; the intro message itself
+    is still scrubbed by `scrub_personal_data`, only the name's later mentions can stay.
     """
     found: list[str] = []
     for pattern in (_INTRO_RE, _JA_SAM_RE, _NAME_LABEL_RE):
@@ -355,9 +366,10 @@ def introduced_names(text: str) -> list[str]:
                     or word.lower() in _NOT_NAME_WORDS
                 ):
                     break
-                # After the first word: capitalised, or lower case when the customer typed
-                # the first word in lower case too ("zovem se pero perić").
-                if name and not (word[0].isupper() or name[0][0].islower()):
+                # After the first word: a capitalised word, or a lower-case one only when it
+                # ends like a BiH/HR surname ("zovem se pero perić"); anything else ends the
+                # name (R3-1), so "zovem se pero kupujem nylofor panele" gives "pero".
+                if name and not (word[0].isupper() or _SURNAME_ENDING_RE.search(word)):
                     break
                 name.append(word)
                 if word != raw:  # "Marić," ends the name: a comma or full stop follows

@@ -343,3 +343,27 @@ def test_a_hyphenated_introduced_name_is_scrubbed_across_the_chat() -> None:
 
     assert "Ana" not in json.dumps(record, ensure_ascii=False)
     assert record["messages"][1]["text"] == "[ime], evo ponude."
+
+
+def test_lower_case_product_words_after_a_name_survive_the_export() -> None:
+    # R3-1: "kupujem nylofor panele" is not part of the name.
+    record = export_record(
+        [
+            HumanMessage("zovem se pero kupujem nylofor panele"),
+            AIMessage("Panel Nylofor 3D 153 cm košta po komadu. Pero, evo."),
+        ],
+        thread_id=THREAD_ID,
+        exported_at=EXPORTED_AT,
+    )
+
+    assert record["messages"][1]["text"] == "Panel Nylofor 3D 153 cm košta po komadu. [ime], evo."
+
+
+def test_lower_case_surname_is_scrubbed_across_the_chat() -> None:
+    record = export_record(
+        [HumanMessage("zovem se pero peric"), AIMessage("Peric, Pero, hvala na upitu.")],
+        thread_id=THREAD_ID,
+        exported_at=EXPORTED_AT,
+    )
+
+    assert record["messages"][1]["text"] == "[ime], [ime], hvala na upitu."
