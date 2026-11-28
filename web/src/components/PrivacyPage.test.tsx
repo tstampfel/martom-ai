@@ -74,10 +74,9 @@ describe('PrivacyPage', () => {
     expect(shown).toBe(config.langSmithEnabled)
   })
 
-  // PLACEHOLDERS: these must stay until they are confirmed. When Tomislav
-  // sets the date and Toni gives the order retention period, change them on
-  // the canvas and in copy.ts (privacyPlaceholders), then update this test.
-  it('still shows the placeholders Martom has to confirm', () => {
+  // PLACEHOLDER: it stays until Tomislav sets the date at launch. Change it
+  // on the canvas and in copy.ts (privacyPlaceholders), then update this test.
+  it('still shows the date placeholder', () => {
     render(<PrivacyPage />)
     const main = screen.getByRole('main')
     expect(main).toHaveTextContent(privacyPlaceholders.date)
