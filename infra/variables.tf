@@ -164,4 +164,52 @@ variable "log_retention_days" {
   description = "Days CloudWatch keeps container logs."
   type        = number
   default     = 30
+
+  # The Privatnost page promises that technical logs and IP addresses are kept 30 days
+  # (Tomislav, 28 Nov 2026). Every log group uses this variable.
+  validation {
+    condition     = var.log_retention_days > 0 && var.log_retention_days <= 30
+    error_message = "Logs may be kept at most 30 days: the Privatnost page promises that technical logs and IP addresses are deleted after 30 days."
+  }
+}
+
+# --- Umami (umami.tf, docs/analytics.md) ---
+
+variable "umami_image" {
+  description = "Official Umami image (Postgres build), pinned. Upgrade by changing the tag after reading Umami's release notes."
+  type        = string
+  default     = "ghcr.io/umami-software/umami:3.5.0"
+}
+
+variable "umami_desired_count" {
+  description = "Number of Umami tasks. Use 0 until its database exists and its secret is set (README, \"Umami\")."
+  type        = number
+  default     = 1
+}
+
+variable "umami_cpu" {
+  description = "Umami task CPU units (256 = 0.25 vCPU)."
+  type        = number
+  default     = 256
+}
+
+variable "umami_memory" {
+  description = "Umami task memory in MiB."
+  type        = number
+  default     = 1024
+}
+
+# The ALB sends a request to Umami only when it carries this value in X-Martom-Origin
+# (umami.tf explains why it must be secret). No default: never commit it. Keep it in the
+# git-ignored infra/terraform.tfvars, with a copy in the Umami secret (README, "Umami"); it
+# ends up in the (private) state, like every CloudFront setting.
+variable "umami_origin_secret" {
+  description = "Secret value of the X-Martom-Origin header between the Umami CloudFront distribution and the ALB (openssl rand -hex 32)."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]{32,128}$", var.umami_origin_secret))
+    error_message = "Use 32 to 128 letters and digits, e.g. openssl rand -hex 32 (an ALB header condition allows at most 128 characters)."
+  }
 }

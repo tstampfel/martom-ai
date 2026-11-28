@@ -32,6 +32,11 @@ API_UNPOOLED_CONNECTIONS = 2
 # The one-off and scheduled jobs (migrate, sync, extract/embed, a later purge) use one
 # connection each, two for migrate (its checkpointer setup); allow three at once.
 JOB_CONNECTIONS = 6
+# Umami (infra/umami.tf) shares the instance with its own database and role. The role is
+# created with CONNECTION LIMIT 5, so Postgres refuses a sixth Umami connection (a lost
+# visit count) before it could take one from the API; its service never runs two tasks
+# at once (deployment_maximum_percent = 100).
+UMAMI_CONNECTIONS = 5
 
 # Catalogue reads and searches: each is borrowed for one query or one search, so a few
 # cover many concurrent chats.
@@ -42,7 +47,7 @@ QUERY_POOL_MAX_SIZE = 8
 LOCK_POOL_MAX_SIZE = 8
 # The checkpointer (checkpointer.py): held only while a checkpoint is read or written.
 CHECKPOINTER_POOL_MAX_SIZE = 4
-# Per task 8 + 8 + 4 + 2 = 22; two tasks 44, plus jobs 6 = 50 of 77 usable (65%).
+# Per task 8 + 8 + 4 + 2 = 22; two tasks 44, plus jobs 6 and Umami 5 = 55 of 77 usable (71%).
 
 
 @asynccontextmanager

@@ -1,3 +1,9 @@
 # Copy to terraform.tfvars (git-ignored) after the first deploy (README step 6). Terraform
-# reads it on every plan and apply. Only non-secret settings belong here.
+# reads it on every plan and apply. Only non-secret settings belong here, with one
+# exception: umami_origin_secret, which every plan needs (README, "Umami"). Treat the real
+# file like the state: private, never committed, a copy of the secret in Secrets Manager.
 schedules_enabled = true
+
+# The X-Martom-Origin header value between the Umami CloudFront distribution and the ALB.
+# Generate with `openssl rand -hex 32`; fake placeholder below, never put the real one here.
+# umami_origin_secret = "0000000000000000000000000000000000000000000000000000000000000000"

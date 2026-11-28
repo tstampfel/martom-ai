@@ -20,6 +20,9 @@ RDS Postgres 16 + pgvector (private subnets)     │
         └── job task: `martom sync` → `martom extract` → `martom embed`
               started by EventBridge Scheduler at 01:00 Europe/Sarajevo, every night (the sync's rolling refresh replaced the weekly full run, #135)
         └── job task: `martom purge-chats` (chats idle > 90 days), at 00:15 Europe/Sarajevo, every night (#129)
+
+visit statistics (#163): customer page ──HTTPS──▶ second CloudFront distribution (Umami's own *.cloudfront.net)
+        ──▶ same VPC origin and ALB; a rule on a secret header ──▶ Umami service (FARGATE_SPOT) ──▶ database `umami` on the same RDS
 ```
 
 | File | What it holds |
@@ -33,6 +36,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
 | `secrets.tf` | Secrets Manager: the RDS-managed master password (Terraform knows only its ARN), `app` (JSON, set by hand) |
 | `ecr.tf`, `ecs.tf` | Image repository, cluster, API service, job task definition, env var mapping |
 | `scheduler.tf` | The nightly sync and chat clean-up schedules, their dead-letter queue |
+| `umami.tf` | Umami visit statistics: its CloudFront distribution, ALB header rule, FARGATE_SPOT service, database set-up task, secret (see "Umami" below, and `docs/analytics.md`) |
 
 Agents only write and validate this code (`terraform fmt -check`, `terraform init -backend=false`, `terraform validate`). Tomislav runs `init`, `plan` and `apply` with his own SSO profile; `terraform apply` is blocked for agents in `.claude/settings.json`.
 
@@ -184,11 +188,14 @@ On-demand eu-central-1 list prices, checked 27 Nov 2026 from memory of the AWS p
 | Fargate, job task | 0.5 vCPU, 1 GB, ~50 h | ~$1.50 |
 | RDS Postgres | db.t4g.micro single-AZ + 20 GB gp3 (backups free up to the DB size) | ~$16 |
 | Public IPv4 addresses | $0.005/h each: 1 for the API task, 1 for the job task while it runs (the internal ALB has none) | ~$4 |
-| Secrets Manager | 2 secrets | ~$0.80 |
+| Secrets Manager | 3 secrets (RDS password, `app`, `umami`) | ~$1.20 |
+| Umami (visit statistics, #163) | Fargate **Spot** 0.25 vCPU, 1 GB, 24/7 (~$12 on-demand; Spot about 70% less) ~$3.70, plus its task's public IPv4 ~$3.65. Its CloudFront distribution is in the free tier, its database on the RDS instance above | ~$7.50 |
 | CloudWatch Logs | ~1 GB ingested | ~$1 |
 | ECR | ≤ 10 images | ~$0.50 |
 | CloudFront | always-free tier: 1 TB and 10 M requests | $0 |
-| **Total** | | **~$56** |
+| **Total** | | **~$64** |
+
+Umami's line is approximate: Spot prices move. The issue's "about $3–4 a month" is the Fargate Spot compute alone; the public IPv4 address that every task needs without a NAT gateway roughly doubles it. The budget alerts (step 0) stay as they are; Tomislav decides any change.
 
 What isn't here: NAT gateway (~$35, avoided with public IPs on the tasks), Multi-AZ RDS (double the RDS line), Container Insights, WAF. Claude, Cohere and LangSmith are billed separately (see `docs/PLAN.md`, Running costs).
 
@@ -308,7 +315,58 @@ Tomislav's decision (#129, 27 Nov 2026), and what the start screen's privacy not
    - **Datasets are kept until deleted**, whatever the trace retention. Never "Add to dataset" from a production trace by hand: anything kept longer than the traces' 14 days (a dataset, a feedback example, a private export) goes through `martom.evals.scrub.scrub_personal_data` first. A scrubbed real chat is never committed to the public repo, not even to `evals/` (Tomislav, 28 Nov 2026): it goes only to a private location (an S3 bucket in our AWS account or a private repo), and `evals/` holds only hand-written or hand-reviewed cases approved by Tomislav or Toni, with no real customer wording, street or village.
    - Check: the project's **Retention** shows **Base**, Settings → Rules lists no rule on the project with an extend-retention toggle on, and the retention control says 14 days, and a trace from the first day is gone after 14 days (open its link on day 15: "not found"). Changing the setting applies only to traces ingested afterwards, so set it **before** the first real customer conversation.
 
+## Umami (visit statistics)
+
+Cookieless visit statistics, self-hosted (#156, #163). What it collects, how the admin UI is protected and how to exclude your own visits: `docs/analytics.md`. Umami runs the **official image** (`var.umami_image`, pinned) at the root of its **own CloudFront distribution** (`umami_url`), because a sub-path would need a custom image build (Tomislav, 28 Nov 2026). It reuses the ALB (a listener rule that requires a secret `X-Martom-Origin` header) and the RDS instance (its own database and role, at most 5 connections).
+
+The ALB rule's header value is `var.umami_origin_secret`: no default, never committed, and **every `plan` and `apply` needs it**. Keep it in the git-ignored `infra/terraform.tfvars` (`umami_origin_secret = "..."`, see `terraform.tfvars.example`), which Terraform reads on every run, with a copy in the Umami secret (`ORIGIN_HEADER_SECRET`) so it can be recovered.
+
+### First deploy
+
+1. **Generate the header secret and apply with Umami stopped.** `openssl rand -hex 32`, put it in `infra/terraform.tfvars` as `umami_origin_secret`, then `terraform -chdir=infra apply -var umami_desired_count=0` (with the other first-deploy flags if this is the stack's first apply).
+2. **Set the Umami secret.** Generate a database password and an app secret (`openssl rand -hex 32` each; hex, so the URL needs no escaping) and a strong admin password (`openssl rand -base64 24`). Write the JSON to a file **outside the repo**, upload it, delete the file:
+
+   ```json
+   {
+     "DATABASE_URL": "postgresql://umami:<db password>@<db_endpoint output>/umami?sslmode=no-verify",
+     "UMAMI_DB_PASSWORD": "<db password>",
+     "APP_SECRET": "<app secret>",
+     "ADMIN_PASSWORD": "<admin password>",
+     "ORIGIN_HEADER_SECRET": "<the header secret from step 1>"
+   }
+   ```
+
+   ```sh
+   aws secretsmanager put-secret-value --secret-id "$(terraform -chdir=infra output -raw umami_secret_name)" \
+     --secret-string file://$HOME/martom-umami-secret.json
+   rm ~/martom-umami-secret.json
+   ```
+
+   `sslmode=no-verify` encrypts the connection without checking the RDS certificate, like the API's libpq `sslmode=require`. Umami's Postgres driver (node-postgres) treats `require` as "verify against Node's CA list", which lacks the RDS CA, so `require` would fail to connect. No container reads `ADMIN_PASSWORD` (Umami has no setting for it); it is kept for step 4.
+3. **Create the database and role** with the one-off set-up task (it re-runs safely; run it again after changing `UMAMI_DB_PASSWORD`, then restart Umami):
+
+   ```sh
+   aws ecs run-task --cluster "$(terraform -chdir=infra output -raw ecs_cluster)" \
+     --task-definition "$(terraform -chdir=infra output -raw umami_db_setup_task_definition)" \
+     --launch-type FARGATE \
+     --network-configuration "$(terraform -chdir=infra output -raw job_network_configuration)"
+   ```
+
+   Its log (`/ecs/martom-production/umami`, stream prefix `db-setup`) ends with `umami database and role are ready`.
+4. **Start Umami and change the default login at once (launch checklist, #33).** `terraform -chdir=infra apply` (`umami_desired_count` back to 1). On its first start Umami creates the admin login **admin / umami**, and the admin UI is on the public `umami_url`. So straight away, before the tracking script goes live: open `umami_url`, log in as admin / umami, change the password in the profile settings to `ADMIN_PASSWORD` from the secret, log out, and check that admin / umami no longer works.
+5. **One admin account only.** Umami has no public sign-up; users exist only when an admin creates them. Never create a second user or a team; check the Users settings list only `admin`.
+6. **Add the website** in the admin UI: name `Martom savjetnik`, domain `martom-savjetnik.pages.dev`. Copy its website id.
+7. **Turn the script on in Cloudflare Pages, production environment only:** `VITE_UMAMI_ENABLED=true`, `VITE_UMAMI_HOST=<umami_url>`, `VITE_UMAMI_WEBSITE_ID=<website id>`, then redeploy. Leave all three unset in the preview environment. Open the site: the visit appears in Umami's realtime view. Then exclude your own browsers (`docs/analytics.md`).
+
+### Checks
+
+- `curl -s "$(terraform -chdir=infra output -raw umami_url)/api/heartbeat"` answers `{"ok":true}`.
+- Umami is not reachable through the API's address: `curl -s "$(terraform -chdir=infra output -raw api_url)/api/heartbeat"` answers the API's 404, not `{"ok":true}`.
+- Spot interruptions: ECS replaces the task by itself (`aws ecs describe-services --cluster martom-production --services martom-production-umami --query 'services[0].events[:5]'`). Visits in those minutes aren't counted; nothing else is affected.
+
 ## Notes
+
+- **Logs: 30 days at most.** Every CloudWatch log group, and any CloudFront or ALB access log should one ever be turned on (none is now), must keep its data **30 days or less**: the Privatnost page promises that technical logs and IP addresses are deleted after 30 days. `log_retention_days` refuses anything longer.
 
 - **Image requirements:** `martom` on `PATH`, `sh`, `timeout` (coreutils or busybox), and `migrations/` and `knowledge/` in the working directory.
 - **SSE through CloudFront:** CloudFront drops an origin connection after 60 s without bytes. The `/api/chat` stream must send something (a token or a `: keep-alive` comment) at least every 60 s.
