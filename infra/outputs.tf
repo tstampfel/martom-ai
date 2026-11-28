@@ -48,3 +48,13 @@ output "db_password_secret_arn" {
   description = "ARN of the RDS-managed secret holding the master password (only the ARN is in Terraform)."
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
+
+output "chat_export_bucket" {
+  description = "Private bucket `martom export-chats` writes scrubbed chats to (objects deleted within 90 days)."
+  value       = aws_s3_bucket.chat_export.bucket
+}
+
+output "chat_export_task_definition" {
+  description = "Task definition family for `martom export-chats` (README, \"Exporting chats\")."
+  value       = aws_ecs_task_definition.chat_export.family
+}
