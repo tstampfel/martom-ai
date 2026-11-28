@@ -1,8 +1,12 @@
 """GET /health: is the app able to reach Postgres and Redis?
 
 The AWS load balancer calls this to decide whether a task gets traffic, so it answers
-503 when either dependency is down. The JSON body says which one, but only "ok" or
-"error": the reason (which can contain hostnames) goes to the log, not to the public.
+503 when Postgres is down: without it the app can't serve anything. Redis is only the
+search cache (M3-5, search/cache.py), and search runs uncached without it, so a Redis that
+is down answers 200 with status "degraded": taking the task out of the load balancer
+over a cache would turn a slower search into an outage. The JSON body says which check
+failed, but only "ok" or "error": the reason (which can contain hostnames) goes to the
+log, not to the public.
 """
 
 import asyncio
@@ -21,6 +25,8 @@ logger = logging.getLogger(__name__)
 HealthCheck = Callable[[], Awaitable[None]]
 
 CONNECT_TIMEOUT_SECONDS = 2
+# Checks whose failure is reported but never makes /health answer 503.
+NON_CRITICAL_CHECKS = frozenset({"redis"})
 
 router = APIRouter()
 
@@ -67,8 +73,13 @@ async def health(request: Request) -> JSONResponse:
         *(_run_check(name, check, timeout) for name, check in checks.items())
     )
     statuses = {name: "ok" if ok else "error" for name, ok in zip(checks, results, strict=True)}
-    healthy = all(results)
-    return JSONResponse(
-        {"status": "ok" if healthy else "error", "checks": statuses},
-        status_code=200 if healthy else 503,
+    critical_ok = all(
+        ok for name, ok in zip(checks, results, strict=True) if name not in NON_CRITICAL_CHECKS
     )
+    if not critical_ok:
+        status, code = "error", 503
+    elif all(results):
+        status, code = "ok", 200
+    else:
+        status, code = "degraded", 200  # only a non-critical check (Redis) failed
+    return JSONResponse({"status": status, "checks": statuses}, status_code=code)

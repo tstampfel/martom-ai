@@ -51,15 +51,25 @@ the grading step (M4) to judge, with the rerank `relevance` scores as evidence.
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 import httpx
 import psycopg
 from langchain_core.embeddings import Embeddings
+from pydantic import TypeAdapter, ValidationError
 
 from martom.embeddings import Embedder
+from martom.search import query_parser
+from martom.search.cache import (
+    SearchCache,
+    catalogue_version,
+    question_digest,
+)
 from martom.search.hybrid import (
     DEFAULT_CANDIDATES,
     QUERY_EMBED_TIMEOUT_SECONDS,
@@ -80,6 +90,7 @@ from martom.search.keyword import (
 )
 from martom.search.query_parser import ParseResult, QueryParser
 from martom.search.rerank import Reranker
+from martom.search.synonyms import default_query_synonyms
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +145,9 @@ class Retrieval:
     # "ok", "timeout", "error", or "skipped" (none configured, or nothing to rerank).
     parse_outcome: str = "skipped"
     rerank_outcome: str = "skipped"
+    # True when the whole result came from the search cache (M3-5): no parse, embedding,
+    # search or rerank ran; the outcomes above are those of the search that was cached.
+    cached: bool = False
 
 
 class _KnownQueryVector(Embeddings):
@@ -162,17 +176,24 @@ class _KnownQueryVector(Embeddings):
 
 
 async def _embed(
-    embedder: Embedder, question: str, *, fallback: bool
-) -> tuple[list[float] | None, BaseException | None]:
+    embedder: Embedder, question: str, *, fallback: bool, cache: SearchCache | None = None
+) -> tuple[list[float] | None, BaseException | None, bool]:
+    """(vector, error, whether the vector came from the cache)."""
     if not fallback:
-        return await embedder.embed_query(question), None
+        return await embedder.embed_query(question), None, False
+    if cache is not None:
+        cached = await cache.get_vector(embedder.model, question)
+        if cached is not None:
+            return cached, None, True
     try:
         vector = await asyncio.wait_for(
             embedder.embed_query(question), timeout=QUERY_EMBED_TIMEOUT_SECONDS
         )
     except Exception as exc:
-        return None, exc
-    return vector, None
+        return None, exc, False
+    if cache is not None:
+        await cache.set_vector(embedder.model, question, vector)
+    return vector, None, False
 
 
 async def retrieve(
@@ -186,10 +207,19 @@ async def retrieve(
     candidates: int = DEFAULT_CANDIDATES,
     fallback: bool = True,
     rerank_timeout: float = RERANK_TIMEOUT_SECONDS,
+    cache: SearchCache | None = None,
 ) -> Retrieval:
-    """The best `limit` active products for a customer's question (see the module docstring)."""
+    """The best `limit` active products for a customer's question (see the module docstring).
+
+    With a `cache` (search/cache.py), a repeated question within its TTL and on the same
+    catalogue returns the cached result without any paid call, and a parse or query vector
+    already cached is reused. Only live search uses it: with `fallback=False` (evals) the
+    cache is never read or written, so a score never comes from an earlier run.
+    """
     started = time.perf_counter()
     timings: dict[str, float] = {}
+    if not fallback:
+        cache = None
 
     def lap(name: str, since: float) -> float:
         now = time.perf_counter()
@@ -202,19 +232,66 @@ async def retrieve(
             timings[name] = 0.0
         return Retrieval([], SearchFilters(), False, False, 0, False, timings)
 
+    result_key: str | None = None
+    # While Redis is being skipped after an error, the key would be thrown away: don't
+    # run the catalogue-version query for it.
+    if cache is not None and cache.available:
+        result_key = await _result_key(
+            conn, question, embedder, parser, reranker, limit=limit, candidates=candidates
+        )
+        hit = _retrieval_from_json(await cache.get_result(result_key))
+        if hit is not None:
+            for name in ("understand", "parse", "search", "rerank"):
+                timings[name] = 0.0
+            lap("total", started)
+            # The same fields as a searched answer, with the outcomes of the answer served:
+            # only full answers are cached, so a hit never counts as a fallback, and a rate
+            # over every `retrieval` line is the share of answers served degraded.
+            logger.info(
+                "retrieval finished",
+                extra={
+                    "event": "retrieval",
+                    "cache": "hit",
+                    "parse_outcome": hit.parse_outcome,
+                    "parse_ms": 0.0,
+                    "rerank_outcome": hit.rerank_outcome,
+                    "rerank_ms": 0.0,
+                    "total_ms": timings["total"],
+                    "embedding_fallback": False,
+                    "filters_parsed": hit.filters != SearchFilters(),
+                    "top_up_added": hit.top_up_added,
+                    "hits": len(hit.hits),
+                },
+            )
+            return replace(hit, timings_ms=timings, cached=True)
+
+    cached_parts: set[str] = set()  # "parse" / "embedding" when reused from the cache
+
     async def parse() -> ParseResult | None:
         if parser is None:
             return None
         begun = time.perf_counter()
         try:
-            return await parser.parse_filters(question, fallback=fallback)
+            if cache is not None:
+                cached = await cache.get_filters(parser.model_name, question)
+                if cached is not None:
+                    cached_parts.add("parse")
+                    return ParseResult(cached, "ok")
+            result = await parser.parse_filters(question, fallback=fallback)
+            if cache is not None and result.outcome == "ok" and result.filters is not None:
+                await cache.set_filters(parser.model_name, question, result.filters)
+            return result
         finally:
             timings["parse"] = round((time.perf_counter() - begun) * 1000, 1)
 
     async def embed_and_search_unfiltered() -> tuple[Embedder, bool, list[HybridHit]]:
         # Needs no filters, so it runs while Haiku reads the question: the search without
         # filters is what a parse fallback returns, and the top-up's source otherwise.
-        vector, embed_error = await _embed(embedder, question, fallback=fallback)
+        vector, embed_error, from_cache = await _embed(
+            embedder, question, fallback=fallback, cache=cache
+        )
+        if from_cache:
+            cached_parts.add("embedding")
         known = Embedder(model=embedder.model, embeddings=_KnownQueryVector(vector, embed_error))
         unfiltered = await search_hybrid(
             conn,
@@ -304,9 +381,12 @@ async def retrieve(
             "filters_parsed": filters != SearchFilters(),
             "top_up_added": top_up_added,
             "hits": len(hits),
+            "cache": "off" if cache is None else "miss",
+            "parse_cached": "parse" in cached_parts,
+            "embedding_cached": "embedding" in cached_parts,
         },
     )
-    return Retrieval(
+    retrieval = Retrieval(
         hits=hits,
         filters=filters,
         parsed=parsed_filters is not None,
@@ -317,6 +397,74 @@ async def retrieve(
         parse_outcome=parse_outcome,
         rerank_outcome=rerank_outcome,
     )
+    # Only a full answer is cached: a fallback (no filters, keyword only, RRF order) would
+    # otherwise be served for an hour after the provider is back. "skipped" means no parser
+    # or reranker is configured (part of the key) or nothing to rerank: nothing degraded.
+    degraded = (
+        embedding_fallback
+        or parse_outcome not in ("ok", "skipped")
+        or rerank_outcome not in ("ok", "skipped")
+    )
+    if cache is not None and result_key is not None and not degraded:
+        await cache.set_result(result_key, _retrieval_to_json(retrieval))
+    return retrieval
+
+
+# Bump when Retrieval, RetrievedHit or how retrieve() ranks changes, so a local Redis that
+# outlives the code never serves a result made the old way. (In production Redis is a
+# sidecar that every deploy starts empty.)
+RESULT_CACHE_FORMAT = 1
+
+
+async def _result_key(
+    conn: psycopg.AsyncConnection,
+    question: str,
+    embedder: Embedder,
+    parser: QueryParser | None,
+    reranker: Reranker | None,
+    *,
+    limit: int,
+    candidates: int,
+) -> str:
+    """sha256 of everything a retrieve() result depends on (never the question in clear)."""
+    parts = {
+        "format": RESULT_CACHE_FORMAT,
+        "question": question_digest(question),
+        "parser": None if parser is None else parser.model_name,
+        "prompt_version": query_parser.PROMPT_VERSION,
+        "embedding_model": embedder.model,
+        "rerank_model": None if reranker is None else reranker.model,
+        "synonyms": repr(default_query_synonyms().rules),
+        "limit": limit,
+        "candidates": candidates,
+        "catalogue": await catalogue_version(conn),
+    }
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
+
+
+# Validates a cached entry against Retrieval's type hints (hits, filters and all), so a
+# damaged or foreign entry is a miss rather than a Retrieval with wrong-typed fields.
+_RETRIEVAL = TypeAdapter(Retrieval)
+# Not cached: the timings belong to the search that made the entry, and `cached` is set
+# on the way out.
+_NOT_CACHED = {"timings_ms", "cached"}
+
+
+def _retrieval_to_json(retrieval: Retrieval) -> dict[str, Any]:
+    """The cacheable part of a Retrieval: ids, titles, slugs, scores, filters, outcomes.
+    No prices: a hit has none (CLAUDE.md, grounding)."""
+    return _RETRIEVAL.dump_python(retrieval, mode="json", exclude=_NOT_CACHED)
+
+
+def _retrieval_from_json(data: Any) -> Retrieval | None:
+    """A Retrieval back from the cache, or None for a miss or an entry that doesn't fit."""
+    if data is None:
+        return None
+    try:
+        return _RETRIEVAL.validate_python(data)
+    except ValidationError:
+        logger.warning("unreadable search cache entry; ignored", extra={"kind": "result"})
+        return None
 
 
 _PASSING_FILTERS_SQL = (

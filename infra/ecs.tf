@@ -12,6 +12,9 @@
 # | DATABASE_URL             | postgresql://martom@<rds endpoint>/martom?sslmode=require (no password) | same |
 # | PGPASSWORD               | secret: RDS-managed, key password | same                        |
 # | REDIS_URL                | redis://localhost:6379/0 (sidecar)| not set (no Redis)          |
+# | SEARCH_CACHE_ENABLED     | true                              | not set (API only)          |
+# | SEARCH_CACHE_TTL_SECONDS | 3600                              | not set                     |
+# | QUERY_CACHE_TTL_SECONDS  | 86400                             | not set                     |
 # | OLX_API_BASE_URL         | not set (Settings default)        | https://api.olx.ba          |
 # | OLX_SHOP_USERNAME        | not set                           | martom                      |
 # | OLX_REQUEST_INTERVAL     | not set                           | var.sync_request_interval (2.8) |
@@ -62,6 +65,11 @@ locals {
     # The Redis sidecar shares the task's network namespace, so it is on localhost.
     REDIS_URL   = "redis://localhost:6379/0"
     AGENT_MODEL = "claude-sonnet-5-5"
+    # Search cache (M3-5, search/cache.py). Same as the Settings defaults, set here so
+    # production doesn't depend on them silently.
+    SEARCH_CACHE_ENABLED     = "true"
+    SEARCH_CACHE_TTL_SECONDS = "3600"
+    QUERY_CACHE_TTL_SECONDS  = "86400"
   })
 
   job_environment = merge(local.common_environment, {
@@ -215,8 +223,10 @@ resource "aws_ecs_task_definition" "api" {
       environment = [for name, value in local.api_environment : { name = name, value = value }]
       secrets     = local.api_secrets
 
-      # Start the API only once Redis answers, so the first health check can pass.
-      dependsOn = [{ containerName = "redis", condition = "HEALTHY" }]
+      # Start the API once the Redis container has started. Not "HEALTHY": Redis is only
+      # the search cache (M3-5), and a Redis that never becomes healthy must not keep the
+      # API from starting; /health answers 200 "degraded" without it.
+      dependsOn = [{ containerName = "redis", condition = "START" }]
 
       logConfiguration = {
         logDriver = "awslogs"
@@ -231,9 +241,23 @@ resource "aws_ecs_task_definition" "api" {
       # Query and embedding cache (M3-5). Cache only: no persistence, so a restarted task
       # starts with an empty cache. The image comes from the ECR Public mirror of the
       # Docker official image (no Docker Hub rate limits).
+      #
+      # Not essential (Tomislav, #17): if Redis exits, ECS keeps the task and the API
+      # running (searches run uncached, /health says "degraded") and restarts only this
+      # container. A task's health comes only from its essential containers, so Redis's
+      # own healthCheck below no longer affects the task.
+      #
+      # restartAttemptPeriod = 60 (the minimum, ECS default 300): a container is restarted
+      # at most once per period, and only if it had run for a full period before it exited.
+      # A Redis that dies within 60 s of starting is NOT restarted and stays down until the
+      # task is replaced (infra/README.md, "When Redis dies").
       name      = "redis"
       image     = "public.ecr.aws/docker/library/redis:7-alpine"
-      essential = true
+      essential = false
+      restartPolicy = {
+        enabled              = true
+        restartAttemptPeriod = 60
+      }
       command = [
         "redis-server",
         "--bind", "127.0.0.1",

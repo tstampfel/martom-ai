@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # Fake local credentials, the same as .env.example and docker-compose.yml.
     database_url: str = "postgresql://martom:martom@localhost:5432/martom"
     redis_url: str = "redis://localhost:6379/0"
+    # Search cache in Redis (M3-5, search/cache.py). Off: every search pays for its Haiku
+    # parse, embedding and rerank. Results also carry the catalogue version in their key,
+    # so a sync, extraction or embed run makes them misses at once; the TTL bounds how
+    # long anything derived from a customer's question stays in Redis.
+    search_cache_enabled: bool = True
+    search_cache_ttl_seconds: int = Field(default=3600, ge=1)  # whole retrieve() results
+    query_cache_ttl_seconds: int = Field(default=86400, ge=1)  # parsed filters, query vectors
 
     # OLX.ba public API (no token). Read by `martom sync`.
     olx_api_base_url: str = "https://api.olx.ba"
