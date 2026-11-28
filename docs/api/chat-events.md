@@ -30,14 +30,17 @@ contract both sides build against.
   number of results the advisor judged relevant, in correct Bosnian ("Pronađen 1 proizvod", "Pronađena 3 proizvoda", "Pronađeno 12
   proizvoda"); with nothing parsed, or a search where nothing fits (however many results
   came back), they keep the fixed texts. Then the reply:
-  for questions, the `clarify` step (`needs_input`), `token`s and `chips`; otherwise
-  `token`s, `product_cards` (when the advisor looked products up this turn) and `bom`
-  (only when this turn made a new list). `done` is always last.
-- **Known gap: a cleared materials list is not sent yet.** When the customer changes the
-  fence (type, height, sides, colour, ...), the advisor drops the old list and must
-  recalculate it, but no event tells the browser, so the old `bom` card stays on screen
-  until the next `bom` event replaces it. #147 adds a "materials list cleared" event; it
-  blocks launch.
+  `bom_cleared` first when the list was dropped; for questions, the `clarify` step
+  (`needs_input`), `token`s and `chips`; otherwise `token`s, `product_cards` (when the
+  advisor looked products up this turn), `bom` (only when this turn made a new list),
+  `cart` (when the advisor added products to the cart) and `contact_martom` (when it
+  offers to contact Martom). `done` is always last.
+- **A cleared materials list.** When the customer changes the fence (type, height, sides,
+  layout, posts, panel width, spacing, colour) after a list was shown, or the advisor
+  can't calculate it (too large, chain link), the advisor drops the old list and the reply
+  carries `bom_cleared` right after the steps, before the text (also when it asks clarify
+  questions), so the browser hides the old card and total at once. A turn that also
+  calculated a new list sends `bom` instead.
 - **Tokens.** The answer is streamed only after the grounding check passed (every price and
   number comes from a tool). The `token` events are the checked answer cut into chunks of
   a few words, not the model's live tokens: join them in order and you have the answer.
@@ -58,8 +61,7 @@ contract both sides build against.
   saved. A `posts` or `color` choice that no chip offers is ignored, not refused.
 - **No advisor** (the API runs without `ANTHROPIC_API_KEY` or an embedder): every message
   answers `error` kind `internal` and `done`.
-- **Not sent yet:** cart additions and the "contact Martom" offer have no event yet
-  (#147), and neither does the roll fence's suggested wire add-on.
+- **Not sent yet:** the roll fence's suggested wire add-on has no event.
 
 ## Where the contract lives
 
@@ -396,6 +398,71 @@ upit"). Prices are illustrative.
   "extra_lines": [],
   "notes": ["Cijene i ponuda su informativne – pribor možete izbaciti ako ga već imate. Dostava se potvrđuje."]
 }
+```
+
+### `bom_cleared`
+
+The materials list on screen no longer fits: hide the `bom` card, its total and any
+quantity edits. Sent when the customer changed the fence (type, height, sides, layout,
+posts, panel width, post spacing or colour) after a list was shown, or when the advisor
+can't calculate the new fence (too large, chain link), also on a turn that asks clarify
+questions. It carries no other field. The next `bom` event brings the new list (Tomislav,
+28 Nov 2026, #147: no stale list or total may be visible).
+
+```json
+{"type": "bom_cleared"}
+```
+
+### `cart`
+
+Products the advisor added to the customer's cart (korpa) in this turn, because the
+customer asked (the `add_to_cart` tool); only this turn's additions, so add them to the
+cart the browser keeps (the korpa page is #27). Title, link, variant and `unit_price`
+come from the database or `manual_products.toml`, the quantity is the one the tool
+accepted, and `line_total` (`unit_price` × `quantity`, `null` when the price is "na
+upit") is worked out by the server. A manual product (`source` `"manual"`) has
+`listing_id` and `url` `null` and its `manual_key`, as on a product card. Prices are
+illustrative.
+
+```json
+{
+  "type": "cart",
+  "lines": [
+    {
+      "source": "olx",
+      "listing_id": 63996799,
+      "manual_key": null,
+      "url": "https://martom.olx.ba/artikal/panelna-ograda-3d-63996799",
+      "title": "Panelna ograda 3D (Nylofor)",
+      "variant_label": "153 × 250",
+      "quantity": 3,
+      "unit_price": "53.00",
+      "line_total": "159.00"
+    },
+    {
+      "source": "manual",
+      "listing_id": null,
+      "manual_key": "anchor_m8x70",
+      "url": null,
+      "title": "Anker M8×70",
+      "variant_label": null,
+      "quantity": 8,
+      "unit_price": null,
+      "line_total": null
+    }
+  ]
+}
+```
+
+### `contact_martom`
+
+Offer the "contact Martom" (WhatsApp order) button: the advisor can't make a materials
+list for this request, a chain-link fence (no rules yet, `docs/domain/fence-rules.md`) or
+a fence too large to calculate. The answer text says why; the button takes the customer's
+request as the order note (the order form is #27). It carries no other field.
+
+```json
+{"type": "contact_martom"}
 ```
 
 ### `error`

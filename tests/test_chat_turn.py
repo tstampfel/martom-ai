@@ -10,8 +10,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from martom.api import chat_copy
 from martom.api.chat_events import (
+    BomClearedEvent,
     BomEvent,
+    CartEvent,
     ChipsEvent,
+    ContactMartomEvent,
     ProductCardsEvent,
     StepEvent,
     TokenEvent,
@@ -207,9 +210,92 @@ def test_an_unchanged_bom_is_not_sent_again() -> None:
     assert "bom" not in [event.type for event in events]
 
 
-def test_a_cleared_bom_sends_nothing() -> None:
+def test_a_cleared_bom_tells_the_browser_to_drop_the_old_list() -> None:
+    # Tomislav, 28 Nov 2026 (#147, launch blocker): no stale list or total on screen.
     events = final_events(state(bom=None, bom_changed=True))
-    assert "bom" not in [event.type for event in events]
+    kinds = [event.type for event in events]
+    assert "bom" not in kinds
+    assert kinds.count("bom_cleared") == 1
+    assert isinstance(events[0], BomClearedEvent)  # before the text, so it goes at once
+
+
+def test_a_cleared_bom_is_sent_on_a_clarify_turn_too() -> None:
+    # The fence changed and the advisor asks again: the old list must still go.
+    chips = {
+        "intro": None,
+        "project": None,
+        "questions": [
+            {"id": "layout", "text": "Koliko ima kutova?", "kind": "layout", "options": []}
+        ],
+    }
+    events = final_events(state(chips=chips, bom=None, bom_changed=True))
+    kinds = [event.type for event in events]
+    assert "bom_cleared" in kinds
+    assert kinds[-1] == "chips"
+
+
+def test_no_list_change_sends_no_cleared_event() -> None:
+    assert "bom_cleared" not in [e.type for e in final_events(state(bom=None))]
+    assert "bom_cleared" not in [e.type for e in final_events(state(bom=BOM, bom_changed=True))]
+
+
+CART_LINE = {
+    "source": "olx",
+    "listing_id": 63996799,
+    "manual_key": None,
+    "title": "PANEL 3D OGRADA",
+    "url": "https://martom.olx.ba/artikal/panel-3d-ograda-63996799",
+    "variant_label": "153 × 250",
+    "quantity": 10,
+    "unit_price": "53.00",
+}
+
+
+def test_this_turns_cart_additions_are_one_cart_event_with_tool_prices() -> None:
+    manual = {
+        "source": "manual",
+        "listing_id": None,
+        "manual_key": "anchor_m8x70",
+        "title": "Anker M8×70",
+        "url": None,
+        "variant_label": None,
+        "quantity": 4,
+        "unit_price": None,
+    }
+    events = final_events(state(cart=[CART_LINE, manual]))
+    carts = [event for event in events if isinstance(event, CartEvent)]
+    assert len(carts) == 1
+    assert [(line.quantity, line.unit_price, line.line_total) for line in carts[0].lines] == [
+        (10, "53.00", "530.00"),
+        (4, None, None),
+    ]
+
+
+def test_no_cart_additions_send_no_cart_event() -> None:
+    assert "cart" not in [event.type for event in final_events(state(cart=[]))]
+    assert "cart" not in [event.type for event in final_events(state())]
+
+
+def test_a_cart_line_that_fails_the_contract_is_skipped() -> None:
+    broken = {**CART_LINE, "url": "https://olx.ba/artikal/63996799"}
+    events = final_events(state(cart=[broken, CART_LINE]))
+    cart = next(event for event in events if isinstance(event, CartEvent))
+    assert len(cart.lines) == 1
+
+
+def test_contact_martom_is_offered_after_the_text() -> None:
+    events = final_events(state(answer="Javite se Martomu.", contact_martom=True))
+    assert isinstance(events[-1], ContactMartomEvent)
+    assert "contact_martom" not in [e.type for e in final_events(state(contact_martom=False))]
+
+
+def test_reply_order_is_cleared_tokens_cards_bom_cart_contact() -> None:
+    messages = [HumanMessage("ograda"), tool_message("get_product", PANEL_OUTPUT)]
+    events = final_events(
+        state(messages=messages, bom=BOM, bom_changed=True, cart=[CART_LINE], contact_martom=True)
+    )
+    kinds = [event.type for event in events if event.type != "token"]
+    assert kinds == ["product_cards", "bom", "cart", "contact_martom"]
 
 
 # --- StepTracker --------------------------------------------------------------------

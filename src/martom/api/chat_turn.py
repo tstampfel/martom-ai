@@ -21,9 +21,13 @@ from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from martom.agent.understand import total_length_text
 from martom.api import chat_copy
 from martom.api.chat_events import (
+    BomClearedEvent,
     BomEvent,
+    CartEvent,
+    CartLine,
     ChatEvent,
     ChipsEvent,
+    ContactMartomEvent,
     ProductCard,
     ProductCardsEvent,
     StepEvent,
@@ -72,8 +76,18 @@ def product_cards(state: Mapping[str, Any]) -> list[ProductCard]:
 
 
 def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
-    """The reply after the turn: [clarify step], tokens, chips | cards, bom (no `done`)."""
+    """The reply after the turn, without `done`.
+
+    [bom_cleared], [clarify step], tokens, then chips | (cards, bom, cart, contact).
+    """
     events: list[ChatEvent] = []
+    bom = state.get("bom")
+    bom_changed = state.get("bom_changed")
+    if bom_changed and not bom:
+        # The fence changed (or can't be calculated) and the old list was dropped: tell
+        # the browser first, so no stale list or total stays on screen (#147). It goes
+        # on a clarify turn too, which is when a changed fence usually lands.
+        events.append(BomClearedEvent())
     chips = state.get("chips")
     if chips:
         events.append(StepEvent(id="clarify", text=chat_copy.STEP_CLARIFY, status="needs_input"))
@@ -84,13 +98,31 @@ def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
     cards = product_cards(state)
     if cards:
         events.append(ProductCardsEvent(cards=cards))
-    bom = state.get("bom")
-    # Only a list this turn made: an unchanged one is already on screen. A cleared list
-    # (the fence changed) has no event yet (#147, blocks launch); the next calculation
-    # replaces it.
-    if bom and state.get("bom_changed"):
+    # Only a list this turn made: an unchanged one is already on screen.
+    if bom and bom_changed:
         events.append(BomEvent.model_validate(_bom_event_fields(bom)))
+    cart = cart_lines(state)
+    if cart:
+        events.append(CartEvent(lines=cart))
+    if state.get("contact_martom"):
+        events.append(ContactMartomEvent())
     return events
+
+
+def cart_lines(state: Mapping[str, Any]) -> list[CartLine]:
+    """This turn's cart additions (the add_to_cart results the graph collected).
+
+    Prices and quantities are the tool's, never the model's text; the line total is
+    worked out in Python (`CartLine.from_tool`). A line that breaks the contract is
+    skipped and logged by type only, like a product card.
+    """
+    lines: list[CartLine] = []
+    for cart_line in state.get("cart") or []:
+        try:
+            lines.append(CartLine.from_tool(cart_line))
+        except (ValueError, TypeError, ArithmeticError) as exc:
+            logger.info("cart line skipped", extra={"error": type(exc).__name__})
+    return lines
 
 
 def search_step_text(count: int) -> str:

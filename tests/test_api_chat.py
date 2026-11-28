@@ -1,5 +1,7 @@
 """POST /api/chat (#21): the real graph with fake models, streamed through FastAPI."""
 
+# ruff: noqa: RUF001
+
 import asyncio
 import json
 import logging
@@ -163,6 +165,82 @@ def test_a_clarify_turn_sends_chips_and_matches_the_schema() -> None:
         "text": chat_copy.STEP_CLARIFY,
         "status": "needs_input",
     } in events
+    assert "bom" not in kinds
+
+
+def test_a_cart_turn_sends_a_cart_event_with_tool_quantities_and_prices(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    service = make_service(
+        Recorder(understanding(request="product", search_query="panel 153")),
+        [
+            tool_call("get_product", {"listing_id": PANEL_ID}),
+            tool_call(
+                "add_to_cart",
+                {"listing_id": PANEL_ID, "variant_label": "153 × 250", "quantity": 3},
+            ),
+            AIMessage("Dodao sam panele u korpu."),
+        ],
+    )
+    with caplog.at_level(logging.INFO, logger="martom.api"):
+        events = post(client(service), {"message": "Dodaj 3 panela 153 u korpu"})
+    finished = next(r for r in caplog.records if r.getMessage() == "chat turn finished")
+    assert finished.cart_lines == 1  # type: ignore[attr-defined]
+    for event in events:
+        jsonschema.validate(event, SCHEMA)
+    kinds = [event["type"] for event in events]
+    assert kinds[-2:] == ["cart", "done"]
+    cart = next(e for e in events if e["type"] == "cart")
+    assert cart["lines"] == [
+        {
+            "source": "olx",
+            "listing_id": PANEL_ID,
+            "manual_key": None,
+            "url": PANEL.url,
+            "title": PANEL.title,
+            "variant_label": "153 × 250",
+            "quantity": 3,
+            "unit_price": "53.00",
+            "line_total": "159.00",
+        }
+    ]
+
+
+def test_a_chain_link_turn_offers_contact_martom(caplog: pytest.LogCaptureFixture) -> None:
+    service = make_service(Recorder(understanding(request="fence_chain_link", lengths=["30 m"])))
+    with caplog.at_level(logging.INFO, logger="martom.api"):
+        events = post(client(service), {"message": "Pletivo 30 m"})
+    finished = next(r for r in caplog.records if r.getMessage() == "chat turn finished")
+    assert finished.contact_martom is True  # type: ignore[attr-defined]
+    for event in events:
+        jsonschema.validate(event, SCHEMA)
+    assert [event["type"] for event in events][-2:] == ["contact_martom", "done"]
+    assert "bom_cleared" not in [event["type"] for event in events]  # there was no list
+
+
+def test_changing_the_fence_clears_the_materials_list_in_the_browser() -> None:
+    # Tomislav, 28 Nov 2026 (#147, launch blocker): no stale list or total on screen.
+    service = make_service(
+        Recorder(
+            understanding(height="153 cm", lengths=["25 m"], layout="straight"),
+            understanding(height="103 cm", lengths=["25 m"], layout="straight"),
+        ),
+        [
+            tool_call("get_product", {"listing_id": PANEL_ID}),
+            tool_call("calculate_fence_bom"),
+            AIMessage("Ukupno 905,10 KM."),
+            AIMessage("Promijenili ste visinu ograde."),
+        ],
+    )
+    test_client = client(service)
+    first = post(test_client, {"message": "Panelna ograda 25 m, 153 cm"})
+    assert "bom" in [event["type"] for event in first]
+    second = post(test_client, {"message": "Ipak 103 cm", "thread_id": first[-1]["thread_id"]})
+    for event in second:
+        jsonschema.validate(event, SCHEMA)
+    kinds = [event["type"] for event in second]
+    assert kinds.count("bom_cleared") == 1
+    assert kinds.index("bom_cleared") < kinds.index("token")
     assert "bom" not in kinds
 
 

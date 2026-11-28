@@ -10,7 +10,8 @@ A turn (`_turn_stream`):
 2. The turn lock for the thread (api/threads.py), then the advisor graph with
    `stream_mode="updates"`: after each node, `StepTracker` may send a step.
 3. The graph's final state becomes the reply (`chat_turn.final_events`): the grounded
-   answer as `token` chunks, then `chips`, or `product_cards` and `bom`.
+   answer as `token` chunks, then `chips`, or `product_cards`, `bom`, `cart` and
+   `contact_martom`; `bom_cleared` first when the fence changed and the list was dropped.
 4. `done`.
 
 Steps 1-3 run in a task of their own and hand events to the stream through a queue, so
@@ -219,6 +220,9 @@ async def _turn_stream(
         "tokens": 0,
         "cards": 0,
         "bom_sent": False,
+        "bom_cleared": False,
+        "cart_lines": 0,
+        "contact_martom": False,
         "first_token_ms": None,
     }
     queue: asyncio.Queue[ChatEvent | None] = asyncio.Queue()
@@ -240,6 +244,12 @@ async def _turn_stream(
                 stats["cards"] = len(event.cards)
             elif event.type == "bom":
                 stats["bom_sent"] = True
+            elif event.type == "bom_cleared":
+                stats["bom_cleared"] = True
+            elif event.type == "cart":
+                stats["cart_lines"] = len(event.lines)
+            elif event.type == "contact_martom":
+                stats["contact_martom"] = True
             yield _sse(event)
         yield _sse(DoneEvent(thread_id=thread_id))
         stats["outcome"] = stats.pop("turn_outcome", "ok")
