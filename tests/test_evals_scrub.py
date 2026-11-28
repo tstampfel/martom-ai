@@ -153,8 +153,9 @@ def test_keeps_the_shops_public_number(shop: str) -> None:
         "dostava u Mostar 5-7 dana",
         "dostava u Mostar 2 - 3 sata",
         "dostava na gradilište 60/400",
-        # A spaced unit or "x" is never a house-number letter (R5-1), in capitals too.
-        # With no street word or delivery verb before them, capital units stay.
+        # A spaced lower-case unit or "x"/"X" is never a house-number letter (R5-1). A
+        # capital M, L or H is one after a street word or delivery verb (fail closed);
+        # with neither before it, as in the first two cases, a capital unit stays.
         "5 L BOJE",
         "Mostar 20 M ograde treba",
         "dostava u Mostar 20 m ograde",
