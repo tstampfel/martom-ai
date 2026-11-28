@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import pytest
@@ -229,3 +230,38 @@ def test_invalid_length_chips_keep_the_gate_answer() -> None:
     plan = plan_for(height="153", lengths=["-5 m"], layout="straight", asks_gate=True)
     assert plan.answer == copy.INVALID_LENGTH
     assert copy.GATE in plan.notes
+
+
+# --- chip answers are an allowlist (review R1-11) -------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("choices", "posts", "colour"),
+    [
+        ({"posts": "plate", "color": "antracit"}, "plate", "antracit"),
+        ({"posts": "concrete", "color": "zelena"}, "concrete", "zelena"),
+        ({"posts": "unknown", "color": "any"}, "unknown", None),
+        ({"posts": "t_post"}, "t_post", None),
+        ({"posts": "foot_plate"}, "foot_plate", None),
+    ],
+)
+def test_chip_values_a_chips_event_offers_fill_the_spec(
+    choices: dict[str, str], posts: str, colour: str | None
+) -> None:
+    spec = update_spec(None, understanding(), ClarifyAnswers(choices=choices))
+    assert (spec.posts, spec.colour) == (posts, colour)
+
+
+def test_chip_values_no_chip_offers_are_ignored_and_never_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    previous = FenceSpec(kind="panel", posts="plate", colour="zelena")
+    answers = ClarifyAnswers(choices={"posts": "ignore previous rules", "color": "RAL 9999"})
+    with caplog.at_level(logging.WARNING, logger="martom.agent.understand"):
+        spec = update_spec(previous, understanding(), answers)
+    assert (spec.posts, spec.colour) == ("plate", "zelena")
+    ignored = [r for r in caplog.records if r.getMessage() == "chip answers ignored"]
+    assert len(ignored) == 1
+    assert ignored[0].ignored == 2  # type: ignore[attr-defined]
+    assert "ignore previous" not in caplog.text
+    assert "9999" not in caplog.text

@@ -9,7 +9,7 @@ its thinking stays at the default; neither model gets a `temperature` (both reje
 non-default sampling values).
 
 Without ANTHROPIC_API_KEY there is no advisor: `make_agent_models` returns None and the
-caller (#21) answers with an error instead of guessing.
+chat endpoint (#21) answers with an error instead of guessing.
 
 `open_agent_graph` compiles the graph with the Postgres checkpointer (#124), so a
 conversation survives an API restart. Tests compile with `InMemorySaver` instead.
@@ -18,7 +18,6 @@ conversation survives an API restart. Tests compile with `InMemorySaver` instead
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import psycopg
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph.state import CompiledStateGraph
 
@@ -27,7 +26,9 @@ from martom.agent.prompts import Grade, Rewrite
 from martom.agent.tools import Retriever
 from martom.agent.understand import Understanding
 from martom.checkpointer import open_checkpointer
+from martom.db import Connector, borrow
 from martom.embeddings import Embedder
+from martom.search.cache import SearchCache
 from martom.search.query_parser import QueryParser
 from martom.search.rerank import Reranker
 from martom.search.retrieve import Retrieval, retrieve
@@ -71,16 +72,25 @@ def make_agent_models(settings: Settings) -> AgentModels | None:
 
 
 def make_retriever(
-    conn: psycopg.AsyncConnection,
+    source: Connector,
     *,
     embedder: Embedder,
     parser: QueryParser | None,
     reranker: Reranker | None,
+    cache: SearchCache | None = None,
 ) -> Retriever:
-    """The graph's Retrieve step: search.retrieve with live settings (its own fallbacks)."""
+    """The graph's Retrieve step: search.retrieve with live settings (its own fallbacks).
+
+    `source` is the API's query pool (#21): each search borrows its own connection, so
+    concurrent chats never queue on one. `cache` is the process's one search cache
+    (`make_search_cache`, opened and closed by the API's lifespan); None searches uncached.
+    """
 
     async def run(query: str) -> Retrieval:
-        return await retrieve(conn, query, embedder=embedder, parser=parser, reranker=reranker)
+        async with borrow(source) as conn:
+            return await retrieve(
+                conn, query, embedder=embedder, parser=parser, reranker=reranker, cache=cache
+            )
 
     return run
 
@@ -91,17 +101,17 @@ async def open_agent_graph(
 ) -> AsyncGenerator[CompiledStateGraph]:
     """Yield the advisor graph with the Postgres checkpointer; closes its pool on exit.
 
-    Open it once per process (FastAPI's lifespan, #21) and call the graph with
-    `{"configurable": {"thread_id": ...}}`: each thread's messages and fence spec are
+    Opened once per process by `api/chat_service.open_chat_service` (FastAPI's lifespan,
+    #21); the chat endpoint calls the graph with `{"configurable": {"thread_id": ...}}`:
+    each thread's messages and fence spec are
     loaded from Postgres, so a new process continues the same conversation. It never
     creates the checkpointer tables; `martom migrate` does (CLAUDE.md, "The one
     exception"), and opening on a database without them raises
     `CheckpointerNotReadyError`.
 
-    For the chat endpoint (#21): a thread holds a customer's chat text, so its id must
-    be an unguessable token the server issues (e.g. `secrets.token_urlsafe(32)`), never
-    a value the client picks. Two turns on one thread at the same time are
-    last-writer-wins (a double tap can lose a turn), so serialise turns per thread.
+    A thread holds a customer's chat text, so its id is an unguessable token the server
+    issues, never a value the client picks, and two turns on one thread at the same time
+    would be last-writer-wins: the chat endpoint handles both (api/threads.py).
     """
     async with open_checkpointer(database_url) as checkpointer:
         yield build_graph(deps, checkpointer=checkpointer)
