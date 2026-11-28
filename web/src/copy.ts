@@ -252,10 +252,11 @@ export const copy = {
     credit: 'Stampfel Consulting',
     creditUrl: 'https://stampfelconsulting.com/',
   },
-  // The "Privatnost" page, canvas version 1795857199-6573 (Tomislav, 28 Nov
+  // The "Privatnost" page, canvas version 1795857354-fc29 (Tomislav, 28 Nov
   // 2026, after the #149 provider decision, Amazon Bedrock in eu-central-1,
   // with the legal bases, the rights, the right to object, the complaint and
-  // court sections, and orders kept 30 days):
+  // court sections, orders kept 30 days, and the WhatsApp copy Martom keeps
+  // only while the order needs it):
   // docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // Don't reword it here; change the canvas first.
   // PLACEHOLDER: `privacyPlaceholders.date` stays verbatim until Tomislav
@@ -327,7 +328,7 @@ export const copy = {
           },
           {
             label: 'Narudžbe:',
-            text: ' zahtjev za narudžbu čuvamo 30 dana, da možemo riješiti eventualne nejasnoće, zatim se automatski briše. Martom ne vodi bazu kupaca. Ako kupovina završi računom, račun se čuva onoliko koliko propisuje zakon.',
+            text: ' zahtjev za narudžbu u sistemu savjetnika čuvamo 30 dana, da možemo riješiti eventualne nejasnoće, zatim se automatski briše. Narudžba Martomu stiže i kao WhatsApp poruka; nju Martom čuva samo dok je potrebno da se narudžba završi. Martom ne vodi bazu kupaca. Ako kupovina završi računom, račun se čuva onoliko koliko propisuje zakon.',
           },
         ],
       },

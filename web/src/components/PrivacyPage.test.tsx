@@ -6,7 +6,7 @@ import { config } from '../config'
 import { copy, privacyPlaceholders, telHref } from '../copy'
 import { PrivacyPage } from './PrivacyPage'
 
-// The canvas text, as synced into docs/mockups (canvas 1795857199-6573).
+// The canvas text, as synced into docs/mockups (canvas 1795857354-fc29).
 const mockup = (variant: 'web' | 'mobile') =>
   readFileSync(join(import.meta.dirname, '../../../docs/mockups', variant, '6-privatnost.html'), 'utf8')
 
