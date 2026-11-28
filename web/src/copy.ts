@@ -254,9 +254,10 @@ export const copy = {
     credit: 'Stampfel Consulting',
     creditUrl: 'https://stampfelconsulting.com/',
   },
-  // The "Privatnost" page, canvas version 1795855258-2d90 (live
-  // 1795855309-7fee, same text; Tomislav, 28 Nov 2026, after the #149
-  // provider decision: Amazon Bedrock in eu-central-1):
+  // The "Privatnost" page, canvas version 1795856792-66d8 (Tomislav, 28 Nov
+  // 2026, after the #149 provider decision, Amazon Bedrock in eu-central-1,
+  // with the legal bases, the rights, the right to object and the complaint
+  // and court sections):
   // docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // Don't reword it here; change the canvas first.
   // PLACEHOLDERS: `privacyPlaceholders` (`.date`, `.orderRetention`) stay
@@ -275,7 +276,8 @@ export const copy = {
     // lead-in of a line, and lines are separated by line breaks. A line's
     // `langSmith` sentence sits between `text` and `textAfter` and is shown
     // only when LangSmith tracing is on (VITE_LANGSMITH_ENABLED; the canvas
-    // marks it with an HTML comment).
+    // marks it with an HTML comment). A line's `link` (opened in a new tab)
+    // sits between `text` and `textAfter` as well.
     sections: [
       {
         heading: 'Ko smo',
@@ -304,9 +306,18 @@ export const copy = {
       {
         heading: 'Zašto ih koristimo',
         lines: [
+          // The legal basis of each purpose.
           {
-            text: 'Da odgovorimo na vaše pitanje i složimo popis materijala, da obradimo narudžbu i dogovorimo dostavu, da poboljšamo savjetnika i da zaštitimo stranicu od zloupotrebe. Podatke ne koristimo za oglašavanje i nikome ih ne prodajemo.',
+            label: 'Odgovor na pitanje i popis materijala:',
+            text: ' jer ste to zatražili, kao korak prije moguće kupovine.',
           },
+          { label: 'Narudžba i dostava:', text: ' da izvršimo ugovor s vama.' },
+          { label: 'Računi i knjigovodstvo:', text: ' jer nas na to obavezuje zakon.' },
+          {
+            label: 'Poboljšanje savjetnika, statistika posjeta i zaštita stranice:',
+            text: ' na osnovu našeg legitimnog interesa da savjetnik radi dobro i sigurno.',
+          },
+          { text: 'Podatke ne koristimo za oglašavanje i nikome ih ne prodajemo.' },
         ],
       },
       {
@@ -334,7 +345,27 @@ export const copy = {
         heading: 'Vaša prava',
         lines: [
           {
-            text: 'Možete tražiti uvid u svoje podatke, ispravak ili brisanje, te uložiti prigovor. Javite nam se na e-mail ili telefon iznad. Ako niste zadovoljni odgovorom, možete se obratiti Agenciji za zaštitu ličnih podataka u Bosni i Hercegovini.',
+            text: 'Imate pravo na pristup svojim podacima, ispravku, brisanje, ograničenje obrade i prenosivost podataka koje ste nam dali. Javite nam se e-mailom ili telefonom iznad; odgovorit ćemo najkasnije u roku od mjesec dana.',
+          },
+        ],
+      },
+      {
+        heading: 'Pravo na prigovor',
+        lines: [
+          {
+            text: 'Kad podatke koristimo na osnovu legitimnog interesa (poboljšanje savjetnika, statistika posjeta, zaštita stranice), možete se tome u bilo kojem trenutku usprotiviti. Tada prestajemo, osim ako postoje uvjerljivi zakonski razlozi za nastavak.',
+          },
+        ],
+      },
+      {
+        heading: 'Pritužba i sudska zaštita',
+        lines: [
+          // AZLP address from the Council of Europe DPA list; re-check on
+          // azlp.ba before launch (canvas comment).
+          {
+            text: 'Ako smatrate da vaše podatke obrađujemo protivno zakonu, možete podnijeti prigovor Agenciji za zaštitu ličnih podataka u Bosni i Hercegovini, Dubrovačka 6, 71000 Sarajevo, ',
+            link: { href: 'https://www.azlp.ba', label: 'www.azlp.ba' },
+            textAfter: '. Imate i pravo na sudsku zaštitu pred nadležnim sudom.',
           },
         ],
       },

@@ -109,8 +109,11 @@ describe('copy.footer credit (M5-9)', () => {
     'matches the credit in docs/mockups/%s',
     (screen) => {
       const html = readFileSync(join(import.meta.dirname, '../../docs/mockups', screen), 'utf8')
-      const match = html.match(/(?:>| · )([^<>·]+) <a href="([^"]+)" target="_blank" rel="noopener"[^>]*>([^<]+)<\/a>/)
-      expect(match?.slice(1)).toEqual([copy.footer.creditLead, copy.footer.creditUrl, copy.footer.credit])
+      // Every new-tab link with its lead-in (the Privatnost page also links azlp.ba).
+      const links = [
+        ...html.matchAll(/(?:>| · )([^<>·]+) <a href="([^"]+)" target="_blank" rel="noopener"[^>]*>([^<]+)<\/a>/g),
+      ].map((match) => match.slice(1))
+      expect(links).toContainEqual([copy.footer.creditLead, copy.footer.creditUrl, copy.footer.credit])
     },
   )
 })

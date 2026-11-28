@@ -6,7 +6,7 @@ import { config } from '../config'
 import { copy, privacyPlaceholders, telHref } from '../copy'
 import { PrivacyPage } from './PrivacyPage'
 
-// The canvas text, as synced into docs/mockups (canvas 1795855258-2d90).
+// The canvas text, as synced into docs/mockups (canvas 1795856792-66d8).
 const mockup = (variant: 'web' | 'mobile') =>
   readFileSync(join(import.meta.dirname, '../../../docs/mockups', variant, '6-privatnost.html'), 'utf8')
 
@@ -111,6 +111,14 @@ describe('PrivacyPage', () => {
     for (const link of within(footer).getAllByRole('link', { name: copy.shop.phone })) {
       expect(link).toHaveAttribute('href', telHref(copy.shop.phone))
     }
+  })
+
+  it('links the data protection agency in a new tab', () => {
+    render(<PrivacyPage />)
+    const link = within(screen.getByRole('main')).getByRole('link', { name: 'www.azlp.ba' })
+    expect(link).toHaveAttribute('href', 'https://www.azlp.ba')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener')
   })
 
   it('sets the browser tab title while open and restores it after', () => {

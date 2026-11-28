@@ -59,6 +59,11 @@ export function PrivacyPage({ langSmith = config.langSmithEnabled }: { langSmith
                   {'label' in line && <b>{line.label}</b>}
                   {line.text}
                   {langSmith && 'langSmith' in line && line.langSmith}
+                  {'link' in line && (
+                    <a className="privacy-page__link" href={line.link.href} target="_blank" rel="noopener">
+                      {line.link.label}
+                    </a>
+                  )}
                   {'textAfter' in line && line.textAfter}
                 </span>
               ))}
