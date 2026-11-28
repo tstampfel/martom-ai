@@ -88,6 +88,12 @@ variable "schedule_timezone" {
   default     = "Europe/Sarajevo"
 }
 
+variable "purge_chats_cron" {
+  description = "Nightly chat clean-up (`martom purge-chats`, #129). Default: 00:15, so it is done before the 01:00 sync chain starts (see scheduler.tf)."
+  type        = string
+  default     = "cron(15 0 * * ? *)"
+}
+
 variable "nightly_sync_cron" {
   description = "Nightly sync, every night (EventBridge Scheduler cron: minutes hours day-of-month month day-of-week year). Default: 01:00."
   type        = string

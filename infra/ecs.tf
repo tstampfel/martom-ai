@@ -85,6 +85,10 @@ locals {
     OLX_NIGHTLY_REQUEST_BUDGET = "950"
     OLX_ROLLING_REFRESH_DAYS   = "7"
     EXTRACTION_CONCURRENCY     = "4"
+    # Chats are kept 90 days after their last message, then `martom purge-chats` deletes
+    # them (Tomislav, #129). The site's privacy notice promises 90 days: never raise it
+    # without changing that text.
+    CHAT_RETENTION_DAYS = "90"
   })
 
   # ECS wants lists of {name, value} / {name, valueFrom}; build them from the maps above.

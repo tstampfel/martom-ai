@@ -19,6 +19,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
         ▲                                        │
         └── job task: `martom sync` → `martom extract` → `martom embed`
               started by EventBridge Scheduler at 01:00 Europe/Sarajevo, every night (the sync's rolling refresh replaced the weekly full run, #135)
+        └── job task: `martom purge-chats` (chats idle > 90 days), at 00:15 Europe/Sarajevo, every night (#129)
 ```
 
 | File | What it holds |
@@ -31,7 +32,7 @@ RDS Postgres 16 + pgvector (private subnets)     │
 | `rds.tf` | Postgres 16, db.t4g.micro, single AZ, 7 days of backups |
 | `secrets.tf` | Secrets Manager: the RDS-managed master password (Terraform knows only its ARN), `app` (JSON, set by hand) |
 | `ecr.tf`, `ecs.tf` | Image repository, cluster, API service, job task definition, env var mapping |
-| `scheduler.tf` | The nightly and Sunday-night schedules, their dead-letter queue |
+| `scheduler.tf` | The nightly sync and chat clean-up schedules, their dead-letter queue |
 
 Agents only write and validate this code (`terraform fmt -check`, `terraform init -backend=false`, `terraform validate`). Tomislav runs `init`, `plan` and `apply` with his own SSO profile; `terraform apply` is blocked for agents in `.claude/settings.json`.
 
@@ -132,7 +133,9 @@ curl -s "$(terraform -chdir=infra output -raw api_url)/health"
 
 `/health` answers `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}` (with Redis down: 200, `"status": "degraded"`, `"redis": "error"`; with Postgres down: 503). Put `api_url` into the frontend's API setting (Cloudflare Pages, M5/M6-2). Terraform reads `terraform.tfvars` on every later plan and apply, so the schedules stay on.
 
-The morning after the first night, check that it ran: a `sync_run` row started around 01:00 local time, and no messages in the dead-letter queue (`aws sqs get-queue-attributes --queue-url "$(terraform -chdir=infra output -raw scheduler_dlq_url)" --attribute-names ApproximateNumberOfMessages`). A message there means EventBridge Scheduler couldn't start the task (for example permissions or Fargate capacity); the message says why.
+Then set the LangSmith trace retention of the production project (see "Chat retention and LangSmith traces" below); it is a launch step.
+
+The morning after the first night, check that it ran: a `purge-chats: deleted N threads` line in the job log group around 00:15 local time, a `sync_run` row started around 01:00 local time, and no messages in the dead-letter queue (`aws sqs get-queue-attributes --queue-url "$(terraform -chdir=infra output -raw scheduler_dlq_url)" --attribute-names ApproximateNumberOfMessages`). A message there means EventBridge Scheduler couldn't start the task (for example permissions or Fargate capacity); the message says why.
 
 ## Settings: where each env var comes from
 
@@ -158,6 +161,7 @@ The app reads every setting from environment variables (`src/martom/settings.py`
 | `FAST_MODEL` | `claude-haiku-5-5` | `claude-haiku-5-5` | plain |
 | `AGENT_MODEL` | `claude-sonnet-5-5` (read from M4) | not set | plain |
 | `EXTRACTION_CONCURRENCY` | not set | `4` | plain |
+| `CHAT_RETENTION_DAYS` | not set | `90` (`martom purge-chats`; the privacy notice promises 90 days) | plain |
 | `EMBEDDING_PROVIDER` | `cohere` | `cohere` | plain |
 | `EMBEDDING_MODEL` | `embed-multilingual-v3.0` | `embed-multilingual-v3.0` | plain |
 | `COHERE_API_KEY` | `app` → `COHERE_API_KEY` | same | secret (by hand) |
@@ -256,11 +260,14 @@ macOS (arm64 and x86) and Linux x86. After a provider upgrade, refresh them with
 
 ## Schedules
 
-One scheduled task a night, at 01:00 Europe/Sarajevo (00:00 UTC in winter, 23:00 UTC in summer):
+Two scheduled tasks a night, Europe/Sarajevo time (01:00 local is 00:00 UTC in winter, 23:00 UTC in summer):
 
 | Night | Schedule | Task runs |
 | --- | --- | --- |
-| every night (cron `* * ?`) | `nightly-sync` | `sync --scheduled` → `extract` → `embed` |
+| every night at 00:15 (`purge_chats_cron`) | `purge-chats` | `martom purge-chats` (the job task with its command overridden) |
+| every night at 01:00 (`nightly_sync_cron`) | `nightly-sync` | `sync --scheduled` → `extract` → `embed` |
+
+`purge-chats` deletes the customer chats (checkpointer threads) whose last message is older than `CHAT_RETENTION_DAYS` (90) and prints only the count. It takes seconds. Its start retries end after 30 min and it is killed after 15 min (`timeout 900`), so it is gone before the sync chain starts at 01:00, and the previous night's chain is killed by 17:00 UTC: the two never run at the same time. A failed purge exits 1 (the task shows as failed); the next night deletes what it missed, so nothing is kept much longer than 90 days.
 
 There is no weekly full run any more (#135). #105's full run made 2,719 OLX requests in 2 h 37 min, found no changed listing and still got 429s, so the nightly sync now does a **rolling refresh** instead: besides the listings whose list-page fields changed, it re-fetches the details of about 1/7 of the active listings (the ones fetched longest ago), so every listing is refreshed within 7 nights. OLX allows 1,000 requests per fixed hourly window (#105), so a nightly run sends at most 950 OLX requests of every kind (`OLX_NIGHTLY_REQUEST_BUDGET`): discovery and list pages, the shop profile, allowlist and re-check GETs, new, changed and last run's failed details all go through first, even past the budget (a WARNING, `request_budget_exceeded`), and the rolling slice gets what is left (`sync_run.rolling_deferred` counts what waited). A manual `--full` run has no budget. The slice runs last in the sync, after the allowlist guard and the deactivation re-check, so an OLX stop inside it can't skip those. An active listing that has left the listing pages is never in the slice; its deactivation re-check saves its detail when OLX says it is still active. `sync_run.oldest_detail_age_days` records the oldest detail among the active listings after each run, and `detail_refresh_overdue` is set when it is over 8 days, with a WARNING in the log that names the overdue listing ids (`overdue_listing_ids`): that is what the M6-3 alarm watches. `martom sync --full` still works as a one-off task (`run_once martom sync --full`, which runs at the task's 2.8 s too).
 
@@ -278,6 +285,18 @@ Worst-case timeline for one night's task:
 The job task runs every sync at `sync_request_interval` (2.8 s by default, never below 1.3): OLX allows 1,000 requests per fixed hourly window (#105), and a nightly run sends at most 950 (a typical night about 420). A `--full` run (~2,700 requests) has no budget, so expect 429 waits in it. A sync started by hand outside the task uses the Settings default of 2.0 s unless `OLX_REQUEST_INTERVAL` says otherwise.
 
 So the latest a task can still be running is 17:00 UTC (a 01:00 UTC start after an hour of start retries, plus 16 h). The RDS backup window (18:00–18:30 UTC daily) and maintenance window (Wed 19:00–20:00 UTC) come after that, in summer and winter time alike.
+
+## Chat retention and LangSmith traces
+
+Tomislav's decision (#129, 27 Nov 2026), and what the start screen's privacy notice tells customers: **chats are kept 90 days, then deleted.** Chat text lives in two places, and both must hold to it:
+
+1. **Postgres (the checkpointer tables):** `martom purge-chats` deletes them every night (see "Schedules"). Orders (`order_request`, kept 12 months under the plan's customer-data rule) are separate and never touched by it.
+2. **LangSmith:** every conversation is traced, and LangSmith keeps its own copy under its own retention. This is a LangSmith setting, not Terraform, and agents have no LangSmith keys, so **Tomislav sets it by hand before launch** (launch checklist, #33):
+   - In LangSmith, open the production tracing project (`LANGSMITH_PROJECT`, `martom-ai-production`; in the newer UI: the agent → **Tracing** → its environment) → **Retention** in the top bar → **Base**. On LangSmith Cloud, Base keeps traces **14 days**; **Extended** keeps them 180 days, which would break the 90-day promise.
+   - **Settings → Usage configuration** → the workspace's **Data retention policy** / default trace tier: **Base** too, so a project created later (a renamed `LANGSMITH_PROJECT`) also starts at 14 days.
+   - Automation rules on the production project must keep every **Extend Data Retention** toggle off (note: the "Add to Annotation Queue" action has it **on** by default), and online evaluators their retention option off: LangSmith upgrades every matching trace (with a thread rule, every trace in the thread) to 180 days. Never add the "Extend Data Retention" action itself. Feedback (thumbs) and notes added in the UI don't change a trace's retention.
+   - **Datasets are kept until deleted**, whatever the trace retention. Never "Add to dataset" from a production trace by hand: anything kept longer than 90 days (eval examples, feedback examples, `evals/*.jsonl`) goes through `martom.evals.scrub.scrub_personal_data` first.
+   - Check: the project's **Retention** shows **Base**, Settings → Rules lists no rule on the project with an extend-retention toggle on, and a trace from the first day is gone after 14 days (open its link: "not found"). Changing the setting applies only to traces ingested afterwards, so set it **before** the first real customer conversation.
 
 ## Notes
 
