@@ -367,8 +367,9 @@ async def test_an_olx_renewal_alone_costs_no_detail_request(
         ([{"sponsored": 0}, {"sponsored": 1}, {"sponsored": 2}], (2, 0)),
         ([{"sponsored": "1"}, {"sponsored": "0"}], (1, 0)),  # OLX sends some ints as text
         ([{"pinned": True}, {"pinned": None}, {"pinned": False}, {}], (0, 1)),
+        ([{"pinned": 1}, {"pinned": "1"}, {"pinned": 0}, {"sponsored": True}], (1, 2)),
         ([{"sponsored": 1, "pinned": True}, {"sponsored": None, "pinned": "true"}], (1, 1)),
-        ([{"sponsored": True}, {"sponsored": "x"}, {"sponsored": -1}], (0, 0)),
+        ([{"sponsored": False}, {"sponsored": "x"}, {"sponsored": -1}], (0, 0)),
     ],
 )
 def test_count_listing_markers(rows: list[dict[str, Any]], expected: tuple[int, int]) -> None:

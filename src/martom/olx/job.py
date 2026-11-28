@@ -154,7 +154,8 @@ class RunStats:
     rolling_deferred: int = 0  # rolling-slice listings the request budget left for later
     oldest_detail_age_days: float | None = None
     detail_refresh_overdue: bool = False
-    # Raw OLX marker counts (#179, migration 012); None: the listing pages weren't read.
+    # Raw OLX marker counts over the listings seen (#179, migration 012); read them with
+    # `coverage`. None: the run got no listing pages (apply_skipped, or paging raised).
     sponsored_count: int | None = None
     pinned_count: int | None = None
     error: str | None = None
@@ -171,8 +172,8 @@ class RunStats:
 class ListingMarkers:
     """How many listing-page rows carry each raw OLX marker (#179)."""
 
-    sponsored: int  # rows with `sponsored` > 0
-    pinned: int  # rows with `pinned` = true
+    sponsored: int  # rows with `sponsored` > 0 (or true)
+    pinned: int  # rows with `pinned` true (or > 0)
 
 
 def count_listing_markers(rows: Mapping[int, Mapping[str, Any]]) -> ListingMarkers:
@@ -182,15 +183,18 @@ def count_listing_markers(rows: Mapping[int, Mapping[str, Any]]) -> ListingMarke
     ("Izdvojeno") listing is unconfirmed (22470828 has sponsored = 1, and Toni says it
     isn't featured), so this never claims to count featured listings.
     """
-    sponsored = 0
-    pinned = 0
-    for row in rows.values():
-        value = _as_int(row.get("sponsored"))
-        if value is not None and value > 0:
-            sponsored += 1
-        if row.get("pinned") is True:  # JSON true only, like OLX sends it
-            pinned += 1
+    sponsored = sum(1 for row in rows.values() if _marker_set(row.get("sponsored")))
+    pinned = sum(1 for row in rows.values() if _marker_set(row.get("pinned")))
     return ListingMarkers(sponsored=sponsored, pinned=pinned)
+
+
+def _marker_set(value: object) -> bool:
+    """One rule for both markers: JSON true, or a number above 0 (1 or "1", since OLX
+    sends some ints as text). None, false, 0, text like "true" and negatives don't count."""
+    if value is True:
+        return True
+    number = _as_int(value)  # None for bools, so false never reaches the comparison
+    return number is not None and number > 0
 
 
 def rolling_slice_size(active_count: int, *, refresh_days: int) -> int:

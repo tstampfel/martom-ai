@@ -5,10 +5,12 @@
 -- "Izdvojeno" is unconfirmed (Toni says 22470828 isn't featured, yet OLX sends
 -- sponsored = 1 for it). Re-runs safely (IF NOT EXISTS).
 --
---   sponsored_count  unique listings seen this run whose row has `sponsored` > 0
---   pinned_count     unique listings seen this run whose row has `pinned` = true
+--   sponsored_count  unique listings seen this run whose row has `sponsored` true or > 0
+--   pinned_count     unique listings seen this run whose row has `pinned` true or > 0
 --
--- Both are NULL when the run didn't read the listing pages (an apply_skipped run, or a
--- run that stopped before paging finished). Neither ever changes the status.
+-- Both count only the listings the run saw: read them together with `coverage` (a run
+-- whose paging stopped early without an error, e.g. a clamped or empty page, saw fewer).
+-- Both are NULL when the run has no listing pages at all (an apply_skipped run, or a run
+-- that OLX stopped or failed while paging). Neither ever changes the status.
 ALTER TABLE sync_run ADD COLUMN IF NOT EXISTS sponsored_count integer;
 ALTER TABLE sync_run ADD COLUMN IF NOT EXISTS pinned_count integer;
