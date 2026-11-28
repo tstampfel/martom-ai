@@ -204,7 +204,9 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
   policy = data.aws_iam_policy_document.read_secrets.json
 }
 
-# The app itself calls no AWS API, so the tasks get no task role (no AWS permissions).
+# The API and the job call no AWS API, so they get no task role (no AWS permissions).
+# The one exception is the chat export task (chat_export.tf), whose role may only PUT
+# into the private export bucket.
 
 # --- API service ---
 

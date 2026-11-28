@@ -1,3 +1,13 @@
-# Copy to terraform.tfvars (git-ignored) after the first deploy (README step 6). Terraform
+# Copy to terraform.tfvars (git-ignored) before the first plan (README step 2). Terraform
 # reads it on every plan and apply. Only non-secret settings belong here.
-schedules_enabled = true
+
+# Turn on after the first deploy (README step 6); false until then.
+schedules_enabled = false
+
+# Needed from the first plan (README step 2): who may use the private chat export bucket
+# besides the export task (#158, chat_export.tf). Include the principal that runs
+# `terraform apply`. Fake account id below.
+chat_export_admin_arns = [
+  "arn:aws:iam::000000000000:user/tomislav",
+  # "arn:aws:iam::000000000000:role/aws-reserved/sso.amazonaws.com/eu-central-1/AWSReservedSSO_AdministratorAccess_0000000000000000",
+]
