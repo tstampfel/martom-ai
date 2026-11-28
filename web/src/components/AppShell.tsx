@@ -15,8 +15,8 @@ type AppShellProps = {
   /** Shows the 90-day chat notice in the footer (start screen only, as on the canvas). */
   showPrivacyNotice?: boolean
   /**
-   * The privacy page. Until it exists (#129) the notice has no "Privatnost"
-   * link, so it never leads to a broken page; #129 passes its route here.
+   * The privacy page (App passes /privatnost). Without it the notice has no
+   * "Privatnost" link.
    */
   privacyHref?: string
 }
@@ -46,17 +46,7 @@ export function AppShell({ children, onStartChat, cartCount = 0, showPrivacyNoti
 
   return (
     <div className="shell">
-      <div className="top-strip" data-testid="top-strip">
-        <div className="top-strip__inner">
-          <span>{copy.topStrip.delivery}</span>
-          <span>
-            {copy.shop.hours} ·{' '}
-            <a className="top-strip__phone" href={phoneHref}>
-              {copy.shop.phone}
-            </a>
-          </span>
-        </div>
-      </div>
+      <TopStrip />
 
       <header className="site-header">
         <div className="site-header__inner">
@@ -88,29 +78,67 @@ export function AppShell({ children, onStartChat, cartCount = 0, showPrivacyNoti
 
       <main className="shell__main">{children}</main>
 
-      <footer className={showPrivacyNotice ? 'site-footer site-footer--notice' : 'site-footer'}>
-        <div className="site-footer__inner site-footer__inner--wide">
-          <span className="site-footer__brand">
-            <img src={logoWhite} alt={copy.shop.name} width={992} height={308} />
-            <span>{copy.shop.address}</span>
-          </span>
-          <span>
-            <a href={`mailto:${copy.shop.email}`}>{copy.shop.email}</a> · <a href={phoneHref}>{copy.shop.phone}</a>
-          </span>
-        </div>
-        <div className="site-footer__inner site-footer__inner--narrow">
-          <span>{copy.shop.hours}</span>
-          <a className="site-footer__phone" href={phoneHref}>
-            {copy.shop.phone}
-          </a>
-        </div>
+      <SiteFooter notice={showPrivacyNotice}>
         {showPrivacyNotice && (
           <>
             {privacyNotice(copy.privacy.chatNotice, 'wide')}
             {privacyNotice(copy.privacy.chatNoticeShort, 'narrow')}
           </>
         )}
-      </footer>
+      </SiteFooter>
     </div>
+  )
+}
+
+/** Charcoal strip above the header: delivery, hours and phone (hidden on phones). */
+export function TopStrip() {
+  return (
+    <div className="top-strip" data-testid="top-strip">
+      <div className="top-strip__inner">
+        <span>{copy.topStrip.delivery}</span>
+        <span>
+          {copy.shop.hours} ·{' '}
+          <a className="top-strip__phone" href={phoneHref}>
+            {copy.shop.phone}
+          </a>
+        </span>
+      </div>
+    </div>
+  )
+}
+
+type SiteFooterProps = {
+  /** First item of the phone footer row: the hours, or the address on the privacy page. */
+  narrowStart?: string
+  /** Leaves room under the phone row for a notice (the start screen's privacy notice). */
+  notice?: boolean
+  /** Shown under the footer row. */
+  children?: ReactNode
+}
+
+/**
+ * The footer: logo, address, e-mail and phone on wide screens; one row on
+ * phones (docs/mockups/{web,mobile}/).
+ */
+export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, children }: SiteFooterProps) {
+  return (
+    <footer className={notice ? 'site-footer site-footer--notice' : 'site-footer'}>
+      <div className="site-footer__inner site-footer__inner--wide">
+        <span className="site-footer__brand">
+          <img src={logoWhite} alt={copy.shop.name} width={992} height={308} />
+          <span>{copy.shop.address}</span>
+        </span>
+        <span>
+          <a href={`mailto:${copy.shop.email}`}>{copy.shop.email}</a> · <a href={phoneHref}>{copy.shop.phone}</a>
+        </span>
+      </div>
+      <div className="site-footer__inner site-footer__inner--narrow">
+        <span>{narrowStart}</span>
+        <a className="site-footer__phone" href={phoneHref}>
+          {copy.shop.phone}
+        </a>
+      </div>
+      {children}
+    </footer>
   )
 }

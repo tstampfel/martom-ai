@@ -28,6 +28,10 @@
   --color-photo-stripe: #deded9;
   --color-photo-stripe-light: #e8e8e4;
 
+  /* Links in running text on light backgrounds (6-privatnost.html). */
+  --color-link: #185fa5;
+  --color-link-hover: #0c447c;
+
   --font-heading: 'Outfit', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
 
