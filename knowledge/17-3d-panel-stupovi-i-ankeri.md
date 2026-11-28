@@ -3,7 +3,7 @@ id: 3d-panel-stupovi-i-ankeri
 title: 3D panelna ograda – stupovi, anker ploča i ankeri
 topic: 3d-panels
 sources:
-  - "Toni, Q&A 28 Nov 2026: p3d-029, p3d-031, p3d-032, p3d-033, p3d-034, p3d-035, p3d-036, p3d-037, p3d-038, p3d-039, p3d-042, p3d-043, p3d-084"
+  - "Toni, Q&A 28 Nov 2026: p3d-029, p3d-031, p3d-032, p3d-033, p3d-034, p3d-035, p3d-036, p3d-037, p3d-038, p3d-039, p3d-040, p3d-042, p3d-043, p3d-084"
 status: approved
 ---
 
@@ -24,13 +24,15 @@ status: approved
 
 ## Ankeri
 
-- Ankeri za beton **ne dolaze u paketu sa stupovima**; dolaze posebno jer izbor ankera zavisi od kvalitete i vrste betona kod kupca.
+- Ankeri za beton **ne dolaze u paketu sa stupovima**, kupuju se posebno; dolaze posebno jer izbor ankera zavisi od kvalitete i vrste betona kod kupca.
 - Po jednom stupu idu **4 ankera** (po jedan u svaku od 4 rupe na anker ploči).
 - Mi u praksi koristimo kvalitetne **tiple fi 10 mm sa vijkom M8x80 mm** (tiplo anker M8x80). Pokazali su se izuzetno pouzdano i čvrsto kod svih vrsta betona.
 - Bušenje za tiplo anker M8x80: **svrdlo fi 10 mm, SDS** (udarna/SDS bušilica za beton).
 - Iz našeg iskustva, greške nastaju jedino kada se stupovi montiraju na star, ispucao i tanak beton, ili kada se kupi premalo kopči pa panel ne stoji dovoljno utegnuto. Zato uvijek savjetujemo 4 dobra ankera po stupu i odgovarajući broj kopči.
 
 ## Koliko stupova
+
+- Razmak između stupova prati dužinu panela: **200 cm** za panele od 200 cm, odnosno **250 cm** za panele od 250 cm.
 
 - Za 10 panela u jednom neprekinutom nizu treba **11 stupova** (uvijek broj panela + 1 stup za završetak niza).
 - **Ugao od 90 stepeni** ne treba poseban stup: isti stup 50x50 mm koristi se i za ravni dio i za ugao, samo se kopče postavljaju na dvije susjedne strane stupa.

@@ -22,6 +22,7 @@ from martom.embeddings import make_embedder
 from martom.evals.knowledge_eval import (
     KnowledgeCase,
     KnowledgeScores,
+    chunks_needing_embed,
     load_knowledge_cases,
     run_knowledge_eval,
     score_knowledge_run,
@@ -58,6 +59,12 @@ async def main(eval_set: Path, limit: int) -> None:
     settings = Settings()
     embedder = make_embedder(settings)
     async with await psycopg.AsyncConnection.connect(settings.database_url) as conn:
+        if stale := await chunks_needing_embed(conn, embedder.model):
+            # Search can't find these by their current text: they would score as misses.
+            raise SystemExit(
+                f"{len(stale)} knowledge chunks have no up-to-date {embedder.model} vector"
+                f" ({', '.join(stale)}): run `martom load-knowledge` and `martom embed` first"
+            )
         results = await run_knowledge_eval(conn, cases, embedder=embedder, limit=limit)
     print(f"knowledge search ({embedder.model})")
     print_scores(cases, results, score_knowledge_run(cases, results))

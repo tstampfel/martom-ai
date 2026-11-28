@@ -145,7 +145,7 @@ def repo_cases() -> list[KnowledgeCase]:
 
 
 def test_set_has_about_30_cases() -> None:
-    assert 28 <= len(repo_cases()) <= 35
+    assert 28 <= len(repo_cases()) <= 40
 
 
 def test_cases_use_only_cleared_entries() -> None:
@@ -186,5 +186,6 @@ def test_questions_are_held_out_from_the_knowledge_base() -> None:
 
 
 def test_cases_wait_for_approval() -> None:
-    # Tomislav fills approved_by in the PR review; until then every case is unapproved.
-    assert all(item.source == "tomislav" for item in repo_cases())
+    # Only Tomislav (or Toni) approves a case, in the PR review: an agent never fills
+    # approved_by. Tomislav changes this test in the commit that records his approvals.
+    assert [item.id for item in repo_cases() if item.approved_by] == []

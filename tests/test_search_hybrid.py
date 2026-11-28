@@ -20,7 +20,12 @@ from langchain_core.embeddings import Embeddings
 
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder, vector_literal
-from martom.evals.knowledge_eval import KnowledgeCase, run_knowledge_eval, score_knowledge_run
+from martom.evals.knowledge_eval import (
+    KnowledgeCase,
+    chunks_needing_embed,
+    run_knowledge_eval,
+    score_knowledge_run,
+)
 from martom.evals.retrieval import EvalQuestion, run_search_eval, score_run
 from martom.extract.store import VariantRow, save_products
 from martom.search import hybrid
@@ -267,6 +272,26 @@ async def test_knowledge_eval_ranks_chunk_ids(
 
     assert results == {"k": ["koke", "stupovi"]}
     assert score_knowledge_run(cases, results).mrr == 1.0
+
+
+async def test_chunks_needing_embed_are_reported(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    for chunk_id in ("done", "later"):
+        await conn.execute(
+            "INSERT INTO knowledge_chunk (id, title, topic, sources, status, body,"
+            " source_path, content_hash)"
+            " VALUES (%s, 't', 't', '{x}', 'approved', 'b', 'f.md', 'h')",
+            (chunk_id,),
+        )
+    await run_embedding(conn, embedder)
+    await conn.execute("UPDATE knowledge_chunk SET embedding = NULL WHERE id = 'later'")
+    assert await chunks_needing_embed(conn, embedder.model) == ["later"]
+    assert await chunks_needing_embed(conn, "other/model") == ["done", "later"]
+
+    # Toni edits a chunk after the last `martom embed`: its old vector is out of date.
+    await conn.execute("UPDATE knowledge_chunk SET body = 'novo' WHERE id = 'done'")
+    assert await chunks_needing_embed(conn, embedder.model) == ["done", "later"]
 
 
 # --- eval runner -----------------------------------------------------------------------

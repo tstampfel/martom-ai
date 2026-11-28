@@ -9,6 +9,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from martom.knowledge import read_chunks
 
 REPO = Path(__file__).resolve().parents[1]
@@ -44,7 +46,7 @@ def test_source_file_has_toni_s_101_entries() -> None:
 def test_no_needs_check_entry_is_in_a_chunk() -> None:
     flagged = {row["id"] for row in qa_rows() if row.get("needs_check")}
 
-    assert len(flagged) == 7
+    assert len(flagged) == 2
     assert flagged.isdisjoint(cited_ids())
 
 
@@ -71,5 +73,41 @@ def test_3d_chunks_are_approved_and_state_no_price() -> None:
     for chunk in chunks:
         assert chunk.status == "approved", chunk.id
         assert any("Toni, Q&A 28 Nov 2026" in source for source in chunk.sources), chunk.id
-        # No amount of money: no currency word or sign anywhere in the chunk.
-        assert not re.search(r"\b(KM|BAM|EUR|maraka|marka)\b|€", chunk.body), chunk.id
+
+
+# A currency word (also glued to a number: "49,90KM"), the euro sign, or ",-". "KM" and "Km"
+# are the currency; lowercase "km" is kilometres ("u krugu oko 40 km", Toni's montage radius).
+PRICE = re.compile(
+    r"(?<![A-Za-z])(K[Mm]|BAM|EUR)(?![A-Za-z])|(?i:(?<![a-z])(maraka|marka|eura?)(?![a-z]))|€|,-"
+)
+
+
+def test_no_chunk_states_a_price() -> None:
+    # Prices come only from tools (the grounding rule), in every chunk, not only the 3D ones.
+    for chunk in read_chunks(REPO / "knowledge"):
+        assert not PRICE.search(chunk.title + "\n" + chunk.body), chunk.id
+
+
+@pytest.mark.parametrize(
+    "text", ["49,90KM", "50 KM", "12 Km", "35,-", "20 €", "10 maraka", "5 eura"]
+)
+def test_price_pattern_catches_common_spellings(text: str) -> None:
+    assert PRICE.search(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["anker ploča 120x80 mm", "Kamion", "BAMBUS", "europaleta", "u krugu oko 40 km"]
+)
+def test_price_pattern_ignores_other_words(text: str) -> None:
+    assert not PRICE.search(text)
+
+
+def test_every_anchor_mention_names_its_type_and_bit() -> None:
+    # Tomislav, 28 Nov: search may return any chunk alone, so a chunk that names an M8 anchor
+    # also names the anchor type (tiplo anker / anker vijak) and the drill bit.
+    for chunk in read_chunks(REPO / "knowledge"):
+        body = chunk.body.casefold()
+        # "M8x80" or "M8" + multiplication sign + "80"
+        if re.search(r"m8\s*[x\u00d7]\s*\d+", body):
+            assert "tiplo anker" in body or "anker vijak" in body, chunk.id
+            assert "svrdlo" in body, chunk.id

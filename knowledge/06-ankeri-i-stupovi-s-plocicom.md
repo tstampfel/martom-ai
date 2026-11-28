@@ -22,7 +22,7 @@ status: draft
 
 ## Varena ograda u roli: stup sa stopom
 
-- Po stupu (stopa s 3 rupe) **3 anker vijka M8×70** (bez čahure); kao zamjena može i anker vijak M8×80. To nisu isti ankeri kao tiplo anker za panelnu ogradu.
+- Po stupu sa stopom (OLX 81645615, stopa s 3 rupe) **3 anker vijka M8×70** (bez čahure); kao zamjena može i anker vijak M8×80. To nisu isti ankeri kao tiplo anker za panelnu ogradu.
 - Boja stupa: zelena ili antracit.
 - T-stupovi idu u zemlju ili beton i ne trebaju ankere.
 
@@ -33,4 +33,4 @@ status: draft
 
 ## Napomena
 
-Ankeri i klipse su pribor: posebne stavke koje kupac može izbaciti ako ih već ima.
+Ankeri se kupuju posebno, ne dolaze uz stupove. Ankeri i klipse su pribor: posebne stavke koje kupac može izbaciti ako ih već ima.

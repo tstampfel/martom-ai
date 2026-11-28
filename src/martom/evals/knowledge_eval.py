@@ -19,7 +19,8 @@ from pathlib import Path
 
 import psycopg
 
-from martom.embeddings import Embedder
+from martom.embed_job import knowledge_text
+from martom.embeddings import Embedder, text_hash
 from martom.evals.retrieval import recall_at_k, reciprocal_rank
 from martom.search.vector import search_knowledge
 
@@ -157,3 +158,18 @@ async def run_knowledge_eval(
         hits = await search_knowledge(conn, item.question, embedder=embedder, limit=limit)
         results[item.id] = [hit.id for hit in hits]
     return results
+
+
+async def chunks_needing_embed(conn: psycopg.AsyncConnection, model: str) -> list[str]:
+    """Chunks whose vector is missing or out of date for `model`: never embedded, embedded
+    with another model, or edited since (the same `embedding_hash` test `martom embed` uses).
+    Knowledge search can't find them by their current text, so an eval run would score them
+    as misses that look like a retrieval regression."""
+    cursor = await conn.execute(
+        "SELECT id, title, body, embedding_hash, embedding IS NULL FROM knowledge_chunk ORDER BY id"
+    )
+    return [
+        chunk_id
+        for chunk_id, title, body, stored_hash, missing in await cursor.fetchall()
+        if missing or stored_hash != text_hash(model, knowledge_text(title, body))
+    ]

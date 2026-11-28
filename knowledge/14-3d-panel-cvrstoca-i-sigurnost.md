@@ -16,7 +16,7 @@ status: approved
 
 ## Vjetar i bura
 
-- Sa stupovima 50x50x1,5 mm, anker pločom 120x80x5 mm i našim preporučenim ankerima fi 10 M8x80 mm u dobrom betonu, ograda bez problema podnosi jake udare vjetra i bure.
+- Sa stupovima 50x50x1,5 mm, anker pločom 120x80x5 mm i našim preporučenim ankerima fi 10 M8x80 mm (tiplo anker M8x80: svrdlo fi 10 mm, SDS) u dobrom betonu, ograda bez problema podnosi jake udare vjetra i bure.
 
 ## Sigurnost protiv penjanja
 

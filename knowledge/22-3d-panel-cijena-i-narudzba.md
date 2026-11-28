@@ -23,7 +23,7 @@ U ovom tekstu nema cijena: cijene savjetnik uzima iz oglasa na OLX-u ili iz cjen
 - Kod nas dobijate provjerenu debljinu žice (4,50/4,75 mm), ozbiljne stupove (50x50x1,5 mm sa pločom 5 mm), kompletan prateći program (trake, kopče, čepove, kapije po mjeri), stručan savjet i opciju ugradnje sa besplatnom dostavom.
 - Prema našem iskustvu, kupci su izuzetno zadovoljni jer za pristupačnu cijenu dobiju čvrstu, modernu i dugotrajnu ogradu koju ne moraju nikada farbati, a dvorište odmah izgleda uredno i zaštićeno.
 - Prema našem iskustvu, kupci kod ovog sistema najčešće ističu čvrstoću žice (4,75 mm), preciznost anker ploče na stupovima 50x50 mm, brzinu montaže i mogućnost da naknadno dodaju trake za privatnost.
-- Veliki broj kupaca nam dolazi upravo po preporuci susjeda ili rodbine koji su već ogradili svoje dvorište našim panelima.
+- Prema našem iskustvu, veliki broj kupaca nam dolazi upravo po preporuci susjeda ili rodbine koji su već ogradili svoje dvorište našim panelima.
 
 ## Dostava i preuzimanje
 

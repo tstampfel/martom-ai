@@ -4,6 +4,7 @@ title: 3D panelna ograda – montaža, rezanje panela i kosi teren
 topic: 3d-panels
 sources:
   - "Toni, Q&A 28 Nov 2026: p3d-041, p3d-061, p3d-062, p3d-063, p3d-064, p3d-065, p3d-066, p3d-067, p3d-068, p3d-069, p3d-070, p3d-072, p3d-087"
+  - "Toni, 28.11.2026, preko Tomislava (montaža po dogovoru u krugu oko 40 km, cijena po ponudi)"
 status: approved
 ---
 
@@ -13,7 +14,7 @@ status: approved
 
 - Sistem je napravljen tako da ga uz osnovni alat i malo preciznosti može **ugraditi i sam kupac**, i kad nije profesionalni majstor.
 - **Alat za samostalnu montažu:** bušilica (udarna/SDS za beton), svrdlo za beton (tiplo anker M8x80: svrdlo fi 10 mm, SDS), ključ/gedora za zatezanje vijaka M8x80, aku-odvijač za samourezujuće vijke, metar, konac za pravac, libela i brusilica (ako bude potrebno kraćenje panela).
-- **Nudimo montažu na gotov betonski zid, cijena po ponudi.** Ugradnja je brza i profesionalna, s provjerenim materijalom i ankerima, a **uz našu montažu dostava materijala na vašu adresu je besplatna**.
+- **Montažu radimo po dogovoru u krugu oko 40 km od Međugorja**, na gotov betonski zid, **cijena po ponudi**: javite se na 036 651 427 ili info@martom-bekaert.com. Ugradnja je brza i profesionalna, s provjerenim materijalom i ankerima, a **uz našu montažu dostava materijala na vašu adresu je besplatna**.
 - Prema našem iskustvu, kod naše montaže kupci posebno cijene besplatnu dostavu, tačnu nivelaciju svih stupova pod laser/libelu i čist posao bez skrivenih troškova.
 - Martomova usluga montaže radi se **isključivo na već gotov betonski zid ili pripremljenu betonsku podlogu** (ne radimo zemljane radove ni betoniranje temelja).
 - Na gotovoj i ravnoj betonskoj podlozi, uigrana ekipa obično završi **30 do 50 metara** ograde u roku od **jednog radnog dana**.

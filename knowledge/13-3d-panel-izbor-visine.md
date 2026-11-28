@@ -4,10 +4,13 @@ title: 3D panelna ograda – koju visinu izabrati
 topic: 3d-panels
 sources:
   - "Toni, Q&A 28 Nov 2026: p3d-009, p3d-010, p3d-011, p3d-013, p3d-085"
+  - "Toni, 28.11.2026, preko Tomislava (173 cm je visina debele serije, OLX 1199211, na upit)"
 status: approved
 ---
 
 # 3D panelna ograda – koju visinu izabrati
+
+Visina 173 cm (debela serija) je na upit: cijena na upit, javite se Martomu.
 
 ## Najčešći izbor za porodičnu kuću i dvorište
 
