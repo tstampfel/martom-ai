@@ -6,8 +6,9 @@ through `scrub_personal_data` first. It replaces:
 
 - phone numbers with "[telefon]": BiH and HR numbers with a leading 0, "(061)", "+387",
   "00387" or "387", grouped with spaces, "/", "-" or "."; and a number without its 0
-  right after a phone word ("moj broj je ...", "broj telefona", "tel:", "mob."), or after
-  a bare "broj" / "kontakt" only when its digits are grouped like a phone ("61 000 000").
+  right after a phone word ("moj broj je ...", "broj telefona", "tel:", "mob.",
+  "kontakt"), or after a bare "broj" only when its digits are grouped like a phone
+  ("61 000 000").
   An OLX listing id (7-9 digits in one run: "artikal broj 61234567") always stays.
   Martom's public shop number 036 651 427 stays. A date (01/12/2026, 03 12 2026) is never
   a phone;
@@ -75,21 +76,23 @@ _PHONE_RE = re.compile(
 # "moj broj je 61 000 000", "broj telefona 61000000", "tel: 61/000-000".
 _PHONE_AFTER_PHONE_WORD_RE = re.compile(
     r"(?i)(\b(?:(?:moj\s+broj|broj\s+(?:telefona|mobitela|mobilnog))(?:\s+je)?"
-    r"|tel\.?|telefon|telefona|mob\.?|mobitel|mobitela|mobilni)\s*:?\s*)"
+    r"|tel\.?|telefon|telefona|mob\.?|mobitel|mobitela|mobilni|kontakt)\s*:?\s*)"
     rf"([1-9]\d(?:{_SEP}\d){{5,8}})(?!\w)"
 )
-# After a bare "broj" or "kontakt" the number may be a listing id (7-9 digits, R2-1), so
+# After a bare "broj" the number may be a listing id (7-9 digits, R2-1), so
 # only digits grouped the way phones are written count ("broj je 61 000 000"), and never
 # after a listing word ("artikal broj ...", "oglas broj ...", "šifra ...").
 _PHONE_AFTER_BROJ_RE = re.compile(
     r"(?i)(?:\b(artikl\w*|oglas\w*|[sš]ifr\w*)\s+)?"
-    r"(\b(?:broj|kontakt)(?:\s+je)?\s*:?\s*)"
+    r"(\bbroj(?:\s+je)?\s*:?\s*)"
     r"([1-9]\d{1,2}(?:(?:\s?[/.-]\s?|\s)\d{2,4}){2,3})(?!\w)"
 )
 # Day, month and year: never a phone, however it is separated.
 _DATE_RE = re.compile(
     r"\d{1,2}\s?([./-])\s?\d{1,2}\s?\1\s?\d{2,4}"  # 01/12/2026, 01.12.2026
-    r"|\d{1,2}\s\d{1,2}\s\d{4}"  # 03 12 2026
+    # 03 12 2026: with spaces only a real day, month and year count, so a phone grouped
+    # 2-2-4 ("01 31 0000") is still a phone.
+    r"|(?:0?[1-9]|[12]\d|3[01])\s(?:0?[1-9]|1[0-2])\s(?:19|20)\d{2}"
 )
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
@@ -123,8 +126,11 @@ _ADDRESS_LABEL_RE = re.compile(
 _NOT_HOUSE_NUMBER = (
     r"(?!\s*(?i:cm|mm|m|km|kg|l|kom\w*|komad\w*|metr\w*|metar|stub\w*|panel\w*|palet\w*"
     r"|dan\w*|sat\w*|sedmic\w*|tjed\w*|min\w*|h|x|\u00d7|%)\b"
-    # "15. decembra" (a date), "54,90" (a price), "153x250" (a size).
-    r"|\.\s*[a-zčćžšđ]|[,.]\d|\s*[x\u00d7*/])"
+    # "15. decembra" (a date: only a month name, so "7. Hvala" stays a house number),
+    # "54,90" (a price), "153x250" (a size).
+    r"|\.\s*(?i:januar|februar|mart|april|maj|jun|jul|august|septemb|oktob|novemb|decemb"
+    r"|siječ|sijec|veljač|veljac|ožuj|ozuj|travanj|travnj|svib|lipan|lipnj|srpan|srpnj"
+    r"|kolovoz|rujan|rujn|listopad|studen|prosin)\w*|[,.]\d|\s*[x\u00d7*/])"
 )
 _HOUSE_NUMBER = rf"(?:\d{{1,4}}[a-zA-Z]?\b{_NOT_HOUSE_NUMBER}|bb\b)"
 _STREET_WORDS = rf"(?:{_WORD}\.?\s+)"
@@ -226,8 +232,9 @@ def _phone_replacement(match: re.Match[str]) -> str:
 
 
 def _phone_after_word_replacement(match: re.Match[str]) -> str:
+    # A phone word says what the number is, so no date exemption here.
     prefix, number = match.group(1), match.group(2)
-    if _is_shop_phone(number) or _DATE_RE.fullmatch(number):
+    if _is_shop_phone(number):
         return match.group()
     return prefix + PHONE
 

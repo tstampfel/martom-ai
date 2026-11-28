@@ -15,6 +15,7 @@ from martom.evals.scrub import scrub_personal_data
     "phone",
     [
         "061 000 000",  # BiH mobile
+        "01 31 0000",  # a Zagreb-style number that a loose date rule would let through
         "061/000-000",
         "062-000-000",
         "063 000 0000",
@@ -53,6 +54,10 @@ def test_removes_bih_and_hr_phone_numbers(phone: str) -> None:
         ("broj telefona je 61000000", "broj telefona je [telefon]"),
         ("Kontakt: 61 000 000", "Kontakt: [telefon]"),
         ("broj je 61/000-000", "broj je [telefon]"),
+        ("Kontakt 61000000", "Kontakt [telefon]"),
+        ("kontakt telefon: 61000000", "kontakt telefon: [telefon]"),
+        # A phone word wins over a date-like shape.
+        ("tel 61 12 2026", "tel [telefon]"),
     ],
 )
 def test_removes_a_number_without_its_leading_zero_after_a_phone_word(
@@ -119,6 +124,7 @@ def test_keeps_the_shops_public_number(shop: str) -> None:
         "Ja sam iz Čitluka, trebam ogradu.",
         "Broj artikla je 61234567.",
         "Datum 03 12 2026",
+        "Datum 3 1 2027",
         "dostava u Mostar 3 dana",
         "dostava u Mostar 15. decembra",
         "Šaljemo na gradilište za 2 sata.",
@@ -224,6 +230,9 @@ def test_removes_the_address_given_in_the_order_form() -> None:
         ("dostava na kralja izmišljenog 12 citluk", "dostava na [adresa] citluk"),
         ("Pošaljite na Izmišljena 7, hvala.", "Pošaljite na [adresa], hvala."),
         ("Stanujem u Izmišljenoj 4b.", "Stanujem u [adresa]."),
+        # A sentence end after the house number is not a date (". Hvala", ". hvala").
+        ("Pošaljite na Izmišljena 7. Hvala.", "Pošaljite na [adresa]. Hvala."),
+        ("dostava na izmišljena 7. hvala", "dostava na [adresa]. hvala"),
         ("Kuća je Izmišljena bb.", "Kuća je [adresa]."),
     ],
 )
