@@ -4,7 +4,7 @@ Design reference for the customer page (issues M5-1 to M5-6). Live, clickable ca
 
 ## The canvas is the source of truth
 
-The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it; the two Privatnost screens (`web/` and `mobile/` `6-privatnost.html`) and the start and cart/order screens, whose "Privatnost" links now open them, from `1795850976-906d` (M6-5b), the only screens that changed in it; the two Privatnost screens again from `1795851325-40ff` (LangSmith and the transfer note), the only screens that changed in it.
+The design canvas is the source of truth for design (Tomislav, 26 Nov 2026). The repo mockups are synced from it, never the other way round: change a screen on the canvas first, then copy the change here. Last synced from canvas version `1795759704-9110` (M5-2g); the two results screens (`web/3-results.html`, `mobile/3-results.html`) from `1795760568-123e` (M5-4b), the only screens that changed in it; the start and cart/order screens (`web/` and `mobile/` `1-start.html`, `4-cart-order.html`) from `1795793205-4582` (M5-8: privacy texts), the only screens that changed in it; the two Privatnost screens (`web/` and `mobile/` `6-privatnost.html`) and the start and cart/order screens, whose "Privatnost" links now open them, from `1795850976-906d` (M6-5b), the only screens that changed in it; the two Privatnost screens again from `1795851325-40ff` (LangSmith and the transfer note), the only screens that changed in it; the start, clarify and Privatnost screens (`web/` and `mobile/` `1-start.html`, `2-clarify.html`, `6-privatnost.html`) from `1795853807-d861` (M5-9, which supersedes the first M5-9 sync from `1795853475-32a4`, the version that added the credit: the footer credit "Izradio i održava Stampfel Consulting" on the start and Privatnost screens, the web start OLX tile "Preko 2.500 artikala online na OLX-u, savjetnik pretražuje sve", and the AI notice on the start and clarify screens, which #151 builds), the only screens that changed since `1795851325-40ff`; the web start screen (`web/1-start.html`) from `1795853906-fa58` (the slogan band "Sve što nije ograđeno nije vaše!" between the badges and the categories, web only, text to be confirmed by Toni), the only screen that changed in it.
 
 | Canvas | Repo |
 | --- | --- |
@@ -51,12 +51,13 @@ Choosing "U zemlju (betoniram)" on screen 2 adds **one line with no price**, "St
 | Card | `#FFFFFF` with `1px #E2E2DE` border, radius 14–20 px | |
 | Strong border | `#D5D6D1` | Outlined icon buttons (phone button on mobile) |
 | Subtle divider / chip hover | `#ECECE8` | Quick-start chip hover (background and border), cart row dividers on web. Not in `tokens.css` yet; add it with the React issue that builds the chip hover |
-| Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Kako savjetnik radi" card) |
+| Text on dark | `#C9CDD4` | Secondary text on charcoal (footer, "Kako savjetnik radi" card), and the footer credit link on the web footer (9.2:1 on charcoal; the credit on the light phone footer is muted text, 6.7:1) |
 | Small print on dark | `#A9AEB6` | The privacy notice in the web start footer (6.5:1 on charcoal) |
 | Text on brand | `#FFFFFF` | Text and icons on red and charcoal |
 | Success | `#157A3A` (text/icons), `#DDF2E3` (tint) | Confirmation |
 | Agent card | `#4A4F57` (border), `#5A5F68` ("primjer" badge border), `#34C46A` (step done), `#F5A623` (step working) | "Kako savjetnik radi" card on charcoal. Since canvas version 26 the start screens show only done steps, so no mockup uses `#F5A623` now |
 | Chat on light | `#C27A00` ("?" step mark), `#DEDED9` / `#E8E8E4` (striped photo placeholder) | Agent steps and product-card placeholders on screens 2–3 |
+| Red on dark | `#FF4D5A` | The slogan's accent word "ograđeno" on charcoal (web start). 4.49:1, so large text only (24 px+, or 18.66 px+ bold) |
 | Link | `#185FA5`, `#0C447C` (hover) | Links in running text on light backgrounds (the e-mail on the Privatnost page; 5.9:1 on the page background) |
 | Headings | Outfit 700/800 | |
 | Body | Inter 400–700 | |
@@ -67,7 +68,7 @@ Touch targets are at least 44 px. Pills and buttons are fully rounded.
 ### Colour rule: where red goes (Tomislav, 26 Nov 2026)
 
 - Red (`--color-red`, `#D71222`) is only for the hero, buttons and accents on light backgrounds, and the logo.
-- Never red text on charcoal: `#D71222` on `#26292E` is only 2.8:1. Labels on charcoal (the "Vaš projekt" and "Popis materijala" eyebrows) use text on dark, `#C9CDD4`, with no decorative red mark.
+- Never red text on charcoal: `#D71222` on `#26292E` is only 2.8:1. The one exception is large text in the lighter red on dark, `#FF4D5A` (`--color-red-on-dark`, 4.49:1): the slogan's "ograđeno" on the web start screen (canvas `1795853906-fa58`). Labels on charcoal (the "Vaš projekt" and "Popis materijala" eyebrows) use text on dark, `#C9CDD4`, with no decorative red mark.
 
 ## Assets
 

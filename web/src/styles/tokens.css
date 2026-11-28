@@ -28,6 +28,10 @@
   --color-photo-stripe: #deded9;
   --color-photo-stripe-light: #e8e8e4;
 
+  /* Red accent on charcoal: the slogan's "ograđeno" (web/1-start.html).
+     4.49:1 on charcoal, so large text only (24 px+, or 18.66 px+ bold). */
+  --color-red-on-dark: #ff4d5a;
+
   /* Links in running text on light backgrounds (6-privatnost.html). */
   --color-link: #185fa5;
   --color-link-hover: #0c447c;
