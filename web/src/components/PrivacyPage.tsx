@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import logo from '../assets/martom-logo.png'
-import { copy } from '../copy'
+import { config } from '../config'
+import { copy, telHref } from '../copy'
 import { SiteFooter, TopStrip } from './AppShell'
 import './AppShell.css'
 import './PrivacyPage.css'
@@ -11,8 +12,11 @@ const page = copy.privacyPage
  * The "Privatnost" page (docs/mockups/{web,mobile}/6-privatnost.html). It has
  * its own header, with a link back to the advisor instead of the categories
  * and the cart; the top strip and the footer are AppShell's.
+ *
+ * `langSmith` says whether to name LangSmith among the processors; it
+ * follows VITE_LANGSMITH_ENABLED and is a prop only so tests can show both.
  */
-export function PrivacyPage() {
+export function PrivacyPage({ langSmith = config.langSmithEnabled }: { langSmith?: boolean }) {
   // The tab title follows the page; index.html keeps the site's own title.
   useEffect(() => {
     const previous = document.title
@@ -54,6 +58,13 @@ export function PrivacyPage() {
                   {i > 0 && <br />}
                   {'label' in line && <b>{line.label}</b>}
                   {line.text}
+                  {langSmith && 'langSmith' in line && line.langSmith}
+                  {'link' in line && (
+                    <a className="privacy-page__link" href={line.link.href} target="_blank" rel="noopener">
+                      {line.link.label}
+                    </a>
+                  )}
+                  {'textAfter' in line && line.textAfter}
                 </span>
               ))}
               {'contact' in section && (
@@ -61,7 +72,11 @@ export function PrivacyPage() {
                   <a className="privacy-page__link" href={`mailto:${copy.shop.email}`}>
                     {copy.shop.email}
                   </a>
-                  {` · ${copy.shop.phone}.`}
+                  {' · '}
+                  <a className="privacy-page__link" href={telHref(copy.shop.phone)}>
+                    {copy.shop.phone}
+                  </a>
+                  {'.'}
                 </>
               )}
             </p>

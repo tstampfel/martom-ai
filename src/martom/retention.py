@@ -7,7 +7,7 @@ the whole thread for another 90 days.
 
 The job only ever deletes through the saver's `adelete_thread`, which touches the
 library's `checkpoints`, `checkpoint_blobs` and `checkpoint_writes` rows of that thread
-and nothing else: orders (`order_request`, kept 12 months) are never affected.
+and nothing else: orders (`order_request`, kept 30 days by their own job, #27) are never affected.
 
 It logs and returns counts only, never thread ids (they are the customers' session
 tokens) or chat text.
