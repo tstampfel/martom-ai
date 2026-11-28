@@ -63,3 +63,13 @@ output "umami_db_setup_task_definition" {
   description = "Task definition family of the one-off task that creates Umami's database and role."
   value       = aws_ecs_task_definition.umami_db_setup.family
 }
+
+output "chat_export_bucket" {
+  description = "Private bucket `martom export-chats` writes scrubbed chats to (objects deleted within 90 days)."
+  value       = aws_s3_bucket.chat_export.bucket
+}
+
+output "chat_export_task_definition" {
+  description = "Task definition family for `martom export-chats` (README, \"Exporting chats\")."
+  value       = aws_ecs_task_definition.chat_export.family
+}

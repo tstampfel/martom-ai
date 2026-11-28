@@ -20,6 +20,12 @@ from langchain_core.embeddings import Embeddings
 
 from martom.embed_job import run_embedding
 from martom.embeddings import EMBEDDING_DIMENSIONS, Embedder, vector_literal
+from martom.evals.knowledge_eval import (
+    KnowledgeCase,
+    chunks_needing_embed,
+    run_knowledge_eval,
+    score_knowledge_run,
+)
 from martom.evals.retrieval import EvalQuestion, run_search_eval, score_run
 from martom.extract.store import VariantRow, save_products
 from martom.search import hybrid
@@ -248,6 +254,44 @@ async def test_knowledge_search_finds_the_closest_chunk(
     hits = await search_knowledge(conn, "ograda za kokoši", embedder=embedder, limit=1)
     assert [(h.id, h.title, h.status) for h in hits] == [("koke", "Mreža za kokoši", "draft")]
     assert hits[0].body.startswith("Za koke")
+
+
+async def test_knowledge_eval_ranks_chunk_ids(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    for chunk_id, body in (("stupovi", "Stup na svaki panel."), ("koke", "Mreža za kokoši.")):
+        await conn.execute(
+            "INSERT INTO knowledge_chunk (id, title, topic, sources, status, body,"
+            " source_path, content_hash) VALUES (%s, 't', 't', '{x}', 'approved', %s, 'f.md', 'h')",
+            (chunk_id, body),
+        )
+    await run_embedding(conn, embedder)
+    cases = [KnowledgeCase("k", "imam koke", ("koke",), ("f",), ("p3d-001",), "tomislav", "")]
+
+    results = await run_knowledge_eval(conn, cases, embedder=embedder, limit=2)
+
+    assert results == {"k": ["koke", "stupovi"]}
+    assert score_knowledge_run(cases, results).mrr == 1.0
+
+
+async def test_chunks_needing_embed_are_reported(
+    conn: psycopg.AsyncConnection, embedder: Embedder
+) -> None:
+    for chunk_id in ("done", "later"):
+        await conn.execute(
+            "INSERT INTO knowledge_chunk (id, title, topic, sources, status, body,"
+            " source_path, content_hash)"
+            " VALUES (%s, 't', 't', '{x}', 'approved', 'b', 'f.md', 'h')",
+            (chunk_id,),
+        )
+    await run_embedding(conn, embedder)
+    await conn.execute("UPDATE knowledge_chunk SET embedding = NULL WHERE id = 'later'")
+    assert await chunks_needing_embed(conn, embedder.model) == ["later"]
+    assert await chunks_needing_embed(conn, "other/model") == ["done", "later"]
+
+    # Toni edits a chunk after the last `martom embed`: its old vector is out of date.
+    await conn.execute("UPDATE knowledge_chunk SET body = 'novo' WHERE id = 'done'")
+    assert await chunks_needing_embed(conn, embedder.model) == ["done", "later"]
 
 
 # --- eval runner -----------------------------------------------------------------------

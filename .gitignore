@@ -21,6 +21,9 @@
 !tests/fixtures/**/*.csv
 !tests/fixtures/**/*.jsonl
 !evals/**/*.jsonl
+# Toni's raw knowledge Q&A (#169), the source of the knowledge/ chunks; scanned by
+# tests/test_fixture_privacy.py like the fixtures.
+!knowledge/sources/*.jsonl
 !tests/fixtures/**/*dump*.json
 
 # --- Review reports and screenshots (local only) ---

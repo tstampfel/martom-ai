@@ -214,3 +214,24 @@ variable "umami_origin_secret" {
     error_message = "Use 32 to 128 letters and digits, e.g. openssl rand -hex 32 (an ALB header condition allows at most 128 characters)."
   }
 }
+
+# --- Private chat export (#158, chat_export.tf) ---
+
+variable "chat_export_admin_arns" {
+  description = <<-EOT
+    Who besides the export task may use the chat export bucket: Tomislav's IAM user ARN
+    (arn:aws:iam::<account>:user/<name>) and, when he signs in with SSO, the permission
+    set's role ARN (arn:aws:iam::<account>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_<set>_<id>;
+    aws:PrincipalArn is the role, not the session). It must include whoever runs
+    `terraform apply`, or Terraform itself is refused on the bucket. No default: set it
+    in terraform.tfvars.
+  EOT
+  type        = list(string)
+
+  validation {
+    condition = length(var.chat_export_admin_arns) > 0 && alltrue([
+      for arn in var.chat_export_admin_arns : can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/.+$", arn))
+    ])
+    error_message = "List at least one IAM user or role ARN (arn:aws:iam::<12-digit account>:user/... or :role/...)."
+  }
+}

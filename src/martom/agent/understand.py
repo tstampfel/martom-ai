@@ -63,8 +63,9 @@ class Understanding(BaseModel):
 
     in_scope: bool = Field(
         description="True when the customer asks about anything a hardware store "
-        "(željezarija) like Martom sells or does: fences, posts, mesh, tools, fittings, "
-        "screws, chains, building hardware, garden and farm supplies. False for anything "
+        "(željezarija) like Martom sells or does: fences, gates, fence installation, posts, "
+        "mesh, tools, fittings, screws, chains, building hardware, garden and farm "
+        "supplies. False for anything "
         "else (weather, politics, homework, other shops)."
     )
     request: RequestKind = Field(
@@ -73,8 +74,22 @@ class Understanding(BaseModel):
         "(pletivo, baklava, pletena žica). fence_eurofence: Eurofence. fence_unknown_type: "
         "a fence of no stated type. product: any other product. other: no product at all."
     )
-    asks_gate: bool = Field(description="Mentions a gate (kapija, vrata u ogradi).")
-    asks_installation: bool = Field(description="Asks about installation (montaža, ugradnja).")
+    asks_gate: bool = Field(
+        description="Mentions a gate in a fence or yard (kapija, vrata u ogradi)."
+    )
+    asks_installation: bool = Field(
+        description="Asks whether Martom installs a fence (montaža ograde). False for "
+        "installing anything else (klima, bojler, vrata)."
+    )
+    asks_anchors_included: bool = Field(
+        description="Asks whether anchors come with the fence posts or are sold separately "
+        "(dolaze li ankeri uz stupove)."
+    )
+    asks_drilling: bool = Field(
+        description="Asks about drilling for fence posts or their anchors, or which drill "
+        "bit they need (svrdlo za ankere, bušenje za stupove). False for drilling anything "
+        "else."
+    )
     asks_concrete: bool = Field(
         description="Asks to buy concrete or for construction work (beton, temelj, zidanje)."
     )
@@ -249,17 +264,25 @@ def plan_turn(
     eurofence_heights: list[int] | None = None,
 ) -> Plan:
     """Where this turn goes. `follow_up`: the message answers the previous chips."""
-    notes = _topic_notes(understanding)
+    notes = _topic_notes(understanding, spec)
     extra_lines: list[ExtraLine] = []
-    if not understanding.in_scope:
+    # The anchors answer is added by the graph at the end of the turn (it depends on
+    # whether this chat's materials list has anchors), so it counts as a topic here.
+    topical = bool(notes) or anchors_question(understanding, spec)
+    # A gate question is never refused, even when the guardrail called it out of scope;
+    # the other fence topics only with a fence in the chat (review R1-4).
+    rescued = understanding.asks_gate or (topical and _fence_context(understanding, spec))
+    if not understanding.in_scope and not rescued:
         return Plan("respond", answer=copy.OUT_OF_SCOPE)
 
     request = understanding.request
     fence_follow_up = follow_up and spec.kind is not None
     if request == "fence_chain_link":
         return Plan("respond", answer=_join(copy.CHAIN_LINK, *notes), contact_martom=True)
-    if request == "other" and not fence_follow_up:
-        answer = _join(*notes) if notes else copy.OUT_OF_SCOPE
+    # A gate, installation, anchors or drilling question is answered with Martom's fixed
+    # texts (#171).
+    if (request == "other" and not fence_follow_up) or not understanding.in_scope:
+        answer = _join(*notes) if topical else copy.OUT_OF_SCOPE
         return Plan("respond", answer=answer)
     if request == "fence_eurofence":
         missing = _eurofence_missing(spec.height_cm, eurofence_heights)
@@ -471,15 +494,73 @@ def _project(spec: FenceSpec) -> ProjectSummary:
     return ProjectSummary(title=title, length_m=spec.total_length_m, facts=facts)
 
 
-def _topic_notes(understanding: Understanding) -> list[str]:
+def _topic_notes(understanding: Understanding, spec: FenceSpec) -> list[str]:
     notes = []
     if understanding.asks_gate:
         notes.append(copy.GATE)
-    if understanding.asks_installation:
+    if understanding.asks_installation and _fence_topic_applies(understanding, spec):
         notes.append(copy.INSTALLATION)
     if understanding.asks_concrete:
         notes.append(copy.NO_CONCRETE_SALES)
+    if understanding.asks_drilling and _fence_topic_applies(understanding, spec):
+        notes.extend(drilling_notes(spec))
     return notes
+
+
+def anchors_question(understanding: Understanding, spec: FenceSpec) -> bool:
+    """The customer asked whether anchors come with the fence posts (#171).
+
+    The flag is fence-scoped by its own description, so any in-scope turn counts, a
+    product turn too ("dolaze li ankeri uz stupove?" reads as a product question; review
+    R2-1); an out-of-scope one only with a fence in the chat.
+    """
+    if not understanding.asks_anchors_included:
+        return False
+    return understanding.in_scope or _fence_context(understanding, spec)
+
+
+def drilling_question(understanding: Understanding, spec: FenceSpec) -> bool:
+    """The customer asked about drilling for fence posts, with the same gate as the
+    drilling notes, so a mis-flagged drill-bit product question isn't checked as one."""
+    return understanding.asks_drilling and _fence_topic_applies(understanding, spec)
+
+
+def _fence_context(understanding: Understanding, spec: FenceSpec) -> bool:
+    """A fence is in this chat: a fence request or a gate question now, or a fence spec
+    from earlier (a gate is part of a fence, so "kapija i montaža" gets both texts)."""
+    return (
+        spec.kind is not None
+        or understanding.request.startswith("fence_")
+        or understanding.asks_gate
+    )
+
+
+def _fence_topic_applies(understanding: Understanding, spec: FenceSpec) -> bool:
+    """The installation, drilling and anchors texts are about fences only (review R1-4).
+
+    They need a fence in the chat, or a question about nothing but that topic (an
+    in-scope "other" request; the guardrail flags only fence questions). A product turn
+    without a fence ("bojler i ugradnja") never gets them.
+    """
+    if _fence_context(understanding, spec):
+        return True
+    return understanding.in_scope and understanding.request == "other"
+
+
+def drilling_notes(spec: FenceSpec) -> list[str]:
+    """The anchor type with its drill bit, for this fence (Toni, 28 Nov 2026, #171).
+
+    Panel posts take tiplo anker M8x80 (10 mm SDS bit); roll-fence foot-plate posts
+    take anker vijak M8x70 or M8x80 (8 mm bit). T-posts need no anchors, so a roll fence
+    on T-posts gets that text instead (review R1-5). With no fence type yet, both.
+    """
+    if spec.kind == "panel":
+        return [copy.DRILLING_PANEL]
+    if spec.kind == "roll":
+        if spec.posts == RollPostModel.T_POST.value:
+            return [copy.DRILLING_T_POST]
+        return [copy.DRILLING_FOOT_PLATE]
+    return [copy.DRILLING_PANEL, copy.DRILLING_FOOT_PLATE]
 
 
 def _eurofence_missing(height_cm: int | None, heights: list[int] | None) -> str | None:

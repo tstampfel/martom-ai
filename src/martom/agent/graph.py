@@ -93,12 +93,15 @@ from martom.agent.tools import (
 from martom.agent.understand import (
     FenceSpec,
     Understanding,
+    anchors_question,
     default_panel_width,
+    drilling_question,
     plan_turn,
     update_spec,
 )
 from martom.api.chat_events import ExtraLine
 from martom.api.chat_request import ClarifyAnswers
+from martom.bom.common import Item
 from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.bom.roll import POST_SPACING_CM
 
@@ -145,6 +148,13 @@ class AgentState(TypedDict, total=False):
     # A product went into the cart as 1 piece (not from the materials list): the answer
     # gets copy.CART_QUANTITY, "change the quantity in the korpa" (#147).
     cart_note: bool
+    # The customer asked whether anchors come with the posts (#171): the answer gets
+    # copy.ANCHORS_SOLD_SEPARATELY, or its "already on your list" form when this chat's
+    # materials list has an anchor line at the end of the turn.
+    anchors_question: bool
+    # The customer asked about drilling for fence posts (#171): the grounding check then
+    # fails a bare anchor-bit size ("svrdlo ø10 mm") even without a fence word in it.
+    drilling_question: bool
     chips: dict[str, Any] | None
     notes: list[str]
     extra_lines: list[dict[str, Any]]  # chat_events.ExtraLine
@@ -249,6 +259,8 @@ def build_graph(
             **_bom_update(state, previous, plan.spec, clear=plan.contact_martom),
             "cart": [],
             "cart_note": False,
+            "anchors_question": anchors_question(understanding, spec),
+            "drilling_question": drilling_question(understanding, spec),
             "rewrite_failed": False,
             "chips": plan.chips.model_dump(mode="json") if plan.chips else None,
             "notes": plan.notes,
@@ -263,7 +275,7 @@ def build_graph(
         }
 
     async def clarify(state: AgentState) -> dict[str, Any]:
-        answer = _join(state.get("answer") or "", *state.get("notes", []))
+        answer = _join(state.get("answer") or "", *_final_notes(state))
         return {"answer": answer, "messages": [AIMessage(answer)]}
 
     async def retrieve(state: AgentState) -> dict[str, Any]:
@@ -408,9 +420,14 @@ def build_graph(
             return _fallback(state, remove=None)
         text = last.text.strip()
         facts = _facts(state).merge(_bom_facts(state))
-        result = check_grounding(text, facts, known_numbers=_customer_numbers(state))
+        result = check_grounding(
+            text,
+            facts,
+            known_numbers=_customer_numbers(state),
+            drilling=state.get("drilling_question", False),
+        )
         if text and not last.tool_calls and result.ok:
-            notes = list(state.get("notes", []))
+            notes = _final_notes(state)
             if state.get("cart_note"):
                 notes.append(copy.CART_QUANTITY)
             return {"answer": _join(text, *notes)}
@@ -543,10 +560,30 @@ def _fallback(state: AgentState, *, remove: BaseMessage | None) -> dict[str, Any
     hits = state.get("hits", []) if state.get("grade") == "ok" else []
     lines = [line for hit in hits[:FALLBACK_RESULTS] if (line := _fallback_line(hit))]
     text = "\n".join([copy.FALLBACK_INTRO, *lines]) if lines else copy.FALLBACK_NO_RESULTS
-    answer = _join(text, *state.get("notes", []))
+    answer = _join(text, *_final_notes(state))
     messages: list[BaseMessage] = [RemoveMessage(id=remove.id)] if remove and remove.id else []
     messages.append(AIMessage(answer))
     return {"answer": answer, "fallback": True, "messages": messages}
+
+
+def _final_notes(state: AgentState) -> list[str]:
+    """The fixed texts that follow the answer: the anchors answer first, then the plan's
+    notes. Built at the end of the turn, so a list made in this turn counts (#171)."""
+    notes = list(state.get("notes", []))
+    if state.get("anchors_question"):
+        anchors = (
+            copy.ANCHORS_SOLD_SEPARATELY_IN_LIST
+            if _bom_has_anchors(state.get("bom"))
+            else copy.ANCHORS_SOLD_SEPARATELY
+        )
+        notes.insert(0, anchors)
+    return notes
+
+
+def _bom_has_anchors(bom: dict[str, Any] | None) -> bool:
+    """The list has an anchor line (panel posts, foot-plate posts; T-posts take none)."""
+    anchors = {Item.ANCHOR_M8X80.value, Item.ANCHOR_M8X70.value}
+    return bool(bom) and any(line["item"] in anchors for line in bom.get("lines", []))
 
 
 def _fallback_line(hit: dict[str, Any]) -> str | None:
@@ -653,6 +690,8 @@ def _fallback_understanding(question: str) -> Understanding:
         request="product",
         asks_gate=False,
         asks_installation=False,
+        asks_anchors_included=False,
+        asks_drilling=False,
         asks_concrete=False,
         wants_concrete_posts=False,
         height=None,

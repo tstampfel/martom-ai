@@ -236,6 +236,26 @@ def test_summary_hash_changes_when_listing_content_changes(
     assert summary_hash({**row, field: value}) != summary_hash(row)
 
 
+def test_a_renewal_changes_only_fields_the_summary_hash_leaves_out(
+    recorded: dict[str, Any],
+) -> None:
+    """#179: an OLX renewal ("Obnovi", 7 days; featured "Izdvojeno", 8 h or 24 h) moves
+    `date` and may change the featured fields, all at once; none of it is a change."""
+    row = recorded["summary_row"]
+    renewed = {
+        **row,
+        "date": row["date"] + 24 * 3600,
+        "sponsored": 2,
+        "pinned": True,
+        "premium_badges": ["x"],
+        "labels": ["x"],
+        "score": 9.5,
+        "refresh_available": True,
+    }
+    assert summary_hash(renewed) == summary_hash(row)
+    assert needs_detail_fetch(renewed, summary_hash(row)) is False
+
+
 def test_needs_detail_fetch_only_for_new_or_changed_summaries(recorded: dict[str, Any]) -> None:
     row = recorded["summary_row"]
     assert needs_detail_fetch(row, None) is True

@@ -1,6 +1,6 @@
 """Manual products in search (#112): keep `manual_product` in step with manual_products.toml.
 
-Products Toni sells without an OLX listing (today only "Anker M8×70") live in the reviewed
+Products Toni sells without an OLX listing (today only "Anker vijak M8×70") live in the reviewed
 `src/martom/bom/manual_products.toml`. Search reads `manual_product`, an index of that file:
 keyword search over its normalised text, vector search over its embedding (`martom embed`),
 the same as `product` for OLX listings. Hits from it say `source="manual"`, carry the TOML
@@ -45,9 +45,10 @@ def manual_search_text(product: ManualProduct) -> str:
     """The text keyword search indexes, embedding and the reranker read for a manual product.
 
     The name as written, then the plain-"x" spelling of each word that has a "×"
-    ("Anker M8×70" -> "Anker M8×70 M8x70"). Every other word appears once: ts_rank_cd counts
-    each occurrence, and keyword search merges manual and listing scores directly, so a
-    repeated name would weigh twice as much as the same words in a listing (R1-0).
+    ("Anker vijak M8×70" -> "Anker vijak M8×70 M8x70"). Every other word appears once:
+    ts_rank_cd counts each occurrence, and keyword search merges manual and listing scores
+    directly, so a repeated name would weigh twice as much as the same words in a listing
+    (R1-0).
     """
     plain = [word.replace(_TIMES, "x") for word in product.name.split() if _TIMES in word]
     return " ".join([product.name, *plain])
@@ -91,7 +92,7 @@ async def sync_manual_products(
                     product.key,
                     product.name,
                     # No product type is written in the TOML; the name stands in for it, so
-                    # a type filter such as "anker" matches "Anker M8×70".
+                    # a type filter such as "anker" matches "Anker vijak M8×70".
                     product.name,
                     product.price_km,
                     search_text,

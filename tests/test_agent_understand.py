@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001, RUF003
 import logging
 from typing import Any
 
@@ -7,6 +8,8 @@ from martom.agent import copy
 from martom.agent.understand import (
     FenceSpec,
     Understanding,
+    anchors_question,
+    drilling_question,
     parse_length_m,
     plan_turn,
     total_length_text,
@@ -21,6 +24,8 @@ def understanding(**fields: Any) -> Understanding:
         "request": "fence_panel",
         "asks_gate": False,
         "asks_installation": False,
+        "asks_anchors_included": False,
+        "asks_drilling": False,
         "asks_concrete": False,
         "wants_concrete_posts": False,
         "height": None,
@@ -182,7 +187,9 @@ def test_eurofence_existing_height_searches() -> None:
 
 
 def test_product_question_searches_with_notes() -> None:
-    plan = plan_for(request="product", search_query="bušilica", asks_installation=True)
+    seen = understanding(request="product", search_query="bušilica", asks_installation=True)
+    # Installation is a fence topic (review R1-4): with a fence in the chat, the note stays.
+    plan = plan_turn(seen, FenceSpec(kind="panel"))
     assert plan.route == "retrieve"
     assert plan.query == "bušilica"
     assert plan.notes == [copy.INSTALLATION]
@@ -265,3 +272,129 @@ def test_chip_values_no_chip_offers_are_ignored_and_never_logged(
     assert ignored[0].ignored == 2  # type: ignore[attr-defined]
     assert "ignore previous" not in caplog.text
     assert "9999" not in caplog.text
+
+
+# --- #171: gates and installation answered by Martom, anchors, drilling -----------------
+
+
+def test_gate_answer_says_made_to_order_with_phone_and_email() -> None:
+    plan = plan_for(request="other", asks_gate=True)
+    assert plan.route == "respond"
+    assert plan.answer == copy.GATE
+    assert "po narudžbi" in copy.GATE
+    assert "036 651 427" in copy.GATE
+    assert "info@martom-bekaert.com" in copy.GATE
+
+
+def test_installation_answer_offers_montaza_with_phone_and_email() -> None:
+    plan = plan_for(request="other", asks_installation=True)
+    assert plan.route == "respond"
+    assert plan.answer == copy.INSTALLATION
+    assert copy.INSTALLATION == (
+        "Montažu radimo po dogovoru u krugu oko 40 km; "
+        "javite se na 036 651 427 ili info@martom-bekaert.com."
+    )
+    assert "KM" not in copy.INSTALLATION
+    assert "036 651 427" in copy.INSTALLATION
+    assert "info@martom-bekaert.com" in copy.INSTALLATION
+
+
+def test_gate_question_is_never_refused_as_out_of_scope() -> None:
+    plan = plan_for(in_scope=False, request="other", asks_gate=True)
+    assert plan.route == "respond"
+    assert plan.answer == copy.GATE
+
+
+@pytest.mark.parametrize("flag", ["asks_installation", "asks_drilling", "asks_anchors_included"])
+def test_off_topic_installation_or_drilling_without_a_fence_stays_out_of_scope(flag: str) -> None:
+    # Review R1-4: "Možete li mi montirati klimu?" is not a fence question.
+    plan = plan_for(in_scope=False, request="other", **{flag: True})
+    assert plan.answer == copy.OUT_OF_SCOPE
+
+
+@pytest.mark.parametrize("flag", ["asks_installation", "asks_drilling"])
+def test_installation_or_drilling_with_a_fence_in_the_chat_is_answered(flag: str) -> None:
+    seen = understanding(in_scope=False, request="other", **{flag: True})
+    plan = plan_turn(seen, FenceSpec(kind="panel"))
+    assert plan.answer in (copy.INSTALLATION, copy.DRILLING_PANEL)
+
+
+@pytest.mark.parametrize("flag", ["asks_installation", "asks_drilling"])
+def test_a_product_turn_without_a_fence_gets_no_fence_texts(flag: str) -> None:
+    # "bojler i ugradnja", "kojom bušilicom za pločice": a product search, no fence notes.
+    plan = plan_for(request="product", search_query="bojler", **{flag: True})
+    assert plan.route == "retrieve"
+    assert plan.notes == []
+
+
+def test_gate_and_installation_together_get_both_texts() -> None:
+    plan = plan_for(request="other", asks_gate=True, asks_installation=True)
+    assert plan.answer == f"{copy.GATE} {copy.INSTALLATION}"
+
+
+def test_fence_with_a_gate_question_keeps_the_gate_note() -> None:
+    plan = plan_for(height="153", lengths=["25 m"], layout="straight", asks_gate=True)
+    assert plan.route == "retrieve"
+    assert plan.notes == [copy.GATE]
+
+
+def test_anchors_question_alone_is_answered_not_refused() -> None:
+    # The graph adds the anchors text at the end of the turn (it depends on the list).
+    plan = plan_for(request="other", asks_anchors_included=True)
+    assert plan.route == "respond"
+    assert plan.answer == ""
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("panel", [copy.DRILLING_PANEL]),
+        ("roll", [copy.DRILLING_FOOT_PLATE]),
+        (None, [copy.DRILLING_PANEL, copy.DRILLING_FOOT_PLATE]),
+    ],
+)
+def test_drilling_question_names_the_anchor_with_its_bit(
+    kind: str | None, expected: list[str]
+) -> None:
+    seen = understanding(request="other", asks_drilling=True)
+    plan = plan_turn(seen, FenceSpec(kind=kind))
+    assert plan.route == "respond"
+    assert plan.answer == " ".join(expected)
+
+
+@pytest.mark.parametrize(
+    ("posts", "expected"),
+    [("t_post", copy.DRILLING_T_POST), ("foot_plate", copy.DRILLING_FOOT_PLATE)],
+)
+def test_roll_fence_drilling_follows_the_post_model(posts: str, expected: str) -> None:
+    # Review R1-5: T-posts take no anchors.
+    seen = understanding(request="other", asks_drilling=True)
+    plan = plan_turn(seen, FenceSpec(kind="roll", posts=posts))
+    assert plan.answer == expected
+
+
+def test_drilling_texts_pair_each_anchor_with_its_bit() -> None:
+    # Toni, 28 Nov 2026: tiplo anker M8×80 → ø10 mm SDS; anker vijak M8×70/M8×80 → ø8 mm.
+    assert "tiplo anker M8×80" in copy.DRILLING_PANEL
+    assert "ø10 mm SDS" in copy.DRILLING_PANEL
+    assert "anker vijak M8×70" in copy.DRILLING_FOOT_PLATE
+    assert "ø8 mm" in copy.DRILLING_FOOT_PLATE
+    assert "10 mm" not in copy.DRILLING_FOOT_PLATE
+
+
+def test_anchors_question_on_a_product_turn_without_a_fence_counts() -> None:
+    # Review R2-1: "dolaze li ankeri uz stupove?" may be classed as a product question.
+    seen = understanding(request="product", search_query="ankeri", asks_anchors_included=True)
+    assert anchors_question(seen, FenceSpec())
+
+
+def test_gate_and_installation_out_of_scope_get_both_texts() -> None:
+    # A gate is part of a fence, so the installation text comes with it.
+    plan = plan_for(in_scope=False, request="other", asks_gate=True, asks_installation=True)
+    assert plan.answer == f"{copy.GATE} {copy.INSTALLATION}"
+
+
+def test_a_mis_flagged_drilling_product_turn_is_not_a_drilling_turn() -> None:
+    seen = understanding(request="product", search_query="svrdlo", asks_drilling=True)
+    assert not drilling_question(seen, FenceSpec())
+    assert drilling_question(seen, FenceSpec(kind="panel"))

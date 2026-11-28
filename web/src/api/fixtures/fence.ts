@@ -196,7 +196,7 @@ export const rollFenceSomeOnRequest: ChatEvent[] = [
       line('post_foot_plate', 'Stup sa stopom 100 cm', '100 cm', 14, '14.00', '196.00'),
       line('brace_t_post', 'Potporni stup 100 cm', '100 cm', 2, null, null),
       line('tensioner', 'Zatezač (španer)', null, 3, '1.65', '4.95'),
-      line('anchor_m8x70', 'Anker M8×70', 'M8×70', 42, '0.80', '33.60'),
+      line('anchor_m8x70', 'Anker vijak M8×70', 'M8×70', 42, '0.80', '33.60'),
     ],
     total: '292.55',
     unpriced_count: 1,

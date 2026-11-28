@@ -104,6 +104,10 @@ class Settings(BaseSettings):
     # task sends only a SCRAM verifier of it to Postgres (src/martom/umami_db.py).
     umami_db_password: SecretStr | None = None
 
+    # The private S3 bucket `martom export-chats` writes scrubbed chats to (#158,
+    # infra/chat_export.tf); unset locally, where `--out <folder outside the repo>` is used.
+    chat_export_bucket: str | None = None
+
     # mode="before" runs on the raw env value, before pydantic checks the type.
     @field_validator("log_level", mode="before")
     @classmethod

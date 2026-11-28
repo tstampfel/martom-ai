@@ -17,8 +17,7 @@ status: draft
 ## Panelna ograda
 
 - Stup stoji između svaka dva panela i na oba kraja ograde. Primjer: 25 m ravne ograde s panelima od 250 cm = **10 panela i 11 stupova**.
-- Visina stupa s pločicom je za 2 cm veća od panela: panel 83 → stup 85, 103 → 105, 123 → 125, 153 → 155, 203 → 205 cm.
-- **Kut** koristi **jedan** stup koji dijele obje strane, a ne dodatni stup.
+- Stupovi, ugao i ankeri kod 3D panela: vidi "3D panelna ograda – stupovi, anker ploča i ankeri".
 
 ## Varena ograda u roli
 
