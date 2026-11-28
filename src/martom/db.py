@@ -14,9 +14,35 @@ from psycopg_pool import AsyncConnectionPool
 
 type Connector = psycopg.AsyncConnection | AsyncConnectionPool
 
-# Connections for catalogue reads and searches; each is borrowed for one query or one
-# search, so a few cover many concurrent chats.
-QUERY_POOL_MAX_SIZE = 10
+# --- The API's Postgres connection budget (all pool sizes live here) ----------------
+#
+# The instance: db.t4g.micro (infra/variables.tf `db_instance_class`). RDS sets
+# max_connections to LEAST({DBInstanceClassMemory/9531392}, 5000) (RDS docs, "Maximum
+# number of database connections"). 1 GiB would give 112, but DBInstanceClassMemory
+# excludes the memory RDS keeps for the OS, so a micro reports roughly 80-90; we budget
+# on the low end, 80. RDS keeps 3 of them for superusers. Re-check these numbers
+# (`SHOW max_connections;`) when the instance class or api_desired_count changes.
+RDS_MAX_CONNECTIONS = 80
+RDS_RESERVED_CONNECTIONS = 3
+# api_desired_count = 1 with deployment_maximum_percent = 200 (infra/ecs.tf): during a
+# rolling deploy the old and the new task both hold their pools.
+API_TASKS_DURING_DEPLOY = 2
+# Per API task, besides the pools: /health and /admin open one connection per request.
+API_UNPOOLED_CONNECTIONS = 2
+# The one-off and scheduled jobs (migrate, sync, extract/embed, a later purge) use one
+# connection each, two for migrate (its checkpointer setup); allow three at once.
+JOB_CONNECTIONS = 6
+
+# Catalogue reads and searches: each is borrowed for one query or one search, so a few
+# cover many concurrent chats.
+QUERY_POOL_MAX_SIZE = 8
+# Thread turn locks (api/threads.py): a running turn holds one for the whole turn, so
+# this caps the turns running at once per task. Never above the query pool: a turn
+# borrows at most one query connection at a time, so every running turn can get one.
+LOCK_POOL_MAX_SIZE = 8
+# The checkpointer (checkpointer.py): held only while a checkpoint is read or written.
+CHECKPOINTER_POOL_MAX_SIZE = 4
+# Per task 8 + 8 + 4 + 2 = 22; two tasks 44, plus jobs 6 = 50 of 77 usable (65%).
 
 
 @asynccontextmanager

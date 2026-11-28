@@ -7,7 +7,6 @@ import psycopg
 import pytest
 
 from martom.api.threads import (
-    LOCK_POOL_MAX_SIZE,
     LocalThreadLocks,
     PostgresThreadLocks,
     ThreadBusyError,
@@ -16,7 +15,6 @@ from martom.api.threads import (
     new_thread_id,
     thread_log_id,
 )
-from martom.db import QUERY_POOL_MAX_SIZE
 
 pytestmark = pytest.mark.anyio
 
@@ -147,8 +145,3 @@ async def test_a_failed_unlock_never_fails_the_finished_turn(
     assert pool.returned == [pool.conn]
     assert any("pg_advisory_unlock(" in sql for sql in pool.conn.sql)
     assert "thread unlock failed" in caplog.text
-
-
-def test_every_running_turn_can_get_a_query_connection() -> None:
-    # A turn borrows at most one query connection at a time (review R1-8).
-    assert LOCK_POOL_MAX_SIZE <= QUERY_POOL_MAX_SIZE

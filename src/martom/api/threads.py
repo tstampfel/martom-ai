@@ -42,6 +42,9 @@ from typing import Protocol
 import psycopg
 from psycopg_pool import AsyncConnectionPool, PoolTimeout
 
+# Sized with the other pools in martom.db (the connection budget).
+from martom.db import LOCK_POOL_MAX_SIZE
+
 logger = logging.getLogger(__name__)
 
 THREAD_ID_BYTES = 32  # token_urlsafe(32) is 43 characters
@@ -49,9 +52,6 @@ _THREAD_ID = re.compile(r"[A-Za-z0-9_-]{43}")
 # Under CloudFront's 60 s origin read timeout, so `error` + `done` still reach the browser.
 TURN_LOCK_TIMEOUT_SECONDS = 45.0
 LOCK_POLL_SECONDS = 0.1
-# The same as the query pool (martom.db.QUERY_POOL_MAX_SIZE): a turn borrows at most one
-# query connection at a time, so every running turn can always get one (review R1-8).
-LOCK_POOL_MAX_SIZE = 10
 # The first of the two int4 keys: a namespace for chat threads. Two-key advisory locks
 # never collide with one-key (bigint) locks such as the migration lock.
 THREAD_LOCK_CLASS = 0x4D43  # "MC"

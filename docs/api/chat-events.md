@@ -26,12 +26,18 @@ contract both sides build against.
 - **Order.** `step` "parse" `working` comes first, at once. While the advisor works,
   steps follow its progress (parse done, search working/done, bom done). The parse step's
   done text says what Python parsed from the fence ("Razumijem: panelna ograda · 25 m ·
-  150 cm": type, length, height; never text the model copied), the search step's the hit
-  count in correct Bosnian ("Pronađen 1 proizvod", "Pronađena 3 proizvoda", "Pronađeno 12
-  proizvoda"); with nothing parsed or found they keep the fixed texts. Then the reply:
+  150 cm": type, length, height; never text the model copied), the search step's the
+  number of results the advisor judged relevant, in correct Bosnian ("Pronađen 1 proizvod", "Pronađena 3 proizvoda", "Pronađeno 12
+  proizvoda"); with nothing parsed, or a search where nothing fits (however many results
+  came back), they keep the fixed texts. Then the reply:
   for questions, the `clarify` step (`needs_input`), `token`s and `chips`; otherwise
   `token`s, `product_cards` (when the advisor looked products up this turn) and `bom`
   (only when this turn made a new list). `done` is always last.
+- **Known gap: a cleared materials list is not sent yet.** When the customer changes the
+  fence (type, height, sides, colour, ...), the advisor drops the old list and must
+  recalculate it, but no event tells the browser, so the old `bom` card stays on screen
+  until the next `bom` event replaces it. #147 adds a "materials list cleared" event; it
+  blocks launch.
 - **Tokens.** The answer is streamed only after the grounding check passed (every price and
   number comes from a tool). The `token` events are the checked answer cut into chunks of
   a few words, not the model's live tokens: join them in order and you have the answer.

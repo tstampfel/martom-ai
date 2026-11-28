@@ -298,17 +298,60 @@ def test_nothing_parsed_keeps_the_fixed_parse_text(project: dict[str, Any] | Non
     assert parse_step_text(project) == chat_copy.STEP_PARSE
 
 
-def test_steps_carry_the_parsed_fence_and_the_hit_count() -> None:
+def test_steps_carry_the_parsed_fence_and_the_relevant_count() -> None:
     tracker = StepTracker()
     tracker.start()
     project = {"kind": "roll", "sides_m": [], "total_length_m": 30, "height_cm": 125}
     parse = tracker.update("guardrail", {"route": "retrieve", "project": project})
     assert parse[0].text == "Razumijem: ograda u roli · 30 m · 125 cm"
-    tracker.update("retrieve", {"hits": [{}] * 9})
-    tracker.update("rewrite", {})
-    tracker.update("retrieve", {"hits": [{}] * 3})  # the latest search counts
+    tracker.update("retrieve", {"hits": [{}] * 10})
+    # The grade's count of relevant hits, not the 10 retrieved (review R2-1).
+    tracker.update("grade", {"grade": "ok", "relevant_hits": 3})
     done = tracker.update("generate", {})
     assert done[0].text == "Pronađena 3 proizvoda"
+
+
+def search_done_text(*updates: tuple[str, dict[str, Any]]) -> str:
+    tracker = StepTracker()
+    tracker.start()
+    tracker.update("guardrail", {"route": "retrieve"})
+    for node, changes in updates:
+        tracker.update(node, changes)
+    done = [e for e in tracker.update("generate", {}) if e.id == "search"]
+    return done[0].text
+
+
+def test_a_weak_search_keeps_the_fixed_text_however_many_hits_came_back() -> None:
+    text = search_done_text(
+        ("retrieve", {"hits": [{}] * 10}),
+        ("grade", {"grade": "weak", "relevant_hits": 0}),
+    )
+    assert text == chat_copy.STEP_SEARCH
+
+
+def test_a_weak_grade_never_shows_a_count_even_if_one_is_given() -> None:
+    text = search_done_text(("grade", {"grade": "weak", "relevant_hits": 4}))
+    assert text == chat_copy.STEP_SEARCH
+
+
+def test_after_a_rewrite_the_latest_grade_counts() -> None:
+    text = search_done_text(
+        ("retrieve", {"hits": [{}] * 10}),
+        ("grade", {"grade": "weak", "relevant_hits": 0}),
+        ("rewrite", {"query": "ograda"}),
+        ("retrieve", {"hits": [{}] * 10}),
+        ("grade", {"grade": "ok", "relevant_hits": 4}),
+    )
+    assert text == "Pronađena 4 proizvoda"
+
+
+def test_a_rewrite_that_stays_weak_keeps_the_fixed_text() -> None:
+    text = search_done_text(
+        ("grade", {"grade": "ok", "relevant_hits": 5}),
+        ("rewrite", {"query": "x"}),  # not possible after "ok"; the last grade decides
+        ("grade", {"grade": "weak", "relevant_hits": 0}),
+    )
+    assert text == chat_copy.STEP_SEARCH
 
 
 # --- R1-9: the unit of a listing price ----------------------------------------------

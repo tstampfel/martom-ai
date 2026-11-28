@@ -86,7 +86,8 @@ def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
         events.append(ProductCardsEvent(cards=cards))
     bom = state.get("bom")
     # Only a list this turn made: an unchanged one is already on screen. A cleared list
-    # (the fence changed) has no event yet; the next calculation replaces it.
+    # (the fence changed) has no event yet (#147, blocks launch); the next calculation
+    # replaces it.
     if bom and state.get("bom_changed"):
         events.append(BomEvent.model_validate(_bom_event_fields(bom)))
     return events
@@ -142,7 +143,7 @@ class StepTracker:
 
     def __init__(self) -> None:
         self._sent: set[tuple[str, str]] = set()
-        self._hits = 0  # results of the latest search (a rewrite searches again)
+        self._relevant = 0  # the latest grade's relevant hits (a rewrite grades again)
 
     def start(self) -> StepEvent:
         event = self._step("parse", chat_copy.STEP_PARSE, "working")
@@ -156,10 +157,13 @@ class StepTracker:
             events.append(self._step("parse", parse_step_text(changes.get("project")), "done"))
             if changes.get("route") == "retrieve":
                 events.append(self._step("search", chat_copy.STEP_SEARCH, "working"))
-        elif node == "retrieve":
-            self._hits = len(changes.get("hits") or [])
+        elif node == "grade":
+            # The grade's own count (review R2-1): a weak search found nothing that fits,
+            # however many hits came back, and keeps the fixed text.
+            relevant = changes.get("relevant_hits") or 0
+            self._relevant = relevant if changes.get("grade") == "ok" else 0
         elif node in {"generate", "grounding"} and ("search", "working") in self._sent:
-            events.append(self._step("search", search_step_text(self._hits), "done"))
+            events.append(self._step("search", search_step_text(self._relevant), "done"))
         if node == "tools" and changes.get("bom") and changes.get("bom_changed"):
             events.append(self._step("bom", chat_copy.STEP_BOM, "done"))
         return [event for event in events if event is not None]
