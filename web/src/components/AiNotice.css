@@ -1,0 +1,38 @@
+/* AI notice (#151): web wording above 767 px, phone wording below, as in
+   docs/mockups/{web,mobile}/1-start.html and 2-clarify.html. */
+.ai-notice {
+  margin: 0 0 0 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ai-notice__short {
+  display: none;
+}
+
+.ai-notice--on-brand {
+  color: var(--color-on-brand);
+}
+
+.ai-notice--muted {
+  color: var(--color-muted);
+}
+
+.ai-notice--muted .ai-notice__lead {
+  color: var(--color-muted-strong);
+}
+
+@media (max-width: 767px) {
+  .ai-notice {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .ai-notice__wide {
+    display: none;
+  }
+
+  .ai-notice__short {
+    display: inline;
+  }
+}

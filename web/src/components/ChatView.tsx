@@ -7,6 +7,7 @@ import { copy } from '../copy'
 import { useMediaQuery } from '../hooks'
 import { useBomEditor } from '../useBomEditor'
 import { useChat } from '../useChat'
+import { AiNotice } from './AiNotice'
 import { BomCard } from './BomCard'
 import { ClarifyForm, type UpdateAnswers } from './ClarifyForm'
 import { ArrowIcon } from './Icons'
@@ -41,9 +42,12 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
   // them, and again after every message, so new chips start afresh.
   const [answersState, setAnswersState] = useState<ClarifyAnswers | null>(null)
   const sectionRef = useRef<HTMLElement>(null)
+  const noticeId = useId()
 
   // The control that opened the chat is gone, so move focus here; screen
-  // readers then announce the chat region instead of losing their place.
+  // readers then announce the chat region instead of losing their place,
+  // and with it the AI notice it is described by (when the chat opens, not
+  // as a live region; reading through the region reaches it again).
   useEffect(() => {
     sectionRef.current?.focus()
   }, [])
@@ -91,7 +95,13 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
 
   return (
     <div className="chat">
-      <section ref={sectionRef} className="chat__conversation" aria-label={copy.chat.label} tabIndex={-1}>
+      <section
+        ref={sectionRef}
+        className="chat__conversation"
+        aria-label={copy.chat.label}
+        aria-describedby={noticeId}
+        tabIndex={-1}
+      >
         {state.turns.map((turn, index) => (
           <TurnView
             key={index}
@@ -104,7 +114,11 @@ export function ChatView({ firstMessage, client, recalculator, onBack }: ChatVie
             }
           />
         ))}
-        <Composer busy={busy} clarifying={openChips !== null} onSend={(text) => sendMessage(text)} />
+        <div className="composer-area">
+          <Composer busy={busy} clarifying={openChips !== null} onSend={(text) => sendMessage(text)} />
+          {/* EU AI Act Art. 50 (#151): always under the input, from the first message on. */}
+          <AiNotice id={noticeId} text={copy.aiNotice.chat} tone="muted" />
+        </div>
         <button type="button" className="chat__back" onClick={onBack}>
           {copy.chat.back}
         </button>

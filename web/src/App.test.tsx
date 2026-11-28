@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import App from './App'
+import { createFakeChatClient } from './api/fakeChatClient'
 import { config } from './config'
 import { copy, telHref } from './copy'
 
@@ -145,5 +146,75 @@ describe('Footer credit (M5-9)', () => {
     expect(
       within(screen.getByRole('contentinfo')).queryByRole('link', { name: copy.footer.credit }),
     ).not.toBeInTheDocument()
+  })
+})
+
+// EU AI Act Art. 50 (#151, canvas 1795853807-d861): the customer is told they
+// are talking to an AI before the first message and all through the chat.
+describe('AI notice (M5-3b)', () => {
+  const { start, chat } = copy.aiNotice
+  const text = (notice: { lead: string; rest: string }) => `${notice.lead}${notice.rest}`
+
+  it('shows the start-screen notice under the question box before the first message', () => {
+    render(<App />)
+    const form = screen.getByLabelText(copy.start.inputLabel).closest('form')
+    expect(form).not.toBeNull()
+    expect(form).toHaveTextContent(text(start.wide))
+    expect(form).toHaveTextContent(text(start.short))
+  })
+
+  it('describes the question box with the start-screen notice, so screen readers hear it before the first message', () => {
+    render(<App />)
+    const box = screen.getByLabelText(copy.start.inputLabel)
+    expect(box).toHaveAccessibleDescription(expect.stringContaining(text(start.wide)))
+    expect(box).toHaveAccessibleDescription(expect.stringContaining(text(start.short)))
+  })
+
+  it.each([
+    [
+      'the question box',
+      () => {
+        fireEvent.change(screen.getByLabelText(copy.start.inputLabel), { target: { value: 'Ograda za dvorište' } })
+        fireEvent.click(screen.getByRole('button', { name: copy.start.submit }))
+      },
+    ],
+    ['a quick-start chip', () => fireEvent.click(screen.getByRole('button', { name: 'Dvorište' }))],
+    [
+      'a header category',
+      () => {
+        const nav = screen.getByRole('navigation', { name: copy.header.navLabel })
+        fireEvent.click(within(nav).getByRole('button', { name: 'Alat' }))
+      },
+    ],
+  ])('shows the chat notice from the first message started from %s', (_path, startChat) => {
+    render(<App />)
+    startChat()
+    const region = screen.getByRole('region', { name: copy.chat.label })
+    const noticeId = region.getAttribute('aria-describedby')
+    expect(noticeId).toBeTruthy()
+    const notice = document.getElementById(noticeId ?? '')
+    expect(notice).not.toBeNull()
+    expect(region).toContainElement(notice)
+    expect(notice).toHaveTextContent(text(chat.wide))
+    expect(notice).toHaveTextContent(text(chat.short))
+    expect(within(notice as HTMLElement).getAllByText(chat.wide.lead)[0].tagName).toBe('STRONG')
+  })
+
+  it('is announced when the chat opens, not as a live region', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dvorište' }))
+    const region = screen.getByRole('region', { name: copy.chat.label })
+    // Focus moves to the region when the chat opens, so its description is read then.
+    expect(region).toHaveFocus()
+    const notice = document.getElementById(region.getAttribute('aria-describedby') ?? '')
+    expect(notice?.closest('[aria-live], [role="status"], [role="alert"], output')).toBeNull()
+  })
+
+  it('keeps the notice after the reply has arrived', async () => {
+    render(<App chatClient={createFakeChatClient({ wait: async () => {} })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dvorište' }))
+    const region = screen.getByRole('region', { name: copy.chat.label })
+    await waitFor(() => expect(region.querySelector('[aria-busy="true"]')).toBeNull())
+    expect(region).toHaveTextContent(text(chat.wide))
   })
 })

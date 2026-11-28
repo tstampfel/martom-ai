@@ -81,6 +81,25 @@ describe('copy', () => {
     expect(unpriced(21)).toBe('+ 21 stavka na upit')
     expect(unpriced(22)).toBe('+ 22 stavke na upit')
   })
+
+  // Canvas version 1795853807-d861 (Tomislav, 28 Nov 2026, #151, EU AI Act
+  // Art. 50): docs/mockups/{web,mobile}/1-start.html and 2-clarify.html.
+  it('uses the canvas wording for the AI notice', () => {
+    const { start, chat } = copy.aiNotice
+    expect(start.wide).toEqual({
+      lead: 'Odgovara AI savjetnik',
+      rest: ' (umjetna inteligencija), ne osoba. Cijene i količine potvrđuje Martom.',
+    })
+    expect(start.short).toEqual({ lead: 'Odgovara AI savjetnik', rest: ', ne osoba. Cijene potvrđuje Martom.' })
+    expect(chat.wide).toEqual({
+      lead: 'Razgovarate s AI savjetnikom',
+      rest: ' (umjetna inteligencija), ne s osobom. Može pogriješiti, a cijene i količine potvrđuje Martom prije narudžbe.',
+    })
+    expect(chat.short).toEqual({
+      lead: 'Razgovarate s AI savjetnikom',
+      rest: ', ne s osobom. Može pogriješiti, cijene i količine potvrđuje Martom.',
+    })
+  })
 })
 
 describe('copy.footer credit (M5-9)', () => {
