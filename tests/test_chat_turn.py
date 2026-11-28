@@ -16,7 +16,14 @@ from martom.api.chat_events import (
     StepEvent,
     TokenEvent,
 )
-from martom.api.chat_turn import StepTracker, chunk_answer, final_events, product_cards
+from martom.api.chat_turn import (
+    StepTracker,
+    chunk_answer,
+    final_events,
+    parse_step_text,
+    product_cards,
+    search_step_text,
+)
 
 PANEL_OUTPUT = {
     "source": "olx",
@@ -241,3 +248,85 @@ def test_a_rewrite_loop_keeps_one_search_step() -> None:
     for node in ("retrieve", "grade", "rewrite", "retrieve", "grade", "generate", "grounding"):
         events += tracker.update(node, {})
     assert [(e.id, e.status) for e in events].count(("search", "done")) == 1
+
+
+# --- dynamic step texts (Tomislav, 28 Nov 2026) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("count", "text"),
+    [
+        (1, "Pronađen 1 proizvod"),
+        (2, "Pronađena 2 proizvoda"),
+        (3, "Pronađena 3 proizvoda"),
+        (4, "Pronađena 4 proizvoda"),
+        (5, "Pronađeno 5 proizvoda"),
+        (10, "Pronađeno 10 proizvoda"),
+        (11, "Pronađeno 11 proizvoda"),
+        (12, "Pronađeno 12 proizvoda"),
+        (13, "Pronađeno 13 proizvoda"),
+        (14, "Pronađeno 14 proizvoda"),
+        (21, "Pronađen 21 proizvod"),
+        (22, "Pronađena 22 proizvoda"),
+        (25, "Pronađeno 25 proizvoda"),
+        (111, "Pronađeno 111 proizvoda"),
+        (112, "Pronađeno 112 proizvoda"),
+        (101, "Pronađen 101 proizvod"),
+    ],
+)
+def test_the_search_step_counts_products_in_correct_bosnian(count: int, text: str) -> None:
+    assert search_step_text(count) == text
+
+
+def test_no_products_keeps_the_fixed_search_text() -> None:
+    assert search_step_text(0) == chat_copy.STEP_SEARCH
+
+
+def test_the_parse_step_shows_what_python_parsed_from_the_fence() -> None:
+    project = {"kind": "panel", "sides_m": [10, 5, 10], "height_cm": 150, "colour": "zlatna"}
+    # The colour is text the model copied, so it is never shown here.
+    assert parse_step_text(project) == "Razumijem: panelna ograda · 25 m · 150 cm"
+
+
+def test_the_parse_step_uses_the_single_length_without_sides() -> None:
+    project = {"kind": None, "sides_m": [], "total_length_m": 25.5, "height_cm": None}
+    assert parse_step_text(project) == "Razumijem: 25,5 m"
+
+
+@pytest.mark.parametrize("project", [None, {}, {"kind": None, "sides_m": [], "height_cm": None}])
+def test_nothing_parsed_keeps_the_fixed_parse_text(project: dict[str, Any] | None) -> None:
+    assert parse_step_text(project) == chat_copy.STEP_PARSE
+
+
+def test_steps_carry_the_parsed_fence_and_the_hit_count() -> None:
+    tracker = StepTracker()
+    tracker.start()
+    project = {"kind": "roll", "sides_m": [], "total_length_m": 30, "height_cm": 125}
+    parse = tracker.update("guardrail", {"route": "retrieve", "project": project})
+    assert parse[0].text == "Razumijem: ograda u roli · 30 m · 125 cm"
+    tracker.update("retrieve", {"hits": [{}] * 9})
+    tracker.update("rewrite", {})
+    tracker.update("retrieve", {"hits": [{}] * 3})  # the latest search counts
+    done = tracker.update("generate", {})
+    assert done[0].text == "Pronađena 3 proizvoda"
+
+
+# --- R1-9: the unit of a listing price ----------------------------------------------
+
+
+def test_a_listing_price_takes_the_unit_of_its_matching_variant() -> None:
+    output = PANEL_OUTPUT | {
+        "price": "53.00",
+        "variants": [
+            {"label": "153 × 200", "price": "40.00", "unit": "kom"},
+            {"label": "153 × 250", "price": "53.00", "unit": "panel"},
+        ],
+    }
+    cards = product_cards(state(messages=[HumanMessage("p"), tool_message("get_product", output)]))
+    assert (cards[0].price, cards[0].price_unit) == ("53.00", "panel")
+
+
+def test_a_listing_price_without_a_matching_variant_has_no_unit() -> None:
+    output = PANEL_OUTPUT | {"price": "60.00"}
+    cards = product_cards(state(messages=[HumanMessage("p"), tool_message("get_product", output)]))
+    assert (cards[0].price, cards[0].price_unit) == ("60.00", None)

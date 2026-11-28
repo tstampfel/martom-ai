@@ -36,6 +36,9 @@ async def test_without_an_anthropic_key_there_is_no_advisor_and_no_database(
         async with open_chat_service(settings(database_url=UNREACHABLE)) as service:
             assert service is None
     assert "chat disabled" in caplog.text
+    # The reason is a field queries and alarms can filter on (review R1-10).
+    reasons = [r.reason for r in caplog.records if r.getMessage() == "chat disabled"]  # type: ignore[attr-defined]
+    assert reasons == ["ANTHROPIC_API_KEY is not set"]
 
 
 async def test_without_an_embedder_there_is_no_advisor(caplog: pytest.LogCaptureFixture) -> None:

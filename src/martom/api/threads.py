@@ -20,7 +20,8 @@ turn. Each turn holds a lock for its thread:
   own small pool and held for the whole turn. Every API task talks to the same
   database, so this serialises turns across tasks.
 
-Limits: a waiting turn gives up after `timeout` seconds (`ThreadBusyError`; the endpoint
+Limits: a waiting turn gives up after `timeout` seconds (45 by default, under
+CloudFront's 60 s origin read timeout) (`ThreadBusyError`; the endpoint
 answers `error` kind `internal`). Each running turn keeps one lock-pool connection, so at
 most `LOCK_POOL_MAX_SIZE` turns run at once per task; more wait for a connection within
 the same timeout. A task killed mid-turn (OOM, SIGKILL) releases its locks only when
@@ -31,6 +32,7 @@ different threads whose hashes collide (1 in 2^32) just wait for each other.
 
 import asyncio
 import hashlib
+import logging
 import re
 import secrets
 from collections.abc import AsyncGenerator
@@ -40,11 +42,16 @@ from typing import Protocol
 import psycopg
 from psycopg_pool import AsyncConnectionPool, PoolTimeout
 
+logger = logging.getLogger(__name__)
+
 THREAD_ID_BYTES = 32  # token_urlsafe(32) is 43 characters
 _THREAD_ID = re.compile(r"[A-Za-z0-9_-]{43}")
-TURN_LOCK_TIMEOUT_SECONDS = 60.0
+# Under CloudFront's 60 s origin read timeout, so `error` + `done` still reach the browser.
+TURN_LOCK_TIMEOUT_SECONDS = 45.0
 LOCK_POLL_SECONDS = 0.1
-LOCK_POOL_MAX_SIZE = 20
+# The same as the query pool (martom.db.QUERY_POOL_MAX_SIZE): a turn borrows at most one
+# query connection at a time, so every running turn can always get one (review R1-8).
+LOCK_POOL_MAX_SIZE = 10
 # The first of the two int4 keys: a namespace for chat threads. Two-key advisory locks
 # never collide with one-key (bigint) locks such as the migration lock.
 THREAD_LOCK_CLASS = 0x4D43  # "MC"
@@ -139,8 +146,7 @@ class PostgresThreadLocks:
                 try:
                     yield
                 finally:
-                    if not conn.broken:
-                        await conn.execute("SELECT pg_advisory_unlock(%s, %s)", key)
+                    await _unlock(conn, key)
             finally:
                 # putconn runs the pool's reset (`_unlock_all`), so a turn cancelled
                 # during the unlock above still can't hand a locked connection on.
@@ -151,6 +157,22 @@ async def _try_lock(conn: psycopg.AsyncConnection, key: tuple[int, int]) -> bool
     cursor = await conn.execute("SELECT pg_try_advisory_lock(%s, %s)", key)
     row = await cursor.fetchone()
     return bool(row and row[0])
+
+
+async def _unlock(conn: psycopg.AsyncConnection, key: tuple[int, int]) -> None:
+    """Release the lock; a failure is logged, never raised.
+
+    The turn is finished and checkpointed by now, so an error here must not replace the
+    customer's reply with an error (review R1-4). `putconn` then resets the connection
+    with `pg_advisory_unlock_all`, or drops a broken one, which ends its session and
+    frees the lock either way.
+    """
+    if conn.broken:
+        return
+    try:
+        await conn.execute("SELECT pg_advisory_unlock(%s, %s)", key)
+    except psycopg.Error as exc:
+        logger.warning("thread unlock failed", extra={"error": type(exc).__name__})
 
 
 async def _unlock_all(conn: psycopg.AsyncConnection) -> None:

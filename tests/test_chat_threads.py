@@ -1,17 +1,22 @@
 """Thread ids and the per-thread turn lock of POST /api/chat (#21)."""
 
 import asyncio
+import logging
 
+import psycopg
 import pytest
 
 from martom.api.threads import (
+    LOCK_POOL_MAX_SIZE,
     LocalThreadLocks,
+    PostgresThreadLocks,
     ThreadBusyError,
     advisory_key,
     is_wellformed_thread_id,
     new_thread_id,
     thread_log_id,
 )
+from martom.db import QUERY_POOL_MAX_SIZE
 
 pytestmark = pytest.mark.anyio
 
@@ -98,3 +103,52 @@ async def test_the_lock_table_forgets_finished_threads() -> None:
     async with locks.hold("thread-a"):
         pass
     assert locks.active_threads == 0
+
+
+class FakeConnection:
+    """Grants every lock; the unlock fails, like a lock connection that died mid-turn."""
+
+    broken = False
+
+    def __init__(self) -> None:
+        self.sql: list[str] = []
+
+    async def execute(self, sql: str, params: object = None) -> "FakeConnection":
+        self.sql.append(sql)
+        if "pg_advisory_unlock(" in sql:
+            raise psycopg.OperationalError("connection lost")
+        return self
+
+    async def fetchone(self) -> tuple[bool]:
+        return (True,)
+
+
+class FakePool:
+    def __init__(self) -> None:
+        self.conn = FakeConnection()
+        self.returned: list[FakeConnection] = []
+
+    async def getconn(self, timeout: float | None = None) -> FakeConnection:
+        return self.conn
+
+    async def putconn(self, conn: FakeConnection) -> None:
+        self.returned.append(conn)
+
+
+async def test_a_failed_unlock_never_fails_the_finished_turn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pool = FakePool()
+    locks = PostgresThreadLocks(pool, timeout=1)  # type: ignore[arg-type]
+    with caplog.at_level(logging.WARNING, logger="martom.api.threads"):
+        async with locks.hold("thread-a"):
+            pass  # the turn's work; it must not see the unlock error
+    # The connection still goes back, so the pool's reset (unlock all) runs.
+    assert pool.returned == [pool.conn]
+    assert any("pg_advisory_unlock(" in sql for sql in pool.conn.sql)
+    assert "thread unlock failed" in caplog.text
+
+
+def test_every_running_turn_can_get_a_query_connection() -> None:
+    # A turn borrows at most one query connection at a time (review R1-8).
+    assert LOCK_POOL_MAX_SIZE <= QUERY_POOL_MAX_SIZE

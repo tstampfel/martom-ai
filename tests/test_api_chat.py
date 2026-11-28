@@ -31,7 +31,7 @@ from tests.agent_fakes import (
 
 from martom.agent.graph import AgentDeps, AgentModels, build_graph
 from martom.agent.prompts import Grade, Rewrite
-from martom.api import chat_copy
+from martom.api import chat, chat_copy, threads
 from martom.api.app import create_app
 from martom.api.chat import (
     MAX_BODY_BYTES,
@@ -41,6 +41,7 @@ from martom.api.chat import (
     MAX_SIDES,
     ChatService,
 )
+from martom.api.chat_request import ChatRequest
 from martom.api.threads import LocalThreadLocks, is_wellformed_thread_id, new_thread_id
 from martom.settings import Settings
 
@@ -95,7 +96,7 @@ def client(service: ChatService | None) -> TestClient:
 def events_of(response: httpx.Response) -> list[dict[str, Any]]:
     events = []
     for block in response.text.split("\n\n"):
-        if block.strip():
+        if block.strip() and not block.startswith(":"):  # ": ping" is a heartbeat
             assert block.startswith("data: "), block
             events.append(json.loads(block.removeprefix("data: ")))
     return events
@@ -427,3 +428,98 @@ def test_a_body_without_content_length_is_still_capped(
     assert "content-length" not in response.request.headers
     assert [e["type"] for e in events_of(response)] == ["error", "done"]
     assert refusal_reasons(caplog) == ["too_large"]
+
+
+# --- review r1 ------------------------------------------------------------------------
+
+
+def test_deeply_nested_json_is_an_invalid_request_not_a_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # json.loads raises RecursionError (not a ValueError) on very deep nesting. The 16 KB
+    # cap keeps a real body under that depth today, so the error is forced here: the
+    # handler must refuse it either way.
+    def too_deep(raw: bytes) -> Any:
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(chat, "_decode_json", too_deep)
+    response = client(bom_turn_service()).post("/api/chat", json={"message": "ograda"})
+    assert response.status_code == 200
+    events = events_of(response)
+    assert [e["type"] for e in events] == ["error", "done"]
+    assert events[0]["kind"] == "invalid_request"
+
+
+class BrokenSaver(InMemorySaver):
+    """A checkpointer whose reads fail, like an RDS failover or a pool timeout."""
+
+    async def aget_tuple(self, config: Any) -> Any:
+        raise OSError("database down")
+
+
+def broken_saver_service() -> ChatService:
+    service = bom_turn_service()
+    graph = service.graph.builder.compile(checkpointer=BrokenSaver())
+    return ChatService(graph=graph, locks=LocalThreadLocks())
+
+
+@pytest.mark.parametrize("body_thread", ["valid", "none"])
+def test_a_checkpointer_error_still_answers_an_sse_error(body_thread: str) -> None:
+    sent = new_thread_id() if body_thread == "valid" else None
+    response = client(broken_saver_service()).post(
+        "/api/chat", json={"message": "ograda", "thread_id": sent}
+    )
+    assert response.status_code == 200
+    events = events_of(response)
+    assert [e["type"] for e in events][-2:] == ["error", "done"]
+    assert events[-2]["kind"] == "internal"
+    assert is_wellformed_thread_id(events[-1]["thread_id"])
+
+
+def test_a_checkpointer_error_on_an_invalid_request_still_answers_sse() -> None:
+    response = client(broken_saver_service()).post(
+        "/api/chat", json={"message": "", "thread_id": new_thread_id()}
+    )
+    assert response.status_code == 200
+    assert [e["type"] for e in events_of(response)] == ["error", "done"]
+
+
+def test_a_slow_turn_sends_heartbeats(monkeypatch: pytest.MonkeyPatch) -> None:
+    class SlowRetriever(FakeRetriever):
+        async def __call__(self, query: str) -> Any:
+            await asyncio.sleep(0.3)
+            return await super().__call__(query)
+
+    monkeypatch.setattr(chat, "HEARTBEAT_SECONDS", 0.05)
+    service = bom_turn_service(retriever=SlowRetriever())
+    response = client(service).post("/api/chat", json={"message": "Panelna ograda 25 m"})
+    assert ": ping\n\n" in response.text
+    events = events_of(response)
+    assert events[-1]["type"] == "done"
+    assert events[-2]["type"] == "bom"
+
+
+def test_heartbeats_and_the_lock_wait_fit_inside_cloudfronts_60_seconds() -> None:
+    # infra/cloudfront.tf origin_read_timeout = 60: bytes must flow well within it.
+    assert chat.HEARTBEAT_SECONDS <= 15
+    assert threads.TURN_LOCK_TIMEOUT_SECONDS <= 45
+
+
+def test_an_abandoned_turn_is_still_logged_as_cancelled(caplog: pytest.LogCaptureFixture) -> None:
+    service = bom_turn_service()
+
+    async def abandon() -> None:
+        stream = chat._turn_stream(
+            service,
+            ChatRequest(message="ograda"),
+            new_thread_id(),
+            new_thread=True,
+            started=time.perf_counter(),
+        )
+        await anext(stream)  # the first step; then the browser goes away
+        await stream.aclose()
+
+    with caplog.at_level(logging.INFO, logger="martom.api"):
+        asyncio.run(abandon())
+    finished = [r for r in caplog.records if r.getMessage() == "chat turn finished"]
+    assert [r.outcome for r in finished] == ["cancelled"]  # type: ignore[attr-defined]

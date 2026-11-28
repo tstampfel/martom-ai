@@ -86,4 +86,4 @@ async def open_chat_service(settings: Settings) -> AsyncGenerator[ChatService | 
 
 def _disabled(settings: Settings, reason: str) -> None:
     level = logging.ERROR if settings.app_env == "production" else logging.WARNING
-    logger.log(level, "chat disabled: %s", reason)
+    logger.log(level, "chat disabled", extra={"reason": reason})

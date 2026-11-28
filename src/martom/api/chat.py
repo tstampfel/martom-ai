@@ -13,16 +13,20 @@ A turn (`_turn_stream`):
    answer as `token` chunks, then `chips`, or `product_cards` and `bom`.
 4. `done`.
 
-`StreamingResponse` sends each yielded string as soon as it is produced; an async
-generator here is like an `async function*` in JS. If the browser disconnects, the
-generator is closed at its current `yield`, which leaves the `async with` block and
-releases the thread lock.
+Steps 1-3 run in a task of their own and hand events to the stream through a queue, so
+the stream can send a `: ping` comment every 15 s while the turn waits (CloudFront cuts
+a stream that is silent for 60 s). `StreamingResponse` sends each yielded string as
+soon as it is produced; an async generator here is like an `async function*` in JS. If
+the browser disconnects, the generator is closed at its current `yield` and its
+`finally` cancels the turn's task, which leaves the lock's `async with` and releases it.
 
 Nothing logs the customer's text or the thread id (anyone holding the id can continue
 the chat): one `chat turn finished` line per turn with counts and timings, and the
 thread as a short hash (`thread_hash`).
 """
 
+import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -61,6 +65,9 @@ MAX_BODY_BYTES = 16_384
 MAX_SIDES = 50  # far more sides than any yard; the BOM caps the total at 1,000 m anyway
 MAX_CHOICES = 10  # one per single question of a chips event
 MAX_CHOICE_CHARS = 64  # question ids and option values are short keys
+# A comment line (SSE ignores it): sent while a turn waits, so proxies see bytes flow.
+HEARTBEAT = ": ping\n\n"
+HEARTBEAT_SECONDS = 15.0
 STREAM_HEADERS = {
     "Cache-Control": "no-store",
     # Tells a buffering proxy (nginx and friends) to pass each event on at once.
@@ -98,8 +105,9 @@ async def chat(request: Request) -> StreamingResponse:
     if raw is None:
         return await _refuse(service, None, reason="too_large")
     try:
-        data = json.loads(raw)
-    except ValueError:
+        data = _decode_json(raw)
+    except (ValueError, RecursionError):
+        # RecursionError is not a ValueError: very deep nesting must not become a 500.
         return await _refuse(service, None, reason="json")
     try:
         body = ChatRequest.model_validate(data)
@@ -110,12 +118,29 @@ async def chat(request: Request) -> StreamingResponse:
     if body.answers is not None and _answers_too_large(body):
         return await _refuse(service, data, reason="answers_too_large")
 
-    existing = service is not None and await service.thread_exists(body.thread_id)
-    thread_id = body.thread_id if existing and body.thread_id else new_thread_id()
     if service is None:
         logger.warning("chat turn refused: no advisor configured")
-        return _stream(_events_only([ErrorEvent(kind="internal")], thread_id))
+        return _stream(_events_only([ErrorEvent(kind="internal")], new_thread_id()))
+    existing = await _thread_exists(service, body.thread_id)
+    if existing is None:
+        # The checkpointer can't be read (database down): an error event, never a 500.
+        # A fresh id, because an id that wasn't confirmed is never sent back.
+        return _stream(_events_only([ErrorEvent(kind="internal")], new_thread_id()))
+    thread_id = body.thread_id if existing and body.thread_id else new_thread_id()
     return _stream(_turn_stream(service, body, thread_id, new_thread=not existing, started=started))
+
+
+def _decode_json(raw: bytes) -> object:
+    return json.loads(raw)
+
+
+async def _thread_exists(service: ChatService, thread_id: object) -> bool | None:
+    """Whether the thread has a checkpoint; None when the checkpointer fails."""
+    try:
+        return await service.thread_exists(thread_id)
+    except Exception as exc:
+        logger.warning("thread lookup failed", extra={"error": type(exc).__name__})
+        return None
 
 
 async def _read_capped(request: Request) -> bytes | None:
@@ -147,7 +172,7 @@ def _answers_too_large(body: ChatRequest) -> bool:
 async def _refuse(service: ChatService | None, data: object, *, reason: str) -> StreamingResponse:
     """An `invalid_request` reply. Keeps the thread id only when it names a real thread."""
     sent = data.get("thread_id") if isinstance(data, dict) else None
-    keep = service is not None and await service.thread_exists(sent)
+    keep = service is not None and bool(await _thread_exists(service, sent))
     logger.info("chat request refused", extra={"reason": reason})
     thread_id = sent if keep and isinstance(sent, str) else new_thread_id()
     return _stream(_events_only([ErrorEvent(kind="invalid_request")], thread_id))
@@ -177,11 +202,18 @@ async def _turn_stream(
     new_thread: bool,
     started: float,
 ) -> AsyncGenerator[str]:
-    tracker = StepTracker()
+    """The turn's events; a heartbeat comment whenever nothing was sent for a while.
+
+    The turn runs in its own task (`_run_turn`) and hands events over through a queue,
+    so this generator can send `: ping` every HEARTBEAT_SECONDS while the turn waits for
+    the thread lock or a model: CloudFront drops a stream that sends no bytes for 60 s
+    (infra/cloudfront.tf `origin_read_timeout`). If the browser goes away, the `finally`
+    cancels the task, which releases the thread lock.
+    """
     stats: dict[str, Any] = {
         "thread_hash": thread_log_id(thread_id),
         "new_thread": new_thread,
-        "outcome": "ok",
+        "outcome": "cancelled",  # until the reply has been sent in full
         "route": None,
         "fallback": None,
         "tokens": 0,
@@ -189,8 +221,64 @@ async def _turn_stream(
         "bom_sent": False,
         "first_token_ms": None,
     }
-    yield _sse(tracker.start())
-    reply: list[ChatEvent] = []
+    queue: asyncio.Queue[ChatEvent | None] = asyncio.Queue()
+    task = asyncio.create_task(_run_turn(service, body, thread_id, queue, stats))
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), HEARTBEAT_SECONDS)
+            except TimeoutError:
+                yield HEARTBEAT
+                continue
+            if event is None:  # the turn has finished
+                break
+            if isinstance(event, TokenEvent):
+                stats["tokens"] += 1
+                if stats["first_token_ms"] is None:
+                    stats["first_token_ms"] = _ms_since(started)
+            elif event.type == "product_cards":
+                stats["cards"] = len(event.cards)
+            elif event.type == "bom":
+                stats["bom_sent"] = True
+            yield _sse(event)
+        yield _sse(DoneEvent(thread_id=thread_id))
+        stats["outcome"] = stats.pop("turn_outcome", "ok")
+    finally:
+        if not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        stats.pop("turn_outcome", None)
+        logger.info("chat turn finished", extra={**stats, "total_ms": _ms_since(started)})
+
+
+async def _run_turn(
+    service: ChatService,
+    body: ChatRequest,
+    thread_id: str,
+    queue: "asyncio.Queue[ChatEvent | None]",
+    stats: dict[str, Any],
+) -> None:
+    """Run the graph under the thread lock and put every event on `queue`, then None.
+
+    The None always comes (`finally`), so the stream never waits for a turn that died.
+    """
+    try:
+        await _run_graph(service, body, thread_id, queue, stats)
+    finally:
+        queue.put_nowait(None)
+
+
+async def _run_graph(
+    service: ChatService,
+    body: ChatRequest,
+    thread_id: str,
+    queue: "asyncio.Queue[ChatEvent | None]",
+    stats: dict[str, Any],
+) -> None:
+    tracker = StepTracker()
+    await queue.put(tracker.start())
+    reply: list[ChatEvent]
     try:
         async with service.locks.hold(thread_id):
             config = {"configurable": {"thread_id": thread_id}}
@@ -205,32 +293,22 @@ async def _turn_stream(
             ):
                 for node, changes in update.items():
                     for step in tracker.update(node, changes if isinstance(changes, dict) else {}):
-                        yield _sse(step)
+                        await queue.put(step)
             snapshot = await service.graph.aget_state(config)  # type: ignore[arg-type]
             stats["route"] = snapshot.values.get("route")
             stats["fallback"] = snapshot.values.get("fallback")
             reply = final_events(snapshot.values)
+            stats["turn_outcome"] = "ok"
     except ThreadBusyError:
-        stats["outcome"] = "busy"
+        stats["turn_outcome"] = "busy"
         reply = [ErrorEvent(kind="internal")]
     except Exception as exc:
         # The type only: an error message can quote the customer's text.
         logger.warning("chat turn failed", extra={"error": type(exc).__name__})
-        stats["outcome"] = "error"
+        stats["turn_outcome"] = "error"
         reply = [ErrorEvent(kind="internal")]
-
     for event in reply:
-        if isinstance(event, TokenEvent):
-            stats["tokens"] += 1
-            if stats["first_token_ms"] is None:
-                stats["first_token_ms"] = _ms_since(started)
-        elif event.type == "product_cards":
-            stats["cards"] = len(event.cards)
-        elif event.type == "bom":
-            stats["bom_sent"] = True
-        yield _sse(event)
-    yield _sse(DoneEvent(thread_id=thread_id))
-    logger.info("chat turn finished", extra={**stats, "total_ms": _ms_since(started)})
+        await queue.put(event)
 
 
 def _ms_since(started: float) -> float:

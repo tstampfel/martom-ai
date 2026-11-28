@@ -17,9 +17,18 @@ contract both sides build against.
 
 - **Response.** Always `200` with `Content-Type: text/event-stream`, `Cache-Control:
   no-store` and `X-Accel-Buffering: no`, also for an invalid request: every failure is an
-  `error` event followed by `done`, so the browser has one code path.
+  `error` event followed by `done`, so the browser has one code path (also when the
+  database can't be read: `error` kind `internal` with a fresh `thread_id`).
+- **Heartbeats.** While a turn waits (for the previous turn or a model), the stream sends
+  an SSE comment line `: ping` every 15 s, so CloudFront (60 s origin read timeout) keeps
+  the connection open. SSE clients ignore comment lines; a hand-written parser must skip
+  lines starting with `:`.
 - **Order.** `step` "parse" `working` comes first, at once. While the advisor works,
-  steps follow its progress (parse done, search working/done, bom done). Then the reply:
+  steps follow its progress (parse done, search working/done, bom done). The parse step's
+  done text says what Python parsed from the fence ("Razumijem: panelna ograda · 25 m ·
+  150 cm": type, length, height; never text the model copied), the search step's the hit
+  count in correct Bosnian ("Pronađen 1 proizvod", "Pronađena 3 proizvoda", "Pronađeno 12
+  proizvoda"); with nothing parsed or found they keep the fixed texts. Then the reply:
   for questions, the `clarify` step (`needs_input`), `token`s and `chips`; otherwise
   `token`s, `product_cards` (when the advisor looked products up this turn) and `bom`
   (only when this turn made a new list). `done` is always last.
@@ -28,16 +37,19 @@ contract both sides build against.
   a few words, not the model's live tokens: join them in order and you have the answer.
 - **Product cards** come only from the products the advisor looked up this turn (database
   or `manual_products.toml` prices). `why` is `""` for now (no grounded "why it fits"
-  yet), and `badge`, `subtitle` and `photo_url` are `null`.
+  yet; the frontend hides it), and `badge`, `subtitle` and `photo_url` are `null`.
+  `price` is the listing price, with the `price_unit` of the variant that has the same
+  price (else `null`), or, without a listing price, the first priced variant and its unit.
 - **Threads.** The server issues every `thread_id` (256 random bits); send it back to
   continue. An id that is missing, malformed or has no saved conversation starts a new
   thread, and the `done` event carries the new id. A client never picks its own id.
 - **One turn at a time.** A second message on a thread whose previous turn still runs
-  waits for it (up to 60 s, then `error` kind `internal`).
+  waits for it (up to 45 s, then `error` kind `internal`, still inside CloudFront's 60 s).
 - **Invalid requests** (bad JSON, a body the request schema refuses, a body over 16 KB, a
   message over 2,000 characters, more than 50 sides, more than 10 choices or a choice key
-  or value over 64 characters) answer `error` kind `invalid_request` and `done`, with the sent `thread_id`
-  only if it names a saved conversation, else a fresh id; nothing is saved.
+  or value over 64 characters) answer `error` kind `invalid_request` and `done`, with the
+  sent `thread_id` only if it names a saved conversation, else a fresh id; nothing is
+  saved. A `posts` or `color` choice that no chip offers is ignored, not refused.
 - **No advisor** (the API runs without `ANTHROPIC_API_KEY` or an embedder): every message
   answers `error` kind `internal` and `done`.
 - **Not sent yet:** cart additions and the "contact Martom" offer have no event yet

@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 
+from martom.agent.understand import total_length_text
 from martom.api import chat_copy
 from martom.api.chat_events import (
     BomEvent,
@@ -91,11 +92,57 @@ def final_events(state: Mapping[str, Any]) -> list[ChatEvent]:
     return events
 
 
+def search_step_text(count: int) -> str:
+    """'Pronađen 1 proizvod', 'Pronađena 2 proizvoda', 'Pronađeno 5 proizvoda'.
+
+    Bosnian agrees with the last digit (1; 2-4; the rest), except 11-14, which always
+    take the "many" form: 21 is "proizvod", 12 is "proizvoda" with "Pronađeno".
+    No products keeps the fixed text; the answer itself says nothing was found.
+    """
+    if count <= 0:
+        return chat_copy.STEP_SEARCH
+    last, last_two = count % 10, count % 100
+    if last == 1 and last_two != 11:
+        template = chat_copy.FOUND_ONE
+    elif 2 <= last <= 4 and not 12 <= last_two <= 14:
+        template = chat_copy.FOUND_FEW
+    else:
+        template = chat_copy.FOUND_MANY
+    return template.format(count=count)
+
+
+def parse_step_text(project: Mapping[str, Any] | None) -> str:
+    """What the advisor understood about the fence, from the FenceSpec Python built.
+
+    Only the fence type (an enum), the lengths and the height (numbers Python parsed),
+    never text the model copied (such as a colour); the fixed text when none is known.
+    """
+    project = project or {}
+    parts = []
+    kind = {"panel": chat_copy.KIND_PANEL, "roll": chat_copy.KIND_ROLL}.get(
+        project.get("kind") or ""
+    )
+    if kind:
+        parts.append(kind)
+    sides = project.get("sides_m") or []
+    length = project.get("total_length_m")
+    if sides:
+        parts.append(total_length_text(sides))
+    elif length:
+        parts.append(total_length_text([length]))
+    if project.get("height_cm"):
+        parts.append(f"{project['height_cm']} cm")
+    if not parts:
+        return chat_copy.STEP_PARSE
+    return chat_copy.PARSED.format(parts=chat_copy.PARSED_SEPARATOR.join(parts))
+
+
 class StepTracker:
     """The "Savjetnik radi" steps from the graph's node updates, each sent once."""
 
     def __init__(self) -> None:
         self._sent: set[tuple[str, str]] = set()
+        self._hits = 0  # results of the latest search (a rewrite searches again)
 
     def start(self) -> StepEvent:
         event = self._step("parse", chat_copy.STEP_PARSE, "working")
@@ -106,11 +153,13 @@ class StepTracker:
         changes = changes or {}
         events: list[StepEvent | None] = []
         if node == "guardrail":
-            events.append(self._step("parse", chat_copy.STEP_PARSE, "done"))
+            events.append(self._step("parse", parse_step_text(changes.get("project")), "done"))
             if changes.get("route") == "retrieve":
                 events.append(self._step("search", chat_copy.STEP_SEARCH, "working"))
+        elif node == "retrieve":
+            self._hits = len(changes.get("hits") or [])
         elif node in {"generate", "grounding"} and ("search", "working") in self._sent:
-            events.append(self._step("search", chat_copy.STEP_SEARCH, "done"))
+            events.append(self._step("search", search_step_text(self._hits), "done"))
         if node == "tools" and changes.get("bom") and changes.get("bom_changed"):
             events.append(self._step("bom", chat_copy.STEP_BOM, "done"))
         return [event for event in events if event is not None]
@@ -136,9 +185,14 @@ def _card(output: dict[str, Any]) -> ProductCard:
     variants = output.get("variants") or []
     price, unit = output.get("price"), None
     if price is None:
+        # No listing price: show the first priced variant, with its unit.
         priced = next((v for v in variants if v.get("price") is not None), None)
         if priced is not None:
             price, unit = priced["price"], priced.get("unit")
+    else:
+        # The listing price's unit is the one of the variant with that same price, if
+        # any; otherwise no unit rather than a guess.
+        unit = next((v.get("unit") for v in variants if v.get("price") == price), None)
     return ProductCard(
         source=output["source"],
         listing_id=output.get("listing_id"),
