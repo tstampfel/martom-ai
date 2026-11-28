@@ -69,7 +69,23 @@ build is needed:
   Startup needs raw.githubusercontent.com (outbound HTTPS, already allowed); if GitHub is
   down, a new task fails to start and ECS retries, while a running task is unaffected.
 - Use of the data is under MaxMind's GeoLite2 EULA (as for the City database the official
-  image ships). Refresh the pin and its sha256 together when upgrading Umami.
+  image ships). Refresh the pin and its sha256 together when upgrading Umami. **Tomislav to
+  check the EULA's terms (attribution, keeping the data current) before approving this.**
+
+**Risk: Umami's start depends on a third-party GitHub repo.** `GitSquared/node-geolite2-redist`
+is run by a private person, not by MaxMind or Umami. Umami runs on FARGATE_SPOT, so AWS
+can stop it at any time and it restarts more often than deploys alone would cause, each
+time downloading the file again:
+
+| What fails | Effect | What to do |
+| --- | --- | --- |
+| GitHub is briefly down | A starting task exits; ECS keeps retrying until the download works. No visits are counted meanwhile. A running task is unaffected. | Nothing; it recovers by itself. |
+| The repo or the pinned commit disappears (deleted, history rewritten) | **Every** start fails until the pin changes. Statistics stop at the next Spot interruption or deploy. | Point `umami_geo_country_db_url` and `_sha256` at another copy of a GeoLite2-Country `.tar.gz` (e.g. downloaded from MaxMind with our own free license key and put in a private S3 bucket of our account) and apply; or set `umami_desired_count = 0` until then. |
+| The checksum no longer matches | Same as above: the container refuses to start, by design. | Same as above; never remove the checksum check. |
+
+The shop's site and the API never depend on Umami, so none of these affects customers.
+Taking the dependency away entirely (mirroring the file into our own S3 bucket, read by
+the task's role) is a small follow-up if Tomislav prefers it; it isn't built here.
 
 Checked locally on 28 Nov 2026 with the real `ghcr.io/umami-software/umami:3.5.0` image and
 Postgres 16, sending the same visit (an address with city data in GeoLite2, plus fake
