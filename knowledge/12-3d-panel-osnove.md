@@ -3,7 +3,7 @@ id: 3d-panel-osnove
 title: 3D panelna ograda – šta je i kako je napravljena
 topic: 3d-panels
 sources:
-  - "Toni, Q&A 28 Nov 2026: p3d-000, p3d-001, p3d-004, p3d-005, p3d-006, p3d-007, p3d-008"
+  - "Toni, Q&A 28 Nov 2026: p3d-000, p3d-001, p3d-004, p3d-005, p3d-006, p3d-007, p3d-008, p3d-015"
   - "OLX oglas 1199211 (3D panel 4,50/4,75 mm)"
 status: approved
 ---
@@ -27,6 +27,7 @@ Vrijedi za 3D panele sa žicom 4,50/4,75 mm (OLX oglas 1199211).
 ## Okce 200x50 mm
 
 - Okce je veličina pravougaonih otvora između žica: na ravnom dijelu panela otvor je **200 mm (20 cm) visine i 50 mm (5 cm) širine**, dok je u zoni 3D pregiba gušći raspored žica sa otvorom **100x50 mm** radi dodatnog ojačanja.
+- **Psi i mačke:** širina otvora je samo 5 cm (50 mm), pa većina pasa i mačaka ne može proći kroz sam panel; mačići i mali psi možda mogu. Zato je bitno da donji rub panela bude blizu betona, kako se ne bi provukli ni ispod.
 
 ## Bodlje prema gore ili prema dolje
 

@@ -3,12 +3,13 @@ id: 3d-panel-kapije
 title: 3D panelna ograda – kapije po narudžbi
 topic: 3d-panels
 sources:
-  - "Toni, Q&A 28 Nov 2026: p3d-075, p3d-076, p3d-077, p3d-078, p3d-079, p3d-080, p3d-081"
+  - "Toni, Q&A 28 Nov 2026: p3d-074, p3d-075, p3d-076, p3d-077, p3d-078, p3d-079, p3d-080, p3d-081"
 status: approved
 ---
 
 # 3D panelna ograda – kapije po narudžbi
 
+- Uz ovu 3D panelnu ogradu **kapije radimo po narudžbi**, u istom dizajnu i u istim bojama (zelena RAL 6005 i antracit RAL 7016): **javite se za ponudu**.
 - Kapije uz ovu ogradu se rade **po narudžbi**, kako bi se tačno prilagodile vašem otvoru, visini ograde i načinu otvaranja.
 - Po narudžbi se izrađuju **pješačke (jednokrilne) kapije, dvokrilne kolske kapije, kao i klizne kapije** ispunjene istim 3D panelom.
 - Pošto je ispuna kapije od istog 3D panela, **trake za privatnost** se mogu provući i kroz kapiju za potpuno jedinstven izgled.

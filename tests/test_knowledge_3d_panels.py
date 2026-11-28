@@ -16,11 +16,8 @@ QA_FILE = REPO / "knowledge" / "sources" / "martom_3d_panels_qa.jsonl"
 QA_ID = re.compile(r"\bp3d-\d{3}\b")
 
 # Entries without needs_check that are still left out of the chunks, with the reason.
-LEFT_OUT = {
-    # "Dostava je besplatna kad mi radimo ugradnju": the same fact as p3d-065, which Toni
-    # still has to check (installation terms), so it waits with it.
-    "p3d-096": "free delivery with installation, flagged in p3d-065",
-}
+# Empty since Tomislav cleared p3d-065 (28 Nov), which p3d-096 had waited on.
+LEFT_OUT: dict[str, str] = {}
 
 
 def qa_rows() -> list[dict]:
@@ -47,7 +44,7 @@ def test_source_file_has_toni_s_101_entries() -> None:
 def test_no_needs_check_entry_is_in_a_chunk() -> None:
     flagged = {row["id"] for row in qa_rows() if row.get("needs_check")}
 
-    assert len(flagged) == 15
+    assert len(flagged) == 7
     assert flagged.isdisjoint(cited_ids())
 
 
