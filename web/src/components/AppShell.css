@@ -181,6 +181,26 @@
   display: none;
 }
 
+/* "Izradio i održava Stampfel Consulting": its own line at the bottom
+   (web/6-privatnost.html), or inside the start notice
+   (web/1-start.html), so the separate line is hidden there. */
+.site-footer__credit {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--gutter) 20px;
+  font-size: 12px;
+  color: var(--color-on-dark-muted);
+}
+
+.site-footer--notice .site-footer__credit {
+  display: none;
+}
+
+.site-footer__credit-link {
+  color: var(--color-on-dark);
+  text-decoration: underline;
+}
+
 /* ---- Phones: layout from docs/mockups/mobile/ ---- */
 
 @media (max-width: 767px) {
@@ -229,14 +249,11 @@
     display: none;
   }
 
+  /* docs/mockups/mobile/: the notice and the credit line sit 8 px apart
+     under the row. */
   .site-footer__inner--narrow {
     display: flex;
-    padding: 14px var(--gutter) 18px;
-  }
-
-  /* docs/mockups/mobile/1-start.html: the notice sits 8 px under the hours row. */
-  .site-footer--notice .site-footer__inner--narrow {
-    padding-bottom: 8px;
+    padding: 14px var(--gutter) 8px;
   }
 
   .privacy-notice--wide {
@@ -245,10 +262,28 @@
 
   .privacy-notice--narrow {
     display: block;
-    padding: 0 var(--gutter) 18px;
+    padding: 0 var(--gutter) 8px;
     font-size: 11px;
     line-height: 1.45;
     color: var(--color-muted);
+  }
+
+  /* Its own line on every phone footer (mobile/1-start.html, 6-privatnost.html),
+     muted on the light page background. */
+  .site-footer__credit,
+  .site-footer--notice .site-footer__credit {
+    display: block;
+    padding: 0 var(--gutter) 18px;
+    font-size: 11px;
+    color: var(--color-muted);
+  }
+
+  .site-footer--notice .site-footer__credit {
+    line-height: 1.45;
+  }
+
+  .site-footer__credit-link {
+    color: inherit;
   }
 
   .site-footer__phone {

@@ -70,3 +70,38 @@ describe('AppShell privacy notice (M5-8)', () => {
     }
   })
 })
+
+describe('AppShell footer credit (M5-9)', () => {
+  function creditLinks() {
+    return within(screen.getByRole('contentinfo')).getAllByRole('link', { name: copy.footer.credit })
+  }
+
+  it('on the start screen, follows Privatnost in the wide notice and has its own line on phones', () => {
+    render(
+      <AppShell onStartChat={() => {}} showPrivacyNotice privacyHref="/privatnost">
+        content
+      </AppShell>,
+    )
+    const [inNotice, ownLine] = creditLinks()
+    expect(creditLinks()).toHaveLength(2)
+    // docs/mockups/web/1-start.html: "... · Privatnost · Izradio i održava Stampfel Consulting"
+    const wide = inNotice.closest('p')
+    expect(wide).toHaveClass('privacy-notice--wide')
+    expect(wide?.textContent).toMatch(new RegExp(`${copy.privacy.link} · ${copy.footer.creditLead} ${copy.footer.credit}$`))
+    // docs/mockups/mobile/1-start.html: its own line under the phone notice.
+    expect(ownLine.closest('p')).toHaveClass('site-footer__credit')
+  })
+
+  it('has one line of its own when there is no notice', () => {
+    render(<AppShell onStartChat={() => {}}>content</AppShell>)
+    expect(creditLinks()).toHaveLength(1)
+    expect(creditLinks()[0].closest('p')).toHaveClass('site-footer__credit')
+  })
+
+  it('opens the credit link in a new tab', () => {
+    render(<AppShell onStartChat={() => {}}>content</AppShell>)
+    expect(creditLinks()[0]).toHaveAttribute('href', 'https://stampfelconsulting.com/')
+    expect(creditLinks()[0]).toHaveAttribute('target', '_blank')
+    expect(creditLinks()[0]).toHaveAttribute('rel', 'noopener')
+  })
+})

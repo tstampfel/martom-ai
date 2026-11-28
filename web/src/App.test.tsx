@@ -124,3 +124,18 @@ describe('Privatnost page (M6-5b)', () => {
     expect(screen.getByRole('contentinfo')).toHaveTextContent(copy.privacy.chatNotice)
   })
 })
+
+describe('Footer credit (M5-9)', () => {
+  it.each(['/', '/privatnost'])('the footer on %s links the credit to Stampfel Consulting', (path) => {
+    render(<App path={path} />)
+    const footer = screen.getByRole('contentinfo')
+    const links = within(footer).getAllByRole('link', { name: copy.footer.credit })
+    expect(links.length).toBeGreaterThan(0)
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', copy.footer.creditUrl)
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAttribute('rel', 'noopener')
+    }
+    expect(footer).toHaveTextContent(`${copy.footer.creditLead} ${copy.footer.credit}`)
+  })
+})

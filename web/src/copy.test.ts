@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { config } from './config'
 import { copy, telHref } from './copy'
@@ -79,4 +81,16 @@ describe('copy', () => {
     expect(unpriced(21)).toBe('+ 21 stavka na upit')
     expect(unpriced(22)).toBe('+ 22 stavke na upit')
   })
+})
+
+describe('copy.footer credit (M5-9)', () => {
+  // Canvas version 1795853475-32a4: the four screens with the credit.
+  it.each(['web/1-start.html', 'mobile/1-start.html', 'web/6-privatnost.html', 'mobile/6-privatnost.html'])(
+    'matches the credit in docs/mockups/%s',
+    (screen) => {
+      const html = readFileSync(join(import.meta.dirname, '../../docs/mockups', screen), 'utf8')
+      const match = html.match(/(?:>| · )([^<>·]+) <a href="([^"]+)" target="_blank" rel="noopener"[^>]*>([^<]+)<\/a>/)
+      expect(match?.slice(1)).toEqual([copy.footer.creditLead, copy.footer.creditUrl, copy.footer.credit])
+    },
+  )
 })

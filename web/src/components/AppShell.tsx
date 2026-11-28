@@ -40,6 +40,13 @@ export function AppShell({ children, onStartChat, cartCount = 0, showPrivacyNoti
             </a>
           </>
         )}
+        {/* docs/mockups/web/1-start.html: the credit closes the wide notice. */}
+        {variant === 'wide' && (
+          <>
+            {' · '}
+            <FooterCredit />
+          </>
+        )}
       </p>
     )
   }
@@ -118,7 +125,7 @@ type SiteFooterProps = {
 
 /**
  * The footer: logo, address, e-mail and phone on wide screens; one row on
- * phones (docs/mockups/{web,mobile}/).
+ * phones (docs/mockups/{web,mobile}/). It ends with the credit line.
  */
 export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, children }: SiteFooterProps) {
   return (
@@ -139,6 +146,22 @@ export function SiteFooter({ narrowStart = copy.shop.hours, notice = false, chil
         </a>
       </div>
       {children}
+      {/* On wide screens the start notice carries the credit itself. */}
+      <p className="site-footer__credit">
+        <FooterCredit />
+      </p>
     </footer>
+  )
+}
+
+/** "Izradio i održava Stampfel Consulting", the name linking to the site in a new tab. */
+function FooterCredit() {
+  return (
+    <>
+      {copy.footer.creditLead}{' '}
+      <a className="site-footer__credit-link" href={copy.footer.creditUrl} target="_blank" rel="noopener">
+        {copy.footer.credit}
+      </a>
+    </>
   )
 }

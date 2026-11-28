@@ -65,6 +65,29 @@ describe('design tokens', () => {
     },
   )
 
+  // WCAG 2.x contrast ratio of two #RRGGBB colours.
+  function contrast(a: string, b: string): number {
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  // The footer credit (M5-9): text and link on the charcoal web footer, and
+  // the muted text and link on the light phone footer.
+  it.each([
+    ['--color-on-dark', '--color-charcoal'],
+    ['--color-on-dark-muted', '--color-charcoal'],
+    ['--color-muted', '--color-page'],
+  ])('%s on %s has a contrast of at least 4.5:1', (text, background) => {
+    expect(contrast(expected[text], expected[background])).toBeGreaterThanOrEqual(4.5)
+  })
+
   it('keeps touch targets at least 44 px', () => {
     expect(readToken(tokensCss, '--touch-target')).toBe('44px')
   })

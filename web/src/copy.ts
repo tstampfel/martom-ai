@@ -223,6 +223,14 @@ export const copy = {
     orderNotice: 'Ime, telefon i adresu koristimo samo za ovu narudžbu.',
     link: 'Privatnost',
   },
+  // Canvas version 1795853475-32a4 (Tomislav, 28 Nov 2026): the footer ends
+  // with "Izradio i održava Stampfel Consulting", the name linking to
+  // `creditUrl` (docs/mockups/{web,mobile}/1-start.html, 6-privatnost.html).
+  footer: {
+    creditLead: 'Izradio i održava',
+    credit: 'Stampfel Consulting',
+    creditUrl: 'https://stampfelconsulting.com/',
+  },
   // The "Privatnost" page, canvas version 1795851325-40ff (Tomislav, 28 Nov
   // 2026): docs/mockups/{web,mobile}/6-privatnost.html, copied word for word.
   // The wording gets an AI review before launch (#33); don't reword it here.
