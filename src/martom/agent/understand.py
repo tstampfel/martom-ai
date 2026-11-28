@@ -13,11 +13,13 @@ Everything here is plain Python, so every rule from fence-rules.md and the #20 c
 a unit test, not a prompt instruction the model may forget.
 """
 
+import logging
 import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
+from functools import cache
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -36,6 +38,8 @@ from martom.bom.common import FenceTooLargeError, check_layout, sides_in_cm
 from martom.bom.panel import DEFAULT_PANEL_WIDTH_CM, PANEL_RULES, PANEL_WIDTHS_CM
 from martom.bom.roll import ROLL_RULES, RollPostModel
 from martom.search.query_parser import parse_height_cm
+
+logger = logging.getLogger(__name__)
 
 # A height the customer writes is matched to the nearest real one within this many cm
 # ("oko 150 cm" -> 153 cm panels), the same tolerance as the search height filter.
@@ -218,9 +222,18 @@ def _apply_answers(spec: FenceSpec, answers: ClarifyAnswers) -> None:
         spec.kind = choices["fence_type"]  # type: ignore[assignment]
     if "height" in choices and choices["height"].isdigit():
         spec.height_cm = int(choices["height"])
-    if "posts" in choices:
+    # Only a value a chip could have sent: the browser is not trusted, and these end up
+    # in the model's context and the BOM summary (review R1-11). Anything else is
+    # ignored; the log carries a count, never the value.
+    allowed = _chip_values()
+    ignored = [
+        key for key in ("posts", "color") if key in choices and choices[key] not in allowed[key]
+    ]
+    if ignored:
+        logger.warning("chip answers ignored", extra={"ignored": len(ignored)})
+    if "posts" in choices and "posts" not in ignored:
         spec.posts = choices["posts"]
-    if "color" in choices:
+    if "color" in choices and "color" not in ignored:
         spec.colour = None if choices["color"] == "any" else choices["color"]
     if answers.sides:
         spec.sides_m = list(answers.sides)
@@ -365,19 +378,34 @@ def _optional_questions(spec: FenceSpec, asked: set[str]) -> list[ChipQuestion]:
     if spec.kind == "panel" and spec.posts is None and "posts" not in asked:
         questions.append(_panel_posts_question())
     if spec.kind is not None and spec.colour is None:
-        questions.append(
-            _single(
-                "color",
-                copy.COLOUR_QUESTION,
-                copy.COLOUR_LABEL,
-                [
-                    ("antracit", copy.COLOUR_ANTHRACITE, "Antracit"),
-                    ("zelena", copy.COLOUR_GREEN, "Zelena"),
-                    ("any", copy.COLOUR_ANY, None),
-                ],
-            )
-        )
+        questions.append(_colour_question())
     return questions
+
+
+def _colour_question() -> ChipQuestion:
+    return _single(
+        "color",
+        copy.COLOUR_QUESTION,
+        copy.COLOUR_LABEL,
+        [
+            ("antracit", copy.COLOUR_ANTHRACITE, "Antracit"),
+            ("zelena", copy.COLOUR_GREEN, "Zelena"),
+            ("any", copy.COLOUR_ANY, None),
+        ],
+    )
+
+
+@cache
+def _chip_values() -> dict[str, frozenset[str]]:
+    """The option values a chips event can offer for posts and colour (an allowlist)."""
+
+    def values(*questions: ChipQuestion) -> frozenset[str]:
+        return frozenset(option.value for q in questions for option in q.options)
+
+    return {
+        "posts": values(_panel_posts_question(), _roll_posts_question()),
+        "color": values(_colour_question()),
+    }
 
 
 def _layout_question() -> ChipQuestion:

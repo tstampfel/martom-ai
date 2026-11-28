@@ -33,6 +33,7 @@ from martom.agent import copy
 from martom.agent.catalogue import ProductInfo
 from martom.agent.graph import (
     MAX_REWRITES,
+    RELEVANCE_CUTOFF,
     AgentDeps,
     AgentModels,
     build_graph,
@@ -806,3 +807,59 @@ async def test_invented_link_for_a_manual_product_fails_grounding() -> None:
     result = await ask(graph, "Imate li anker?")
     assert result["answer"] == f"Imamo {ANCHOR_NAME}."
     assert any("link" in problem for problem in result["grounding_problems"])
+
+
+# --- relevant hits for the chat's search step (#21 review R2-1) -----------------------
+
+
+class MixedRetriever(FakeRetriever):
+    """Reranked hits whose scores straddle RELEVANCE_CUTOFF."""
+
+    def __init__(self, scores: list[float | None], *, reranked: bool = True) -> None:
+        super().__init__()
+        self.scores = scores
+        self.reranked = reranked
+
+    async def __call__(self, query: str) -> Any:
+        base = await super().__call__(query)
+        hits = [
+            replace(base.hits[0], listing_id=PANEL_ID + i, relevance=score)
+            for i, score in enumerate(self.scores)
+        ]
+        return replace(base, hits=hits, reranked=self.reranked)
+
+
+async def test_grade_counts_the_hits_at_or_over_the_relevance_cutoff() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product", search_query="stup")),
+        [AIMessage("Imamo stubove.")],
+        grade=Recorder(Grade(fits=True)),
+        retriever=MixedRetriever([0.7, 0.3, RELEVANCE_CUTOFF, 0.05, 0.01]),
+    )
+    result = await ask(graph, "Stup za ogradu")
+    assert result["grade"] == "ok"
+    assert result["relevant_hits"] == 3
+
+
+async def test_a_weak_grade_has_no_relevant_hits() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product", search_query="vrijeme")),
+        [AIMessage("Nažalost, to nemamo.")] * 3,
+        grade=Recorder(Grade(fits=False)),
+        rewrite=Recorder(Rewrite(query="vrijeme danas")),
+        retriever=MixedRetriever([0.7, 0.3]),
+    )
+    result = await ask(graph, "Kakvo je vrijeme?")
+    assert result["grade"] == "weak"
+    assert result["relevant_hits"] == 0
+
+
+async def test_unreranked_hits_the_model_accepts_all_count() -> None:
+    graph = make_graph(
+        Recorder(understanding(request="product", search_query="stup")),
+        [AIMessage("Imamo stubove.")],
+        grade=Recorder(Grade(fits=True)),
+        retriever=MixedRetriever([None, None], reranked=False),
+    )
+    result = await ask(graph, "Stup za ogradu")
+    assert result["relevant_hits"] == 2

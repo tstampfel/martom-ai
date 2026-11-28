@@ -20,11 +20,12 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.rows import dict_row, tuple_row
 from psycopg_pool import AsyncConnectionPool
 
+from martom.db import CHECKPOINTER_POOL_MAX_SIZE
 from martom.migrate import ADVISORY_LOCK_KEY, acquire_advisory_lock
 
-# Connections the API keeps for checkpoint reads and writes. A chat turn holds one only
-# while it reads or writes a checkpoint, so a few cover many concurrent chats.
-POOL_MAX_SIZE = 5
+# Connections the API keeps for checkpoint reads and writes; sized with the other pools
+# in martom.db (the connection budget).
+POOL_MAX_SIZE = CHECKPOINTER_POOL_MAX_SIZE
 
 # What the library needs on every connection: autocommit (its setup() runs
 # CREATE INDEX CONCURRENTLY, which can't run inside a transaction), rows as dicts, and no

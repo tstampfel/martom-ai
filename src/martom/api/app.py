@@ -10,7 +10,8 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from functools import partial
 
 from fastapi import FastAPI, Request, Response
@@ -24,6 +25,9 @@ from martom.api.admin import (
     warn_if_admin_disabled,
 )
 from martom.api.admin import router as admin_router
+from martom.api.chat import ChatService
+from martom.api.chat import router as chat_router
+from martom.api.chat_service import open_chat_service
 from martom.api.health import HealthCheck, check_postgres, check_redis
 from martom.api.health import router as health_router
 from martom.log import request_id_var
@@ -39,13 +43,25 @@ REQUEST_ID_HEADER = "X-Request-ID"
 VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
 HEALTH_CHECK_TIMEOUT_SECONDS = 3.0
 
+type ChatServiceOpener = Callable[[Settings], AbstractAsyncContextManager[ChatService | None]]
+# "Not passed", as opposed to None ("no advisor"): tests pass a service or None.
+_OPEN_IN_LIFESPAN: object = object()
+
 
 def create_app(
     settings: Settings | None = None,
     health_checks: Mapping[str, HealthCheck] | None = None,
     check_timeout: float = HEALTH_CHECK_TIMEOUT_SECONDS,
     review_issue_source: ReviewIssueSource | None = None,
+    chat_service: object = _OPEN_IN_LIFESPAN,  # a ChatService, or None for "no advisor"
+    open_chat: ChatServiceOpener = open_chat_service,
 ) -> FastAPI:
+    """The app. Without `chat_service`, the lifespan opens the real advisor (#21) once.
+
+    FastAPI runs the lifespan at server startup and shutdown (TestClient only inside a
+    `with` block): the code before `yield` opens the graph, its pools and the search
+    cache, the code after it closes them.
+    """
     settings = settings or Settings()
     # Raises for a short ADMIN_TOKEN, or none in production: the server doesn't start.
     check_admin_token(settings)
@@ -60,11 +76,22 @@ def create_app(
             "redis": partial(check_redis, settings.redis_url),
         }
 
-    app = FastAPI(title="martom-ai")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        if chat_service is not _OPEN_IN_LIFESPAN:
+            yield
+            return
+        async with open_chat(settings) as service:
+            app.state.chat_service = service
+            yield
+
+    app = FastAPI(title="martom-ai", lifespan=lifespan)
     # app.state is a place for app-wide objects that route handlers read via request.app.
     app.state.settings = settings
     app.state.health_checks = dict(health_checks)
     app.state.health_check_timeout = check_timeout
+    if chat_service is not _OPEN_IN_LIFESPAN:
+        app.state.chat_service = chat_service
     app.state.review_issue_source = review_issue_source or partial(
         load_from_database, settings.database_url
     )
@@ -109,4 +136,5 @@ def create_app(
 
     app.include_router(health_router)
     app.include_router(admin_router)
+    app.include_router(chat_router)
     return app

@@ -23,7 +23,8 @@ What each node does:
 - retrieve: search.retrieve (filters, hybrid search, rerank) through the injected
   `Retriever`.
 - grade: no hits, or a best rerank relevance under RELEVANCE_CUTOFF, is weak without a
-  model call; otherwise Haiku judges the fit.
+  model call; otherwise Haiku judges the fit. It also records `relevant_hits` (hits at
+  or over the cutoff, 0 when weak), which the chat's search step shows (#21).
 - rewrite: Haiku writes a better query; at most MAX_REWRITES times per turn.
 - generate: Sonnet answers and may call the tools (agent/tools.py).
 - tools: runs the tool calls and records every price, id and quantity they returned.
@@ -131,6 +132,9 @@ class AgentState(TypedDict, total=False):
     hits: list[dict[str, Any]]
     reranked: bool
     grade: Literal["ok", "weak"]
+    # How many hits the grade counted as relevant (0 when weak); the chat's search step
+    # shows it (#21), so it is the same rule the grade uses, never recomputed elsewhere.
+    relevant_hits: int
     rewrites: int
     facts: dict[str, Any]  # grounding.Facts
     bom: dict[str, Any] | None  # the latest materials list of the conversation
@@ -233,6 +237,7 @@ def build_graph(
             "hits": [],
             "reranked": False,
             "grade": "ok",
+            "relevant_hits": 0,
             "rewrites": 0,
             # `facts` (search and product results) stay: they are still in the history the
             # model sees, so it may repeat them (R1-3). The materials list and its numbers
@@ -275,11 +280,13 @@ def build_graph(
 
     async def grade(state: AgentState) -> dict[str, Any]:
         hits = state.get("hits", [])
+        weak = {"grade": "weak", "relevant_hits": 0}
         if not hits:
-            return {"grade": "weak"}
+            return weak
         scores = [hit["relevance"] for hit in hits if hit["relevance"] is not None]
         if state.get("reranked") and scores and max(scores) < RELEVANCE_CUTOFF:
-            return {"grade": "weak"}
+            return weak
+        ok = {"grade": "ok", "relevant_hits": _relevant_hits(hits, state.get("reranked", False))}
         messages = [
             SystemMessage(GRADE_SYSTEM),
             HumanMessage(
@@ -295,8 +302,8 @@ def build_graph(
         except Exception as exc:
             # Keep the results: the rerank already ordered them, generate judges the rest.
             logger.warning("grading failed; keeping the results", extra=_error(exc))
-            return {"grade": "ok"}
-        return {"grade": "ok" if result.fits else "weak"}
+            return ok
+        return ok if result.fits else weak
 
     async def rewrite(state: AgentState) -> dict[str, Any]:
         messages = [
@@ -588,6 +595,16 @@ def _bom_facts(state: AgentState) -> Facts:
 
 def _facts(state: AgentState) -> Facts:
     return Facts.model_validate(state.get("facts") or {})
+
+
+def _relevant_hits(hits: list[dict[str, Any]], reranked: bool) -> int:
+    """Hits at or over RELEVANCE_CUTOFF; without rerank scores, every hit the grade kept."""
+    if not reranked:
+        return len(hits)
+    scored = [hit["relevance"] for hit in hits if hit["relevance"] is not None]
+    if not scored:
+        return len(hits)
+    return sum(1 for score in scored if score >= RELEVANCE_CUTOFF)
 
 
 def _last_customer_text(state: AgentState) -> str:

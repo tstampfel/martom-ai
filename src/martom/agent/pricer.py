@@ -29,6 +29,7 @@ import psycopg
 from martom.bom.common import BomLine
 from martom.bom.manual_products import ManualProduct, load_manual_products
 from martom.bom.pricing import PriceMap, load_price_map, lookup_ref, resolve_price
+from martom.db import Connector, borrow, is_autocommit
 from martom.extract.store import VariantRow
 
 logger = logging.getLogger(__name__)
@@ -49,21 +50,22 @@ class PostgresBomPricer:
     """Implements `martom.agent.tools.BomPricer`.
 
     The map and the manual products are read once, when the pricer is built (a broken
-    file raises ValueError then, never during a chat). Pass them in tests. `conn` must be
-    in autocommit mode: a connection idle in a transaction would hold locks between
-    chats, and after one error every later query would fail.
+    file raises ValueError then, never during a chat). Pass them in tests. `source` is one
+    connection or a pool (the API, #21), in autocommit mode either way: a connection idle
+    in a transaction would hold locks between chats, and after one error every later
+    query would fail.
     """
 
     def __init__(
         self,
-        conn: psycopg.AsyncConnection,
+        source: Connector,
         *,
         price_map: PriceMap | None = None,
         manual_products: Mapping[str, ManualProduct] | None = None,
     ) -> None:
-        if not conn.autocommit:
+        if not is_autocommit(source):
             raise ValueError("PostgresBomPricer needs an autocommit connection")
-        self.conn = conn
+        self.source = source
         self.price_map = price_map if price_map is not None else load_price_map()
         self.manual_products = (
             manual_products if manual_products is not None else load_manual_products()
@@ -96,7 +98,7 @@ class PostgresBomPricer:
         return resolve_price(entry, variants, self.manual_products).price
 
     async def _variants(self, listing_id: int) -> list[VariantRow] | None:
-        async with self.conn.cursor() as cur:
+        async with borrow(self.source) as conn, conn.cursor() as cur:
             await cur.execute(_VARIANTS_SQL, (listing_id,))
             rows = await cur.fetchall()
         if not rows:
